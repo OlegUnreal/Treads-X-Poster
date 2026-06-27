@@ -9,7 +9,7 @@ backend/        Spring Boot backend rewrite
 frontend/       Angular admin UI scaffold
 legacy-node/    Existing Node.js implementation kept as fallback
 scripts/        PowerShell automation and local helper scripts
-generated/      Runtime logs, queue files, HTML outputs
+generated/      Local runtime queue, drafts, Selenium profile, and HTML outputs
 ```
 
 ## Current State
@@ -24,6 +24,7 @@ The runtime configuration now lives under `backend/config/`:
 
 - `backend/config/.env`
 - `backend/config/.env.example`
+- `backend/config/.env.production.example`
 - `backend/config/content-plan.json`
 
 Shared project files that still remain at repo root:
@@ -66,9 +67,56 @@ npx ng serve
 
 The Angular dev server proxies `/api` requests to `http://localhost:8080`, so start the Spring Boot backend first.
 
+## Production Setup
+
+The backend can run on a server as long as runtime files live in a persistent folder. Configure that folder with `DATA_DIR` instead of relying on files inside the repository checkout.
+
+Recommended server layout:
+
+```text
+/opt/behind-the-smile/app/       Checked-out repository or deployed jar
+/opt/behind-the-smile/config/    Private .env and content-plan.json
+/opt/behind-the-smile/data/      Queue, drafts, X links, Selenium browser profile
+```
+
+Start by copying `backend/config/.env.production.example` to a private `.env` file and filling in the real tokens. Keep that real file out of git.
+
+Important production variables:
+
+- `DATA_DIR` points to persistent runtime storage.
+- `CONTENT_PLAN_FILE` points to the content plan JSON on the server.
+- `X_BROWSER_PROFILE_DIR` points to a persistent Chrome profile that stays logged in to X.
+- `X_PUBLISH_MODE=selenium` uses the browser automation path for X.
+- `THREADS_ACCESS_TOKEN` and `THREADS_USER_ID` enable Threads publishing.
+
+Build and run the backend:
+
+```powershell
+mvn -f backend/pom.xml clean package
+java -jar backend/target/social-posting-0.1.0.jar
+```
+
+Build the Angular UI:
+
+```powershell
+cd frontend
+npm install
+npm run build
+```
+
+Serve `frontend/dist/` with nginx or another static file server, and proxy `/api` to the Spring Boot backend.
+
+Health check:
+
+```powershell
+Invoke-RestMethod http://localhost:8080/api/health
+```
+
+The health response includes the active `DATA_DIR`, queue path, draft path, X links path, content plan path, and whether the data directory is writable.
+
 ## Important Notes
 
-- This environment still does not have working `java`, `mvn`, or `npm`, so the new backend/frontend could not be executed here.
 - The migration is intentionally incremental. Do not remove `legacy-node/` until the Spring Boot and Angular paths are verified locally.
 - Existing automation scripts now explicitly target `legacy-node/`.
 - `legacy-node/` keeps fallback support for root `.env`, but the canonical config location is now `backend/config/`.
+- Do not commit real `.env` files, access tokens, refresh tokens, Selenium profiles, cookies, or generated runtime data.

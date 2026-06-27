@@ -3,12 +3,21 @@ package com.behindthesmile.posting.config;
 public record AppProperties(
         OpenAi openAi,
         Defaults defaults,
+        Runtime runtime,
         X x,
         Threads threads
 ) {
     public record OpenAi(String apiKey, String model) {}
 
     public record Defaults(String language, String topic, String tone, int count) {}
+
+    public record Runtime(
+            String dataDir,
+            String queueFile,
+            String draftsFile,
+            String xLinksFile,
+            String contentPlanFile
+    ) {}
 
     public record X(
             String accountLabel,

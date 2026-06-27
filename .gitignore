@@ -1,6 +1,7 @@
 backend/config/.env
 node_modules/
 generated/
+data/
 *.log
 backend/target/
 frontend/dist/

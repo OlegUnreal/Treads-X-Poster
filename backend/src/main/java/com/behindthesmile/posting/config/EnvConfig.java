@@ -55,6 +55,13 @@ public class EnvConfig {
                         values.getOrDefault("POST_TONE", "warm, fan-friendly, concise"),
                         Integer.parseInt(values.getOrDefault("POST_COUNT", "3"))
                 ),
+                new AppProperties.Runtime(
+                        values.getOrDefault("DATA_DIR", "../generated"),
+                        values.getOrDefault("QUEUE_FILE", "queue.jsonl"),
+                        values.getOrDefault("DRAFTS_FILE", "posts.jsonl"),
+                        values.getOrDefault("X_LINKS_FILE", "x-ready.html"),
+                        values.getOrDefault("CONTENT_PLAN_FILE", "config/content-plan.json")
+                ),
                 new AppProperties.X(
                         firstNonBlank(values.get("X_ACCOUNT_LABEL"), values.get("TWITTER_ACCOUNT_LABEL")),
                         values.get("X_ACCESS_TOKEN"),
@@ -68,7 +75,10 @@ public class EnvConfig {
                         values.get("X_REFRESH_TOKEN"),
                         values.getOrDefault("X_PUBLISH_MODE", "api"),
                         values.getOrDefault("X_BROWSER", "chrome"),
-                        values.getOrDefault("X_BROWSER_PROFILE_DIR", "../generated/selenium/chrome-profile"),
+                        values.getOrDefault(
+                                "X_BROWSER_PROFILE_DIR",
+                                Path.of(values.getOrDefault("DATA_DIR", "../generated"), "selenium", "chrome-profile").toString()
+                        ),
                         Boolean.parseBoolean(values.getOrDefault("X_BROWSER_HEADLESS", "false"))
                 ),
                 new AppProperties.Threads(

@@ -1,6 +1,7 @@
 package com.behindthesmile.posting.api;
 
 import com.behindthesmile.posting.model.QueuedPost;
+import com.behindthesmile.posting.service.AppPathService;
 import com.behindthesmile.posting.service.SocialPostingService;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -20,18 +21,24 @@ import java.util.Map;
 public class DashboardController {
     private final SocialPostingService socialPostingService;
     private final com.behindthesmile.posting.service.PostingJobService postingJobService;
+    private final AppPathService appPathService;
 
     public DashboardController(
             SocialPostingService socialPostingService,
-            com.behindthesmile.posting.service.PostingJobService postingJobService
+            com.behindthesmile.posting.service.PostingJobService postingJobService,
+            AppPathService appPathService
     ) {
         this.socialPostingService = socialPostingService;
         this.postingJobService = postingJobService;
+        this.appPathService = appPathService;
     }
 
     @GetMapping("/health")
-    public Map<String, String> health() {
-        return Map.of("status", "ok");
+    public Map<String, Object> health() {
+        Map<String, Object> health = new java.util.LinkedHashMap<>();
+        health.put("status", "ok");
+        health.put("storage", appPathService.healthDetails());
+        return health;
     }
 
     @GetMapping("/summary")
