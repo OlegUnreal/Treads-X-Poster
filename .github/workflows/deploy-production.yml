@@ -24,26 +24,39 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
           DEPLOY_BRANCH: ${{ github.event.inputs.branch || github.ref_name }}
         run: |
           set -Eeuo pipefail
 
-          if [ -z "${DEPLOY_HOST}" ] || [ -z "${DEPLOY_USER}" ] || [ -z "${DEPLOY_SSH_KEY}" ]; then
-            echo "Missing DEPLOY_HOST, DEPLOY_USER, or DEPLOY_SSH_KEY repository secrets."
+          if [ -z "${DEPLOY_HOST}" ] || [ -z "${DEPLOY_USER}" ]; then
+            echo "Missing DEPLOY_HOST or DEPLOY_USER repository secrets."
+            exit 1
+          fi
+
+          if [ -z "${DEPLOY_SSH_KEY}" ] && [ -z "${DEPLOY_PASSWORD}" ]; then
+            echo "Missing deploy credential. Add DEPLOY_SSH_KEY or DEPLOY_PASSWORD repository secret."
             exit 1
           fi
 
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          printf '%s\n' "${DEPLOY_SSH_KEY}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
 
           PORT="${DEPLOY_PORT:-22}"
           APP_DIR="${DEPLOY_PATH:-/opt/behind-the-smile}"
 
           ssh-keyscan -p "${PORT}" "${DEPLOY_HOST}" >> ~/.ssh/known_hosts
 
-          ssh -i ~/.ssh/deploy_key -p "${PORT}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "APP_DIR='${APP_DIR}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' bash '${APP_DIR}/scripts/deploy-production.sh' '${DEPLOY_BRANCH}'"
+          if [ -n "${DEPLOY_SSH_KEY}" ]; then
+            printf '%s\n' "${DEPLOY_SSH_KEY}" > ~/.ssh/deploy_key
+            chmod 600 ~/.ssh/deploy_key
+            ssh -i ~/.ssh/deploy_key -p "${PORT}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+              "APP_DIR='${APP_DIR}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' bash '${APP_DIR}/scripts/deploy-production.sh' '${DEPLOY_BRANCH}'"
+          else
+            sudo apt-get update
+            sudo apt-get install -y sshpass
+            sshpass -p "${DEPLOY_PASSWORD}" ssh -p "${PORT}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+              "APP_DIR='${APP_DIR}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' bash '${APP_DIR}/scripts/deploy-production.sh' '${DEPLOY_BRANCH}'"
+          fi

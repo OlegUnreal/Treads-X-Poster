@@ -159,8 +159,10 @@ GitHub Actions can run the same script from `Deploy production`. Add these repos
 
 - `DEPLOY_HOST` - server IP or domain.
 - `DEPLOY_USER` - SSH user, for example `root`.
-- `DEPLOY_SSH_KEY` - private SSH key that can access the server.
+- `DEPLOY_PASSWORD` - SSH password for the deploy user.
 - `DEPLOY_PORT` - optional, defaults to `22`.
+
+Alternatively, use `DEPLOY_SSH_KEY` instead of `DEPLOY_PASSWORD` if you want key-based SSH later.
 
 Optional repository variable:
 
