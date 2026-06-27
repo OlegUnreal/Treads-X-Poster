@@ -106,6 +106,18 @@ systemctl restart "${SERVICE_NAME}"
 nginx -t
 systemctl reload nginx
 
-curl --fail --silent "http://127.0.0.1:${BACKEND_PORT}/api/health" >/dev/null
+for attempt in {1..30}; do
+  if curl --fail --silent "http://127.0.0.1:${BACKEND_PORT}/api/health" >/dev/null; then
+    echo "Backend health check passed."
+    echo "Deploy complete."
+    exit 0
+  fi
 
-echo "Deploy complete."
+  echo "Waiting for backend health check (${attempt}/30)..."
+  sleep 2
+done
+
+echo "Backend health check failed after 60 seconds."
+systemctl status "${SERVICE_NAME}" --no-pager || true
+journalctl -u "${SERVICE_NAME}" -n 80 --no-pager || true
+exit 1
