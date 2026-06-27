@@ -11,13 +11,12 @@ echo "Deploying branch '${BRANCH}' from ${APP_DIR}"
 
 cd "${APP_DIR}"
 
-if ! git diff --quiet || ! git diff --cached --quiet; then
-  echo "Refusing to deploy: repository has uncommitted tracked changes."
-  echo "Commit/stash them on the server, or keep runtime files in ignored paths."
-  exit 1
-fi
-
 git fetch origin "${BRANCH}"
+
+if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+  echo "Server checkout has local changes. Saving them to git stash before deploy."
+  git stash push -u -m "auto-stash before production deploy $(date -Iseconds)" || true
+fi
 
 if git show-ref --verify --quiet "refs/heads/${BRANCH}"; then
   git checkout "${BRANCH}"
@@ -25,7 +24,8 @@ else
   git checkout -b "${BRANCH}" "origin/${BRANCH}"
 fi
 
-git pull --ff-only origin "${BRANCH}"
+git reset --hard "origin/${BRANCH}"
+git clean -fd -e generated/ -e backend/config/.env
 
 mvn -f backend/pom.xml package -DskipTests
 
@@ -39,11 +39,11 @@ ln -sf "${JAR_PATH}" "${APP_DIR}/backend/target/app.jar"
 cd "${APP_DIR}/frontend"
 if [ -f package-lock.json ]; then
   npm ci || {
-    echo "npm ci failed, falling back to npm install because package-lock.json is out of sync."
-    npm install
+    echo "npm ci failed, falling back to npm install without rewriting package-lock.json."
+    npm install --no-package-lock
   }
 else
-  npm install
+  npm install --no-package-lock
 fi
 npm run build
 
