@@ -48,47 +48,39 @@ jobs:
           APP_DIR="${DEPLOY_PATH:-/opt/behind-the-smile}"
 
           ssh-keyscan -p "${PORT}" "${DEPLOY_HOST}" >> ~/.ssh/known_hosts
+          REMOTE_SCRIPT="$(mktemp)"
+          cat > "${REMOTE_SCRIPT}" <<'REMOTE'
+          set -Eeuo pipefail
+
+          cd "${APP_DIR}"
+          git fetch origin "${DEPLOY_BRANCH}"
+
+          if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+            echo "Server checkout has local changes. Saving them before deploy."
+            git stash push -u -m "auto-stash before workflow deploy $(date -Iseconds)" || true
+          fi
+
+          if git show-ref --verify --quiet "refs/heads/${DEPLOY_BRANCH}"; then
+            git checkout "${DEPLOY_BRANCH}"
+          else
+            git checkout -b "${DEPLOY_BRANCH}" "origin/${DEPLOY_BRANCH}"
+          fi
+
+          git reset --hard "origin/${DEPLOY_BRANCH}"
+          git clean -fd -e generated/ -e backend/config/.env
+
+          chmod +x "${APP_DIR}/scripts/deploy-production.sh"
+          bash "${APP_DIR}/scripts/deploy-production.sh" "${DEPLOY_BRANCH}"
+          REMOTE
 
           if [ -n "${DEPLOY_PASSWORD}" ]; then
             sudo apt-get update
             sudo apt-get install -y sshpass
             sshpass -p "${DEPLOY_PASSWORD}" ssh -p "${PORT}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-              "APP_DIR='${APP_DIR}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' bash -s" <<'EOF'
-          set -Eeuo pipefail
-          cd "${APP_DIR}"
-          git fetch origin "${DEPLOY_BRANCH}"
-          if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
-            echo "Server checkout has local changes. Saving them to git stash before deploy."
-            git stash push -u -m "auto-stash before workflow deploy $(date -Iseconds)" || true
-          fi
-          if git show-ref --verify --quiet "refs/heads/${DEPLOY_BRANCH}"; then
-            git checkout "${DEPLOY_BRANCH}"
-          else
-            git checkout -b "${DEPLOY_BRANCH}" "origin/${DEPLOY_BRANCH}"
-          fi
-          git reset --hard "origin/${DEPLOY_BRANCH}"
-          git clean -fd -e generated/ -e backend/config/.env
-          bash "${APP_DIR}/scripts/deploy-production.sh" "${DEPLOY_BRANCH}"
-          EOF
+              "APP_DIR='${APP_DIR}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' bash -s" < "${REMOTE_SCRIPT}"
           else
             printf '%s\n' "${DEPLOY_SSH_KEY}" > ~/.ssh/deploy_key
             chmod 600 ~/.ssh/deploy_key
             ssh -i ~/.ssh/deploy_key -p "${PORT}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-              "APP_DIR='${APP_DIR}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' bash -s" <<'EOF'
-          set -Eeuo pipefail
-          cd "${APP_DIR}"
-          git fetch origin "${DEPLOY_BRANCH}"
-          if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
-            echo "Server checkout has local changes. Saving them to git stash before deploy."
-            git stash push -u -m "auto-stash before workflow deploy $(date -Iseconds)" || true
-          fi
-          if git show-ref --verify --quiet "refs/heads/${DEPLOY_BRANCH}"; then
-            git checkout "${DEPLOY_BRANCH}"
-          else
-            git checkout -b "${DEPLOY_BRANCH}" "origin/${DEPLOY_BRANCH}"
-          fi
-          git reset --hard "origin/${DEPLOY_BRANCH}"
-          git clean -fd -e generated/ -e backend/config/.env
-          bash "${APP_DIR}/scripts/deploy-production.sh" "${DEPLOY_BRANCH}"
-          EOF
+              "APP_DIR='${APP_DIR}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' bash -s" < "${REMOTE_SCRIPT}"
           fi
