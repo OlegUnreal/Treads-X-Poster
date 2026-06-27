@@ -38,7 +38,10 @@ ln -sf "${JAR_PATH}" "${APP_DIR}/backend/target/app.jar"
 
 cd "${APP_DIR}/frontend"
 if [ -f package-lock.json ]; then
-  npm ci
+  npm ci || {
+    echo "npm ci failed, falling back to npm install because package-lock.json is out of sync."
+    npm install
+  }
 else
   npm install
 fi
