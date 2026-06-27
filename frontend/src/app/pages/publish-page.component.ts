@@ -1,0 +1,263 @@
+import { AsyncPipe, NgFor, NgIf } from '@angular/common';
+import { Component, inject } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { BrowserXPublishRequest, QueuePost } from '../models/dashboard.models';
+import { DashboardService } from '../services/dashboard.service';
+import { AdminUiStateService } from '../services/admin-ui-state.service';
+
+@Component({
+  selector: 'app-publish-page',
+  standalone: true,
+  imports: [AsyncPipe, NgFor, NgIf, FormsModule],
+  template: `
+    <section class="page" *ngIf="ui.vm$ | async as vm">
+      <header class="page-head">
+        <div>
+          <p class="eyebrow">Send Posts</p>
+          <h1>Publish</h1>
+          <p>Only the actions related to posting live here.</p>
+        </div>
+      </header>
+
+      <section class="grid">
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Quick Publish</h2>
+            <p>The shortest path when you just want one post to go out now.</p>
+          </div>
+          <div class="focus-actions">
+            <button type="button" (click)="publishThreadNow()">Publish 1 Thread</button>
+            <button type="button" (click)="publishXNow()">Publish 1 X Post</button>
+          </div>
+          <div class="actions split">
+            <button type="button" class="ghost" (click)="showSupportActions = !showSupportActions">
+              {{ showSupportActions ? 'Hide Support Actions' : 'Show Support Actions' }}
+            </button>
+          </div>
+          <div class="support-actions" *ngIf="showSupportActions">
+            <div class="actions">
+              <button type="button" class="secondary" (click)="runDailyNow()">Run Daily Now</button>
+              <button type="button" class="secondary" (click)="generateMorePosts()">Generate More Posts</button>
+              <button type="button" class="secondary" (click)="attachOpenImages()">Attach Open Photos To Queue</button>
+            </div>
+          </div>
+          <p class="feedback" *ngIf="ui.actionResult$ | async as result" [class.error]="!result.success">
+            <strong>{{ result.command }}</strong>
+            <span>{{ result.message }}</span>
+          </p>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h2>X Composer</h2>
+            <p>One clean flow: choose a queued post, review it, then send it.</p>
+          </div>
+          <ol class="steps">
+            <li>Choose a queued X post or keep manual text.</li>
+            <li>Review the text below.</li>
+            <li>Use Send With Selenium.</li>
+          </ol>
+          <div class="form-grid compact">
+            <label class="wide">
+              <span>Step 1: Choose Queue Post</span>
+              <select [ngModel]="selectedXPostId" (ngModelChange)="selectXPostById($event, vm.queue)">
+                <option [ngValue]="null">Manual text only</option>
+                <option *ngFor="let post of ui.xReadyPosts(vm.queue)" [ngValue]="post.id">
+                  {{ post.topic || 'Untitled' }} - {{ post.id }}
+                </option>
+              </select>
+            </label>
+            <label class="wide">
+              <span>Step 2: Review Text</span>
+              <textarea [(ngModel)]="xComposerText" rows="8"></textarea>
+            </label>
+          </div>
+          <div class="focus-actions single-column">
+            <button type="button" (click)="sendWithSelenium()">Step 3: Send With Selenium</button>
+          </div>
+          <div class="actions split">
+            <button type="button" class="ghost" (click)="showFallbackActions = !showFallbackActions">
+              {{ showFallbackActions ? 'Hide Fallback Options' : 'Show Fallback Options' }}
+            </button>
+          </div>
+          <div class="support-actions" *ngIf="showFallbackActions">
+            <div class="actions">
+              <button type="button" class="secondary" (click)="openXComposer()">Open X Window</button>
+              <button type="button" class="secondary" (click)="openXLoginBrowser()">Open Selenium Login</button>
+            </div>
+          </div>
+        </article>
+      </section>
+    </section>
+  `,
+  styles: [`
+    :host { display: block; }
+    .page { display: grid; gap: 24px; }
+    .page-head p, .panel-head p { color: #52606d; font: 500 16px/1.6 "Segoe UI", sans-serif; margin: 10px 0 0; }
+    .eyebrow { margin: 0 0 10px; text-transform: uppercase; letter-spacing: 0.14em; font: 700 12px/1.2 "Segoe UI", sans-serif; color: #8a5a24; }
+    h1 { margin: 0; font-size: clamp(2.1rem, 4vw, 3.4rem); }
+    .grid { display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 18px; }
+    .panel {
+      padding: 24px;
+      background: rgba(255,255,255,0.78);
+      border: 1px solid rgba(31,41,51,0.08);
+      border-radius: 24px;
+      box-shadow: 0 24px 50px rgba(69,58,42,0.12);
+    }
+    .panel-head h2 { margin: 0; font-size: 28px; }
+    .focus-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 18px;
+    }
+    .focus-actions.single-column { grid-template-columns: 1fr; }
+    .actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+    .actions.split { grid-template-columns: 1fr; }
+    .support-actions {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px dashed rgba(31,41,51,0.12);
+    }
+    .steps {
+      margin: 18px 0 0;
+      padding-left: 18px;
+      color: #52606d;
+      font: 500 14px/1.7 "Segoe UI", sans-serif;
+      display: grid;
+      gap: 4px;
+    }
+    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
+    .form-grid.compact { margin-top: 16px; }
+    .wide { grid-column: 1 / -1; }
+    .form-grid label { display: grid; gap: 8px; }
+    .form-grid span { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: #52606d; font-family: "Segoe UI", sans-serif; }
+    .form-grid input, .form-grid select, .form-grid textarea {
+      width: 100%;
+      border: 1px solid rgba(31,41,51,0.12);
+      border-radius: 14px;
+      padding: 12px 14px;
+      background: rgba(255,255,255,0.92);
+      color: #243b53;
+      font: 500 14px/1.5 "Segoe UI", sans-serif;
+      resize: vertical;
+    }
+    button {
+      border: 0;
+      border-radius: 18px;
+      padding: 14px 16px;
+      font: 700 14px/1.2 "Segoe UI", sans-serif;
+      background: linear-gradient(135deg, #1f6feb, #0f766e);
+      color: white;
+      cursor: pointer;
+      box-shadow: 0 16px 30px rgba(21, 48, 74, 0.2);
+    }
+    button.ghost {
+      background: rgba(255,255,255,0.92);
+      color: #243b53;
+      border: 1px solid rgba(31,41,51,0.12);
+      box-shadow: none;
+    }
+    button.secondary { background: linear-gradient(135deg, #8a5a24, #9a3412); }
+    .feedback {
+      margin: 18px 0 0;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: rgba(15,118,110,0.09);
+      color: #0f5132;
+      font: 600 14px/1.5 "Segoe UI", sans-serif;
+      display: grid; gap: 4px;
+    }
+    .feedback.error { background: rgba(154,52,18,0.09); color: #7c2d12; }
+    @media (max-width: 900px) { .grid, .actions, .form-grid { grid-template-columns: 1fr; } }
+  `]
+})
+export class PublishPageComponent {
+  protected readonly ui = inject(AdminUiStateService);
+  private readonly dashboardService = inject(DashboardService);
+
+  protected showSupportActions = false;
+  protected showFallbackActions = false;
+  protected selectedXPostId: string | null = null;
+  protected xComposerText = '';
+
+  protected runDailyNow(): void {
+    this.dashboardService.runDaily().subscribe((result) => this.ui.pushActionResult(result));
+  }
+
+  protected generateMorePosts(): void {
+    this.dashboardService.runAutoCreate().subscribe((result) => this.ui.pushActionResult(result));
+  }
+
+  protected attachOpenImages(): void {
+    this.dashboardService.attachOpenImages().subscribe((result) => this.ui.pushActionResult(result));
+  }
+
+  protected publishThreadNow(): void {
+    this.dashboardService.publishThread().subscribe((result) => this.ui.pushActionResult(result));
+  }
+
+  protected publishXNow(): void {
+    this.dashboardService.publishX().subscribe((result) => this.ui.pushActionResult(result));
+  }
+
+  protected openXComposer(): void {
+    if (!this.xComposerText.trim()) {
+      this.ui.pushActionResult({
+        success: false,
+        command: 'open-x-composer',
+        message: 'Enter or select text for the X composer first.'
+      });
+      return;
+    }
+
+    const url = `https://x.com/intent/tweet?text=${encodeURIComponent(this.xComposerText.trim())}`;
+    window.open(url, '_blank', 'noopener,noreferrer,width=760,height=840');
+    this.ui.pushActionResult({
+      success: true,
+      command: 'open-x-composer',
+      message: 'Opened X composer window with prefilled text.'
+    });
+  }
+
+  protected openXLoginBrowser(): void {
+    this.dashboardService.openXLoginBrowser().subscribe((result) => this.ui.pushActionResult(result));
+  }
+
+  protected sendWithSelenium(): void {
+    if (!this.xComposerText.trim()) {
+      this.ui.pushActionResult({
+        success: false,
+        command: 'publish-x-via-selenium',
+        message: 'Enter or select text for X first.'
+      });
+      return;
+    }
+
+    const payload: BrowserXPublishRequest = {
+      queuePostId: this.selectedXPostId,
+      text: this.ui.stripBom(this.xComposerText).trim(),
+      markPublished: true
+    };
+
+    this.dashboardService.publishXViaBrowser(payload).subscribe((result) => {
+      if (result.success) {
+        this.selectedXPostId = null;
+        this.xComposerText = '';
+      }
+      this.ui.pushActionResult(result);
+    });
+  }
+
+  protected selectXPostById(id: string | null, queue: QueuePost[]): void {
+    this.selectedXPostId = id;
+    if (!id) {
+      return;
+    }
+
+    const selected = this.ui.xReadyPosts(queue).find((post) => post.id === id);
+    if (selected) {
+      this.xComposerText = selected.text ?? '';
+    }
+  }
+}

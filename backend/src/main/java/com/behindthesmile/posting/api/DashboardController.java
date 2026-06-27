@@ -1,0 +1,131 @@
+package com.behindthesmile.posting.api;
+
+import com.behindthesmile.posting.model.QueuedPost;
+import com.behindthesmile.posting.service.SocialPostingService;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api")
+@CrossOrigin(origins = {"http://localhost:4200", "http://127.0.0.1:4200"})
+public class DashboardController {
+    private final SocialPostingService socialPostingService;
+    private final com.behindthesmile.posting.service.PostingJobService postingJobService;
+
+    public DashboardController(
+            SocialPostingService socialPostingService,
+            com.behindthesmile.posting.service.PostingJobService postingJobService
+    ) {
+        this.socialPostingService = socialPostingService;
+        this.postingJobService = postingJobService;
+    }
+
+    @GetMapping("/health")
+    public Map<String, String> health() {
+        return Map.of("status", "ok");
+    }
+
+    @GetMapping("/summary")
+    public DashboardSummary summary() throws Exception {
+        DashboardSummary summary = socialPostingService.getDashboardSummary();
+        return new DashboardSummary(
+                summary.queueReady(),
+                summary.threadsReady(),
+                summary.xReady(),
+                summary.postingStatus(),
+                summary.lastDailyMessage(),
+                summary.lastThreadsMessage(),
+                socialPostingService.getPublisherAccountSummary(),
+                postingJobService.status()
+        );
+    }
+
+    @GetMapping("/queue")
+    public List<QueuedPost> queue() throws Exception {
+        return socialPostingService.getQueue();
+    }
+
+    @PostMapping("/queue")
+    public QueuedPost createQueuePost(@RequestBody QueuePostUpsertRequest request) throws Exception {
+        return socialPostingService.createQueuedPost(request);
+    }
+
+    @PutMapping("/queue/{id}")
+    public QueuedPost updateQueuePost(@PathVariable String id, @RequestBody QueuePostUpsertRequest request) throws Exception {
+        return socialPostingService.updateQueuedPost(id, request);
+    }
+
+    @PostMapping("/queue/{id}/mark-published/{platform}")
+    public ActionResult markQueuePostPublished(@PathVariable String id, @PathVariable String platform) {
+        return socialPostingService.markQueuedPostPublishedManually(id, platform);
+    }
+
+    @PostMapping("/generate")
+    public GeneratePromptResponse generate(@RequestBody GeneratePromptRequest request) throws Exception {
+        return socialPostingService.generateFromCustomPrompt(request);
+    }
+
+    @PostMapping("/actions/daily")
+    public ActionResult runDaily() {
+        return socialPostingService.runDailyNow();
+    }
+
+    @PostMapping("/actions/auto-create")
+    public ActionResult runAutoCreate() {
+        return socialPostingService.runAutoCreateNow();
+    }
+
+    @PostMapping("/actions/publish-thread")
+    public ActionResult runPublishThread() {
+        return socialPostingService.runPublishThreadNow();
+    }
+
+    @PostMapping("/actions/publish-x")
+    public ActionResult runPublishX() {
+        return socialPostingService.runPublishXNow();
+    }
+
+    @PostMapping("/actions/publish-x-browser")
+    public ActionResult runPublishXBrowser(@RequestBody(required = false) BrowserXPublishRequest request) {
+        return socialPostingService.runPublishXViaBrowser(request);
+    }
+
+    @PostMapping("/actions/open-x-login-browser")
+    public ActionResult openXLoginBrowser() {
+        return socialPostingService.openXLoginBrowser();
+    }
+
+    @PostMapping("/actions/attach-open-images")
+    public ActionResult attachOpenImages() {
+        return socialPostingService.attachImagesToReadyQueue();
+    }
+
+    @GetMapping("/job")
+    public PostingJobStatus jobStatus() {
+        return postingJobService.status();
+    }
+
+    @PostMapping("/job/start")
+    public ActionResult startJob(@RequestBody(required = false) PostingJobRequest request) {
+        return postingJobService.start(request);
+    }
+
+    @PutMapping("/job")
+    public ActionResult updateJob(@RequestBody(required = false) PostingJobRequest request) {
+        return postingJobService.update(request);
+    }
+
+    @PostMapping("/job/stop")
+    public ActionResult stopJob() {
+        return postingJobService.stop();
+    }
+}

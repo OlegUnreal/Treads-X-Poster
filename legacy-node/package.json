@@ -1,0 +1,24 @@
+{
+  "name": "bts-twitter-threads",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Generate social posts with OpenAI and publish them to X and Threads.",
+  "scripts": {
+    "start": "node src/cli.js",
+    "draft": "node src/cli.js draft",
+    "publish": "node src/cli.js publish",
+    "compose-x": "node src/cli.js compose-x",
+    "compose-queued-x": "node src/cli.js compose-queued-x",
+    "build-x-links": "node src/cli.js build-x-links",
+    "publish-queued-threads": "node src/cli.js publish-queued-threads",
+    "auto-create": "node src/cli.js auto-create",
+    "daily": "node src/cli.js daily",
+    "x:auth": "node src/x-oauth.js",
+    "threads:auth": "node src/threads-oauth.js",
+    "check": "node --check src/cli.js && node --check src/config.js && node --check src/openai.js && node --check src/publisher.js && node --check src/automation.js && node --check src/platforms/x.js && node --check src/platforms/threads.js && node --check src/x-oauth.js && node --check src/threads-oauth.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

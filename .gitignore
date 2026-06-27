@@ -1,0 +1,7 @@
+backend/config/.env
+node_modules/
+generated/
+*.log
+backend/target/
+frontend/dist/
+frontend/.angular/
