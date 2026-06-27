@@ -35,11 +35,11 @@ import java.util.Map;
 public class XBrowserAutomationService {
     private static final Logger log = LoggerFactory.getLogger(XBrowserAutomationService.class);
 
-    private final AppProperties appProperties;
+    private final AccountConfigService accountConfigService;
     private final HttpService httpService;
 
-    public XBrowserAutomationService(AppProperties appProperties, HttpService httpService) {
-        this.appProperties = appProperties;
+    public XBrowserAutomationService(AccountConfigService accountConfigService, HttpService httpService) {
+        this.accountConfigService = accountConfigService;
         this.httpService = httpService;
     }
 
@@ -56,7 +56,11 @@ public class XBrowserAutomationService {
         WebDriver driver = createDriver();
         try {
             WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(25));
-            log.info("X Selenium publish started. Browser={}, headless={}", appProperties.x().browser(), appProperties.x().browserHeadless());
+            AppProperties.Account account = accountConfigService.activeAccount();
+            log.info("X Selenium publish started. Account={}, Browser={}, headless={}",
+                    account.id(),
+                    account.x().browser(),
+                    account.x().browserHeadless());
             driver.get("https://x.com/compose/post");
             log.info("Opened X compose page. Current URL={}", driver.getCurrentUrl());
 
@@ -92,8 +96,9 @@ public class XBrowserAutomationService {
 
             return Map.of(
                     "platform", "x",
+                    "accountId", accountConfigService.activeAccount().id(),
                     "mode", "selenium",
-                    "browser", appProperties.x().browser(),
+                    "browser", accountConfigService.activeAccount().x().browser(),
                     "status", "posted",
                     "imageAttached", downloadedImage != null
             );
@@ -108,8 +113,9 @@ public class XBrowserAutomationService {
         driver.get("https://x.com/home");
         return Map.of(
                 "platform", "x",
+                "accountId", accountConfigService.activeAccount().id(),
                 "mode", "selenium-login",
-                "browser", appProperties.x().browser(),
+                "browser", accountConfigService.activeAccount().x().browser(),
                 "status", "opened",
                 "message", "Selenium browser opened for X login. Keep it open and sign in there."
         );
@@ -120,8 +126,9 @@ public class XBrowserAutomationService {
     }
 
     private WebDriver createDriver(boolean detachBrowser) throws Exception {
-        String browser = appProperties.x().browser() == null ? "chrome" : appProperties.x().browser().trim().toLowerCase();
-        Path profilePath = Path.of(appProperties.x().browserProfileDir()).toAbsolutePath().normalize();
+        AppProperties.X x = accountConfigService.activeAccount().x();
+        String browser = x.browser() == null ? "chrome" : x.browser().trim().toLowerCase();
+        Path profilePath = Path.of(x.browserProfileDir()).toAbsolutePath().normalize();
         Files.createDirectories(profilePath);
 
         if ("edge".equals(browser)) {
@@ -133,7 +140,7 @@ public class XBrowserAutomationService {
             if (detachBrowser) {
                 options.setExperimentalOption("detach", true);
             }
-            if (appProperties.x().browserHeadless()) {
+            if (x.browserHeadless()) {
                 options.addArguments("--headless=new");
             }
             return new EdgeDriver(options);
@@ -147,7 +154,7 @@ public class XBrowserAutomationService {
         if (detachBrowser) {
             options.setExperimentalOption("detach", true);
         }
-        if (appProperties.x().browserHeadless()) {
+        if (x.browserHeadless()) {
             options.addArguments("--headless=new");
         }
         return new ChromeDriver(options);

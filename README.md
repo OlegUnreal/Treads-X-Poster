@@ -57,6 +57,31 @@ Human-readable account labels can also be set there:
 - `X_ACCOUNT_LABEL=@your_x_account`
 - `THREADS_ACCOUNT_LABEL=@your_threads_account`
 
+Multiple publishing profiles can be configured in the same `.env`. The UI can switch the active profile, and the selected profile is stored in `DATA_DIR/active-account.txt`.
+
+Example:
+
+```text
+SOCIAL_ACCOUNTS=main,second
+ACCOUNT_MAIN_LABEL=Main Behind The Smile
+ACCOUNT_MAIN_X_ACCOUNT_LABEL=@main_x
+ACCOUNT_MAIN_X_PUBLISH_MODE=selenium
+ACCOUNT_MAIN_X_BROWSER_PROFILE_DIR=../generated/selenium/main-chrome-profile
+ACCOUNT_MAIN_THREADS_ACCOUNT_LABEL=@main_threads
+ACCOUNT_MAIN_THREADS_ACCESS_TOKEN=
+ACCOUNT_MAIN_THREADS_USER_ID=
+
+ACCOUNT_SECOND_LABEL=Second project
+ACCOUNT_SECOND_X_ACCOUNT_LABEL=@second_x
+ACCOUNT_SECOND_X_PUBLISH_MODE=selenium
+ACCOUNT_SECOND_X_BROWSER_PROFILE_DIR=../generated/selenium/second-chrome-profile
+ACCOUNT_SECOND_THREADS_ACCOUNT_LABEL=@second_threads
+ACCOUNT_SECOND_THREADS_ACCESS_TOKEN=
+ACCOUNT_SECOND_THREADS_USER_ID=
+```
+
+Each X account should use its own `X_BROWSER_PROFILE_DIR`, because Selenium publishes from whichever X session is logged into that Chrome profile.
+
 Angular flow:
 
 ```powershell
@@ -113,6 +138,35 @@ Invoke-RestMethod http://localhost:8080/api/health
 ```
 
 The health response includes the active `DATA_DIR`, queue path, draft path, X links path, content plan path, and whether the data directory is writable.
+
+## Deploy
+
+The server deploy script lives at `scripts/deploy-production.sh`. On the server it expects the repository to be checked out at `/opt/behind-the-smile` by default.
+
+Manual deploy on the server:
+
+```bash
+/opt/behind-the-smile/scripts/deploy-production.sh main
+```
+
+Deploy another branch:
+
+```bash
+/opt/behind-the-smile/scripts/deploy-production.sh next-version
+```
+
+GitHub Actions can run the same script from `Deploy production`. Add these repository secrets first:
+
+- `DEPLOY_HOST` - server IP or domain.
+- `DEPLOY_USER` - SSH user, for example `root`.
+- `DEPLOY_SSH_KEY` - private SSH key that can access the server.
+- `DEPLOY_PORT` - optional, defaults to `22`.
+
+Optional repository variable:
+
+- `DEPLOY_PATH` - server checkout path, defaults to `/opt/behind-the-smile`.
+
+The workflow deploys automatically on pushes to `main`. It can also be started manually from the Actions tab and pointed at another branch.
 
 ## Important Notes
 

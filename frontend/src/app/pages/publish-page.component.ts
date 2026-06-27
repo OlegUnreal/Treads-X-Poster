@@ -25,6 +25,32 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
             <h2>Quick Publish</h2>
             <p>The shortest path when you just want one post to go out now.</p>
           </div>
+          <div class="account-switcher">
+            <label>
+              <span>Active Account</span>
+              <select
+                [ngModel]="vm.summary.publisherAccounts.activeAccountId"
+                (ngModelChange)="switchAccount($event)"
+              >
+                <option
+                  *ngFor="let account of vm.summary.publisherAccounts.availableAccounts"
+                  [ngValue]="account.id"
+                >
+                  {{ account.label }}
+                </option>
+              </select>
+            </label>
+            <dl>
+              <div>
+                <dt>X</dt>
+                <dd>{{ vm.summary.publisherAccounts.xAccountLabel }}</dd>
+              </div>
+              <div>
+                <dt>Threads</dt>
+                <dd>{{ vm.summary.publisherAccounts.threadsAccountLabel }}</dd>
+              </div>
+            </dl>
+          </div>
           <div class="focus-actions">
             <button type="button" (click)="publishThreadNow()">Publish 1 Thread</button>
             <button type="button" (click)="publishXNow()">Publish 1 X Post</button>
@@ -105,6 +131,39 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
       box-shadow: 0 24px 50px rgba(69,58,42,0.12);
     }
     .panel-head h2 { margin: 0; font-size: 28px; }
+    .account-switcher {
+      margin-top: 18px;
+      padding: 14px;
+      border: 1px solid rgba(31,41,51,0.10);
+      border-radius: 16px;
+      background: rgba(255,255,255,0.64);
+      display: grid;
+      gap: 12px;
+      font-family: "Segoe UI", sans-serif;
+    }
+    .account-switcher label { display: grid; gap: 8px; }
+    .account-switcher span, .account-switcher dt {
+      color: #52606d;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .account-switcher select {
+      width: 100%;
+      border: 1px solid rgba(31,41,51,0.12);
+      border-radius: 12px;
+      padding: 11px 12px;
+      background: white;
+      color: #243b53;
+      font: 700 14px/1.4 "Segoe UI", sans-serif;
+    }
+    .account-switcher dl { margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .account-switcher dd {
+      margin: 4px 0 0;
+      color: #243b53;
+      font: 700 14px/1.4 "Segoe UI", sans-serif;
+      overflow-wrap: anywhere;
+    }
     .focus-actions {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -191,6 +250,16 @@ export class PublishPageComponent {
 
   protected attachOpenImages(): void {
     this.dashboardService.attachOpenImages().subscribe((result) => this.ui.pushActionResult(result));
+  }
+
+  protected switchAccount(accountId: string): void {
+    this.dashboardService.switchActiveAccount(accountId).subscribe(() => {
+      this.ui.pushActionResult({
+        success: true,
+        command: 'switch-account',
+        message: `Active publishing account changed to ${accountId}.`
+      });
+    });
   }
 
   protected publishThreadNow(): void {

@@ -33,6 +33,10 @@ public class AppPathService {
         return Path.of(appProperties.runtime().contentPlanFile()).toAbsolutePath().normalize();
     }
 
+    public Path activeAccountPath() {
+        return dataPath(appProperties.runtime().activeAccountFile());
+    }
+
     public Path dataDir() {
         return Path.of(appProperties.runtime().dataDir()).toAbsolutePath().normalize();
     }
@@ -46,6 +50,7 @@ public class AppPathService {
         details.put("queuePath", queuePath().toString());
         details.put("draftPath", draftPath().toString());
         details.put("xLinksPath", xLinksPath().toString());
+        details.put("activeAccountPath", activeAccountPath().toString());
         details.put("contentPlanPath", contentPlanPath.toString());
         details.put("contentPlanExists", Files.exists(contentPlanPath));
         return details;

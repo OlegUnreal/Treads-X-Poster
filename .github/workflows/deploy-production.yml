@@ -1,0 +1,49 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Branch to deploy
+        required: true
+        default: main
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          DEPLOY_BRANCH: ${{ github.event.inputs.branch || github.ref_name }}
+        run: |
+          set -Eeuo pipefail
+
+          if [ -z "${DEPLOY_HOST}" ] || [ -z "${DEPLOY_USER}" ] || [ -z "${DEPLOY_SSH_KEY}" ]; then
+            echo "Missing DEPLOY_HOST, DEPLOY_USER, or DEPLOY_SSH_KEY repository secrets."
+            exit 1
+          fi
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${DEPLOY_SSH_KEY}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+          PORT="${DEPLOY_PORT:-22}"
+          APP_DIR="${DEPLOY_PATH:-/opt/behind-the-smile}"
+
+          ssh-keyscan -p "${PORT}" "${DEPLOY_HOST}" >> ~/.ssh/known_hosts
+
+          ssh -i ~/.ssh/deploy_key -p "${PORT}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "APP_DIR='${APP_DIR}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' bash '${APP_DIR}/scripts/deploy-production.sh' '${DEPLOY_BRANCH}'"

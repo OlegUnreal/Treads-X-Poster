@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
+  AccountSelectionResponse,
   ActionResult,
   BrowserXPublishRequest,
   GeneratePromptRequest,
@@ -22,6 +23,14 @@ export class DashboardService {
 
   getSummary(): Observable<RunSummary> {
     return this.http.get<RunSummary>(`${API_BASE_URL}/summary`);
+  }
+
+  getAccounts(): Observable<AccountSelectionResponse> {
+    return this.http.get<AccountSelectionResponse>(`${API_BASE_URL}/accounts`);
+  }
+
+  switchActiveAccount(accountId: string): Observable<AccountSelectionResponse> {
+    return this.http.put<AccountSelectionResponse>(`${API_BASE_URL}/accounts/active`, { accountId });
   }
 
   getQueue(): Observable<QueuePost[]> {

@@ -24,14 +24,15 @@ public class ThreadsService {
 
     private final HttpService httpService;
     private final ObjectMapper objectMapper;
-    private final AppProperties appProperties;
+    private final AccountConfigService accountConfigService;
     private Instant cachedProfileAt;
     private String cachedAccountLabel;
+    private String cachedAccountId;
 
-    public ThreadsService(HttpService httpService, ObjectMapper objectMapper, AppProperties appProperties) {
+    public ThreadsService(HttpService httpService, ObjectMapper objectMapper, AccountConfigService accountConfigService) {
         this.httpService = httpService;
         this.objectMapper = objectMapper;
-        this.appProperties = appProperties;
+        this.accountConfigService = accountConfigService;
     }
 
     public Map<String, Object> publishToThreads(String text) throws IOException, InterruptedException {
@@ -39,8 +40,10 @@ public class ThreadsService {
     }
 
     public Map<String, Object> publishToThreads(String text, String imageUrl) throws IOException, InterruptedException {
-        String accessToken = requireValue(appProperties.threads().accessToken(), "THREADS_ACCESS_TOKEN");
-        String userId = requireValue(appProperties.threads().userId(), "THREADS_USER_ID");
+        AppProperties.Account account = accountConfigService.activeAccount();
+        AppProperties.Threads threads = account.threads();
+        String accessToken = requireValue(threads.accessToken(), "THREADS_ACCESS_TOKEN for account " + account.id());
+        String userId = requireValue(threads.userId(), "THREADS_USER_ID for account " + account.id());
 
         String creationId = imageUrl == null || imageUrl.isBlank()
                 ? createTextContainer(accessToken, userId, text)
@@ -58,12 +61,16 @@ public class ThreadsService {
     }
 
     public synchronized String fetchCurrentAccountLabel() {
-        if (cachedAccountLabel != null && cachedProfileAt != null && cachedProfileAt.plus(PROFILE_CACHE_TTL).isAfter(Instant.now())) {
+        AppProperties.Account account = accountConfigService.activeAccount();
+        if (cachedAccountLabel != null
+                && account.id().equals(cachedAccountId)
+                && cachedProfileAt != null
+                && cachedProfileAt.plus(PROFILE_CACHE_TTL).isAfter(Instant.now())) {
             return cachedAccountLabel;
         }
 
-        String accessToken = appProperties.threads().accessToken();
-        String userId = appProperties.threads().userId();
+        String accessToken = account.threads().accessToken();
+        String userId = account.threads().userId();
         if (accessToken == null || accessToken.isBlank() || userId == null || userId.isBlank()) {
             return null;
         }
@@ -81,6 +88,7 @@ public class ThreadsService {
             }
 
             cachedAccountLabel = resolved;
+            cachedAccountId = account.id();
             cachedProfileAt = Instant.now();
             return resolved;
         } catch (Exception ignored) {

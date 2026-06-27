@@ -56,6 +56,16 @@ public class DashboardController {
         );
     }
 
+    @GetMapping("/accounts")
+    public AccountSelectionResponse accounts() {
+        return socialPostingService.getAccounts();
+    }
+
+    @PutMapping("/accounts/active")
+    public AccountSelectionResponse switchActiveAccount(@RequestBody ActiveAccountRequest request) throws Exception {
+        return socialPostingService.switchActiveAccount(request.accountId());
+    }
+
     @GetMapping("/queue")
     public List<QueuedPost> queue() throws Exception {
         return socialPostingService.getQueue();

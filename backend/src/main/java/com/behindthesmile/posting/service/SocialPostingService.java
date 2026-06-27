@@ -1,10 +1,12 @@
 package com.behindthesmile.posting.service;
 
 import com.behindthesmile.posting.api.ActionResult;
+import com.behindthesmile.posting.api.AccountSelectionResponse;
 import com.behindthesmile.posting.api.BrowserXPublishRequest;
 import com.behindthesmile.posting.api.DashboardSummary;
 import com.behindthesmile.posting.api.GeneratePromptRequest;
 import com.behindthesmile.posting.api.GeneratePromptResponse;
+import com.behindthesmile.posting.api.PublisherAccountOption;
 import com.behindthesmile.posting.api.PublisherAccountSummary;
 import com.behindthesmile.posting.api.QueuePostUpsertRequest;
 import com.behindthesmile.posting.config.AppProperties;
@@ -32,6 +34,7 @@ public class SocialPostingService {
     private final XService xService;
     private final XBrowserAutomationService xBrowserAutomationService;
     private final AppPathService appPathService;
+    private final AccountConfigService accountConfigService;
 
     public SocialPostingService(
             AppProperties appProperties,
@@ -42,7 +45,8 @@ public class SocialPostingService {
             ThreadsService threadsService,
             XService xService,
             XBrowserAutomationService xBrowserAutomationService,
-            AppPathService appPathService
+            AppPathService appPathService,
+            AccountConfigService accountConfigService
     ) {
         this.appProperties = appProperties;
         this.openAiService = openAiService;
@@ -53,6 +57,7 @@ public class SocialPostingService {
         this.xService = xService;
         this.xBrowserAutomationService = xBrowserAutomationService;
         this.appPathService = appPathService;
+        this.accountConfigService = accountConfigService;
     }
 
     public String draft(Map<String, String> args, boolean publish) throws Exception {
@@ -243,11 +248,23 @@ public class SocialPostingService {
     }
 
     public PublisherAccountSummary getPublisherAccountSummary() {
+        PublisherAccountOption active = accountConfigService.activeAccountOption();
         return new PublisherAccountSummary(
+                active.id(),
+                active.label(),
                 resolveXAccountLabel(),
-                resolveXModeLabel(),
-                resolveThreadsAccountLabel()
+                active.xModeLabel(),
+                resolveThreadsAccountLabel(),
+                accountConfigService.accountOptions()
         );
+    }
+
+    public AccountSelectionResponse getAccounts() {
+        return accountConfigService.selection();
+    }
+
+    public AccountSelectionResponse switchActiveAccount(String accountId) throws Exception {
+        return accountConfigService.switchActiveAccount(accountId);
     }
 
     public List<QueuedPost> getQueue() throws Exception {
@@ -508,7 +525,7 @@ public class SocialPostingService {
     }
 
     private Map<String, Object> publishXWithConfiguredMode(String text, String imageUrl) throws Exception {
-        String publishMode = firstNonBlank(appProperties.x().publishMode(), "api").trim().toLowerCase(Locale.ROOT);
+        String publishMode = firstNonBlank(accountConfigService.activeAccount().x().publishMode(), "api").trim().toLowerCase(Locale.ROOT);
         return switch (publishMode) {
             case "selenium" -> xBrowserAutomationService.publishToX(text, imageUrl);
             case "auto" -> {
@@ -535,13 +552,14 @@ public class SocialPostingService {
     }
 
     private String resolveXAccountLabel() {
-        if (appProperties.x().accountLabel() != null && !appProperties.x().accountLabel().isBlank()) {
-            return appProperties.x().accountLabel().trim();
+        AppProperties.X x = accountConfigService.activeAccount().x();
+        if (x.accountLabel() != null && !x.accountLabel().isBlank()) {
+            return x.accountLabel().trim();
         }
-        if ("selenium".equalsIgnoreCase(firstNonBlank(appProperties.x().publishMode(), "api"))) {
+        if ("selenium".equalsIgnoreCase(firstNonBlank(x.publishMode(), "api"))) {
             return "X account from Selenium browser profile";
         }
-        if (appProperties.x().accessToken() != null || appProperties.x().apiKey() != null) {
+        if (x.accessToken() != null || x.apiKey() != null) {
             return "Configured X account";
         }
         return "X account is not configured";
@@ -557,17 +575,18 @@ public class SocialPostingService {
     }
 
     private String resolveThreadsAccountLabel() {
-        if (appProperties.threads().accountLabel() != null && !appProperties.threads().accountLabel().isBlank()) {
-            return appProperties.threads().accountLabel().trim();
+        AppProperties.Threads threads = accountConfigService.activeAccount().threads();
+        if (threads.accountLabel() != null && !threads.accountLabel().isBlank()) {
+            return threads.accountLabel().trim();
         }
         String fetchedLabel = threadsService.fetchCurrentAccountLabel();
         if (fetchedLabel != null && !fetchedLabel.isBlank()) {
             return fetchedLabel;
         }
-        if (appProperties.threads().userId() != null && !appProperties.threads().userId().isBlank()) {
-            return "Threads user ID ending in " + trailing(appProperties.threads().userId(), 4);
+        if (threads.userId() != null && !threads.userId().isBlank()) {
+            return "Threads user ID ending in " + trailing(threads.userId(), 4);
         }
-        if (appProperties.threads().accessToken() != null && !appProperties.threads().accessToken().isBlank()) {
+        if (threads.accessToken() != null && !threads.accessToken().isBlank()) {
             return "Configured Threads account";
         }
         return "Threads account is not configured";
