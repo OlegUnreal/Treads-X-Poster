@@ -28,23 +28,24 @@ public class XService {
 
     private final HttpService httpService;
     private final ObjectMapper objectMapper;
-    private final AppProperties appProperties;
+    private final AccountConfigService accountConfigService;
     private final SecureRandom secureRandom = new SecureRandom();
 
-    public XService(HttpService httpService, ObjectMapper objectMapper, AppProperties appProperties) {
+    public XService(HttpService httpService, ObjectMapper objectMapper, AccountConfigService accountConfigService) {
         this.httpService = httpService;
         this.objectMapper = objectMapper;
-        this.appProperties = appProperties;
+        this.accountConfigService = accountConfigService;
     }
 
     public Map<String, Object> publishToX(String text) throws IOException, InterruptedException {
-        AppProperties.X x = appProperties.x();
+        AppProperties.Account account = accountConfigService.activeAccount();
+        AppProperties.X x = account.x();
 
         if (notBlank(x.apiKey()) && notBlank(x.apiSecret()) && notBlank(x.accessTokenSecret())) {
             return publishToXWithOAuth1(text, x);
         }
 
-        String accessToken = requireValue(x.accessToken(), "X_ACCESS_TOKEN");
+        String accessToken = requireValue(x.accessToken(), "X_ACCESS_TOKEN for account " + account.id());
         HttpRequest request = HttpRequest.newBuilder(URI.create(X_POST_URL))
                 .header("Authorization", "Bearer " + accessToken)
                 .header("Content-Type", "application/json")

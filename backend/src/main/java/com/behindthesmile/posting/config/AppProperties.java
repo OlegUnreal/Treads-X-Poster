@@ -1,9 +1,12 @@
 package com.behindthesmile.posting.config;
 
+import java.util.List;
+
 public record AppProperties(
         OpenAi openAi,
         Defaults defaults,
         Runtime runtime,
+        List<Account> accounts,
         X x,
         Threads threads
 ) {
@@ -16,7 +19,15 @@ public record AppProperties(
             String queueFile,
             String draftsFile,
             String xLinksFile,
-            String contentPlanFile
+            String contentPlanFile,
+            String activeAccountFile
+    ) {}
+
+    public record Account(
+            String id,
+            String label,
+            X x,
+            Threads threads
     ) {}
 
     public record X(

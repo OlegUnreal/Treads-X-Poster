@@ -10,9 +10,25 @@ export interface RunSummary {
 }
 
 export interface PublisherAccountSummary {
+  activeAccountId: string;
+  activeAccountLabel: string;
   xAccountLabel: string;
   xModeLabel: string;
   threadsAccountLabel: string;
+  availableAccounts: PublisherAccountOption[];
+}
+
+export interface PublisherAccountOption {
+  id: string;
+  label: string;
+  xAccountLabel: string;
+  xModeLabel: string;
+  threadsAccountLabel: string;
+}
+
+export interface AccountSelectionResponse {
+  activeAccountId: string;
+  accounts: PublisherAccountOption[];
 }
 
 export interface QueuePost {

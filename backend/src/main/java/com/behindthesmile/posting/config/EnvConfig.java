@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 @Configuration
 public class EnvConfig {
@@ -44,6 +45,18 @@ public class EnvConfig {
             }
         }
 
+        AppProperties.Runtime runtime = new AppProperties.Runtime(
+                values.getOrDefault("DATA_DIR", "../generated"),
+                values.getOrDefault("QUEUE_FILE", "queue.jsonl"),
+                values.getOrDefault("DRAFTS_FILE", "posts.jsonl"),
+                values.getOrDefault("X_LINKS_FILE", "x-ready.html"),
+                values.getOrDefault("CONTENT_PLAN_FILE", "config/content-plan.json"),
+                values.getOrDefault("ACTIVE_ACCOUNT_FILE", "active-account.txt")
+        );
+
+        AppProperties.X defaultX = buildX(values, "", runtime);
+        AppProperties.Threads defaultThreads = buildThreads(values, "");
+
         return new AppProperties(
                 new AppProperties.OpenAi(
                         values.get("OPENAI_API_KEY"),
@@ -55,40 +68,82 @@ public class EnvConfig {
                         values.getOrDefault("POST_TONE", "warm, fan-friendly, concise"),
                         Integer.parseInt(values.getOrDefault("POST_COUNT", "3"))
                 ),
-                new AppProperties.Runtime(
-                        values.getOrDefault("DATA_DIR", "../generated"),
-                        values.getOrDefault("QUEUE_FILE", "queue.jsonl"),
-                        values.getOrDefault("DRAFTS_FILE", "posts.jsonl"),
-                        values.getOrDefault("X_LINKS_FILE", "x-ready.html"),
-                        values.getOrDefault("CONTENT_PLAN_FILE", "config/content-plan.json")
+                runtime,
+                buildAccounts(values, runtime, defaultX, defaultThreads),
+                defaultX,
+                defaultThreads
+        );
+    }
+
+    private static List<AppProperties.Account> buildAccounts(
+            Map<String, String> values,
+            AppProperties.Runtime runtime,
+            AppProperties.X defaultX,
+            AppProperties.Threads defaultThreads
+    ) {
+        String accountIds = values.get("SOCIAL_ACCOUNTS");
+        if (accountIds == null || accountIds.isBlank()) {
+            return List.of(new AppProperties.Account(
+                    "default",
+                    firstNonBlank(values.get("ACCOUNT_LABEL"), "Default account"),
+                    defaultX,
+                    defaultThreads
+            ));
+        }
+
+        return Stream.of(accountIds.split(","))
+                .map(String::trim)
+                .filter(id -> !id.isBlank())
+                .map(id -> {
+                    String prefix = "ACCOUNT_" + normalizeAccountKey(id) + "_";
+                    AppProperties.X x = buildX(values, prefix, runtime);
+                    AppProperties.Threads threads = buildThreads(values, prefix);
+                    return new AppProperties.Account(
+                            id,
+                            firstNonBlank(values.get(prefix + "LABEL"), id),
+                            x,
+                            threads
+                    );
+                })
+                .toList();
+    }
+
+    private static AppProperties.X buildX(Map<String, String> values, String prefix, AppProperties.Runtime runtime) {
+        String profileSuffix = prefix.isBlank()
+                ? "chrome-profile"
+                : normalizeAccountKey(prefix.substring("ACCOUNT_".length(), prefix.length() - 1)).toLowerCase() + "-chrome-profile";
+        return new AppProperties.X(
+                firstNonBlank(
+                        values.get(prefix + "X_ACCOUNT_LABEL"),
+                        firstNonBlank(values.get(prefix + "TWITTER_ACCOUNT_LABEL"), values.get(prefix + "LABEL"))
                 ),
-                new AppProperties.X(
-                        firstNonBlank(values.get("X_ACCOUNT_LABEL"), values.get("TWITTER_ACCOUNT_LABEL")),
-                        values.get("X_ACCESS_TOKEN"),
-                        values.get("X_CLIENT_ID"),
-                        values.get("X_CLIENT_SECRET"),
-                        values.getOrDefault("X_REDIRECT_URI", "http://127.0.0.1:3000/callback"),
-                        values.getOrDefault("X_SCOPES", "tweet.read tweet.write users.read"),
-                        values.get("X_API_KEY"),
-                        values.get("X_API_SECRET"),
-                        values.get("X_ACCESS_TOKEN_SECRET"),
-                        values.get("X_REFRESH_TOKEN"),
-                        values.getOrDefault("X_PUBLISH_MODE", "api"),
-                        values.getOrDefault("X_BROWSER", "chrome"),
-                        values.getOrDefault(
-                                "X_BROWSER_PROFILE_DIR",
-                                Path.of(values.getOrDefault("DATA_DIR", "../generated"), "selenium", "chrome-profile").toString()
-                        ),
-                        Boolean.parseBoolean(values.getOrDefault("X_BROWSER_HEADLESS", "false"))
+                values.get(prefix + "X_ACCESS_TOKEN"),
+                values.get(prefix + "X_CLIENT_ID"),
+                values.get(prefix + "X_CLIENT_SECRET"),
+                values.getOrDefault(prefix + "X_REDIRECT_URI", "http://127.0.0.1:3000/callback"),
+                values.getOrDefault(prefix + "X_SCOPES", "tweet.read tweet.write users.read"),
+                values.get(prefix + "X_API_KEY"),
+                values.get(prefix + "X_API_SECRET"),
+                values.get(prefix + "X_ACCESS_TOKEN_SECRET"),
+                values.get(prefix + "X_REFRESH_TOKEN"),
+                values.getOrDefault(prefix + "X_PUBLISH_MODE", prefix.isBlank() ? values.getOrDefault("X_PUBLISH_MODE", "api") : "selenium"),
+                values.getOrDefault(prefix + "X_BROWSER", values.getOrDefault("X_BROWSER", "chrome")),
+                values.getOrDefault(
+                        prefix + "X_BROWSER_PROFILE_DIR",
+                        Path.of(runtime.dataDir(), "selenium", profileSuffix).toString()
                 ),
-                new AppProperties.Threads(
-                        values.get("THREADS_ACCOUNT_LABEL"),
-                        values.get("THREADS_ACCESS_TOKEN"),
-                        values.get("THREADS_USER_ID"),
-                        firstNonBlank(values.get("THREADS_APP_ID"), values.get("META_APP_ID")),
-                        firstNonBlank(values.get("THREADS_APP_SECRET"), values.get("META_APP_SECRET")),
-                        values.getOrDefault("THREADS_REDIRECT_URI", "http://127.0.0.1:3001/callback")
-                )
+                Boolean.parseBoolean(values.getOrDefault(prefix + "X_BROWSER_HEADLESS", values.getOrDefault("X_BROWSER_HEADLESS", "false")))
+        );
+    }
+
+    private static AppProperties.Threads buildThreads(Map<String, String> values, String prefix) {
+        return new AppProperties.Threads(
+                firstNonBlank(values.get(prefix + "THREADS_ACCOUNT_LABEL"), values.get(prefix + "LABEL")),
+                values.get(prefix + "THREADS_ACCESS_TOKEN"),
+                values.get(prefix + "THREADS_USER_ID"),
+                firstNonBlank(values.get(prefix + "THREADS_APP_ID"), values.get(prefix + "META_APP_ID")),
+                firstNonBlank(values.get(prefix + "THREADS_APP_SECRET"), values.get(prefix + "META_APP_SECRET")),
+                values.getOrDefault(prefix + "THREADS_REDIRECT_URI", "http://127.0.0.1:3001/callback")
         );
     }
 
@@ -106,5 +161,9 @@ public class EnvConfig {
             return first;
         }
         return second;
+    }
+
+    private static String normalizeAccountKey(String value) {
+        return value == null ? "" : value.trim().toUpperCase().replaceAll("[^A-Z0-9]", "_");
     }
 }

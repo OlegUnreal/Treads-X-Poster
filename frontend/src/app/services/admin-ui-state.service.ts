@@ -28,9 +28,12 @@ export class AdminUiStateService {
         lastDailyMessage: 'Loading dashboard...',
         lastThreadsMessage: 'Loading dashboard...',
         publisherAccounts: {
+          activeAccountId: 'loading',
+          activeAccountLabel: 'Loading...',
           xAccountLabel: 'Loading...',
           xModeLabel: 'Loading...',
-          threadsAccountLabel: 'Loading...'
+          threadsAccountLabel: 'Loading...',
+          availableAccounts: []
         },
         jobStatus: null
       },

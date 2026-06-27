@@ -1,12 +1,13 @@
-import { AsyncPipe, NgClass, NgIf } from '@angular/common';
+import { AsyncPipe, NgClass, NgFor, NgIf } from '@angular/common';
 import { Component, inject } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { DashboardService } from '../services/dashboard.service';
 import { AdminUiStateService } from '../services/admin-ui-state.service';
 
 @Component({
   selector: 'app-dashboard-page',
   standalone: true,
-  imports: [AsyncPipe, NgClass, NgIf],
+  imports: [AsyncPipe, FormsModule, NgClass, NgFor, NgIf],
   template: `
     <section class="page" *ngIf="ui.vm$ | async as vm">
       <header class="hero">
@@ -66,7 +67,25 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
             <h2>Current Accounts</h2>
             <p>So it is always clear where posts will be published from.</p>
           </div>
+          <label class="account-select">
+            <span>Active publishing profile</span>
+            <select
+              [ngModel]="vm.summary.publisherAccounts.activeAccountId"
+              (ngModelChange)="switchAccount($event)"
+            >
+              <option
+                *ngFor="let account of vm.summary.publisherAccounts.availableAccounts"
+                [ngValue]="account.id"
+              >
+                {{ account.label }}
+              </option>
+            </select>
+          </label>
           <dl class="signals account-signals">
+            <div>
+              <dt>Profile</dt>
+              <dd>{{ vm.summary.publisherAccounts.activeAccountLabel }}</dd>
+            </div>
             <div>
               <dt>X</dt>
               <dd>{{ vm.summary.publisherAccounts.xAccountLabel }}</dd>
@@ -174,6 +193,27 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
     }
     .feedback.error { background: rgba(154, 52, 18, 0.09); color: #7c2d12; }
     .signals { margin: 18px 0 0; display: grid; gap: 16px; font-family: "Segoe UI", sans-serif; }
+    .account-select {
+      margin-top: 18px;
+      display: grid;
+      gap: 8px;
+      font-family: "Segoe UI", sans-serif;
+    }
+    .account-select span {
+      color: #52606d;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .account-select select {
+      width: 100%;
+      border: 1px solid rgba(31,41,51,0.12);
+      border-radius: 14px;
+      padding: 12px 14px;
+      background: rgba(255,255,255,0.92);
+      color: #243b53;
+      font: 700 14px/1.5 "Segoe UI", sans-serif;
+    }
     .account-signals small {
       display: block;
       margin-top: 6px;
@@ -262,6 +302,16 @@ export class DashboardPageComponent {
 
   protected generateMorePosts(): void {
     this.dashboardService.runAutoCreate().subscribe((result) => this.ui.pushActionResult(result));
+  }
+
+  protected switchAccount(accountId: string): void {
+    this.dashboardService.switchActiveAccount(accountId).subscribe(() => {
+      this.ui.pushActionResult({
+        success: true,
+        command: 'switch-account',
+        message: `Active publishing account changed to ${accountId}.`
+      });
+    });
   }
 
   protected publishThreadNow(): void {
