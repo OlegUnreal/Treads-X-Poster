@@ -1,7 +1,10 @@
 import { AsyncPipe, NgFor, NgIf } from '@angular/common';
 import { Component, inject } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
-import { BrowserXPublishRequest, QueuePost } from '../models/dashboard.models';
+import { Observable } from 'rxjs';
+import { finalize } from 'rxjs/operators';
+import { ActionResult, BrowserXPublishRequest, QueuePost } from '../models/dashboard.models';
 import { DashboardService } from '../services/dashboard.service';
 import { AdminUiStateService } from '../services/admin-ui-state.service';
 
@@ -52,8 +55,12 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
             </dl>
           </div>
           <div class="focus-actions">
-            <button type="button" (click)="publishThreadNow()">Publish 1 Thread</button>
-            <button type="button" (click)="publishXNow()">Publish 1 X Post</button>
+            <button type="button" [disabled]="busyAction !== null" (click)="publishThreadNow()">
+              {{ busyAction === 'publish-thread' ? 'Publishing...' : 'Publish 1 Thread' }}
+            </button>
+            <button type="button" [disabled]="busyAction !== null" (click)="publishXNow()">
+              {{ busyAction === 'publish-x' ? 'Publishing...' : 'Publish 1 X Post' }}
+            </button>
           </div>
           <div class="actions split">
             <button type="button" class="ghost" (click)="showSupportActions = !showSupportActions">
@@ -62,9 +69,15 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
           </div>
           <div class="support-actions" *ngIf="showSupportActions">
             <div class="actions">
-              <button type="button" class="secondary" (click)="runDailyNow()">Run Daily Now</button>
-              <button type="button" class="secondary" (click)="generateMorePosts()">Generate More Posts</button>
-              <button type="button" class="secondary" (click)="attachOpenImages()">Attach Open Photos To Queue</button>
+              <button type="button" class="secondary" [disabled]="busyAction !== null" (click)="runDailyNow()">
+                {{ busyAction === 'daily' ? 'Running Daily...' : 'Run Daily Now' }}
+              </button>
+              <button type="button" class="secondary" [disabled]="busyAction !== null" (click)="generateMorePosts()">
+                {{ busyAction === 'auto-create' ? 'Generating...' : 'Generate More Posts' }}
+              </button>
+              <button type="button" class="secondary" [disabled]="busyAction !== null" (click)="attachOpenImages()">
+                {{ busyAction === 'attach-open-images' ? 'Attaching...' : 'Attach Open Photos To Queue' }}
+              </button>
             </div>
           </div>
           <p class="feedback" *ngIf="ui.actionResult$ | async as result" [class.error]="!result.success">
@@ -99,7 +112,9 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
             </label>
           </div>
           <div class="focus-actions single-column">
-            <button type="button" (click)="sendWithSelenium()">Step 3: Send With Selenium</button>
+            <button type="button" [disabled]="busyAction !== null" (click)="sendWithSelenium()">
+              {{ busyAction === 'publish-x-via-selenium' ? 'Sending...' : 'Step 3: Send With Selenium' }}
+            </button>
           </div>
           <div class="actions split">
             <button type="button" class="ghost" (click)="showFallbackActions = !showFallbackActions">
@@ -109,7 +124,9 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
           <div class="support-actions" *ngIf="showFallbackActions">
             <div class="actions">
               <button type="button" class="secondary" (click)="openXComposer()">Open X Window</button>
-              <button type="button" class="secondary" (click)="openXLoginBrowser()">Open Selenium Login</button>
+              <button type="button" class="secondary" [disabled]="busyAction !== null" (click)="openXLoginBrowser()">
+                {{ busyAction === 'open-x-login-browser' ? 'Opening...' : 'Open Selenium Login' }}
+              </button>
             </div>
           </div>
         </article>
@@ -218,6 +235,11 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
       box-shadow: none;
     }
     button.secondary { background: linear-gradient(135deg, #8a5a24, #9a3412); }
+    button:disabled {
+      cursor: wait;
+      opacity: 0.62;
+      box-shadow: none;
+    }
     .feedback {
       margin: 18px 0 0;
       padding: 12px 14px;
@@ -239,17 +261,18 @@ export class PublishPageComponent {
   protected showFallbackActions = false;
   protected selectedXPostId: string | null = null;
   protected xComposerText = '';
+  protected busyAction: string | null = null;
 
   protected runDailyNow(): void {
-    this.dashboardService.runDaily().subscribe((result) => this.ui.pushActionResult(result));
+    this.runAction('daily', this.dashboardService.runDaily());
   }
 
   protected generateMorePosts(): void {
-    this.dashboardService.runAutoCreate().subscribe((result) => this.ui.pushActionResult(result));
+    this.runAction('auto-create', this.dashboardService.runAutoCreate());
   }
 
   protected attachOpenImages(): void {
-    this.dashboardService.attachOpenImages().subscribe((result) => this.ui.pushActionResult(result));
+    this.runAction('attach-open-images', this.dashboardService.attachOpenImages());
   }
 
   protected switchAccount(accountId: string): void {
@@ -263,11 +286,11 @@ export class PublishPageComponent {
   }
 
   protected publishThreadNow(): void {
-    this.dashboardService.publishThread().subscribe((result) => this.ui.pushActionResult(result));
+    this.runAction('publish-thread', this.dashboardService.publishThread());
   }
 
   protected publishXNow(): void {
-    this.dashboardService.publishX().subscribe((result) => this.ui.pushActionResult(result));
+    this.runAction('publish-x', this.dashboardService.publishX());
   }
 
   protected openXComposer(): void {
@@ -290,7 +313,7 @@ export class PublishPageComponent {
   }
 
   protected openXLoginBrowser(): void {
-    this.dashboardService.openXLoginBrowser().subscribe((result) => this.ui.pushActionResult(result));
+    this.runAction('open-x-login-browser', this.dashboardService.openXLoginBrowser());
   }
 
   protected sendWithSelenium(): void {
@@ -309,12 +332,11 @@ export class PublishPageComponent {
       markPublished: true
     };
 
-    this.dashboardService.publishXViaBrowser(payload).subscribe((result) => {
+    this.runAction('publish-x-via-selenium', this.dashboardService.publishXViaBrowser(payload), (result) => {
       if (result.success) {
         this.selectedXPostId = null;
         this.xComposerText = '';
       }
-      this.ui.pushActionResult(result);
     });
   }
 
@@ -328,5 +350,35 @@ export class PublishPageComponent {
     if (selected) {
       this.xComposerText = selected.text ?? '';
     }
+  }
+
+  private runAction(command: string, request$: Observable<ActionResult>, onResult?: (result: ActionResult) => void): void {
+    if (this.busyAction !== null) {
+      return;
+    }
+
+    this.busyAction = command;
+    request$
+      .pipe(finalize(() => this.busyAction = null))
+      .subscribe({
+        next: (result) => {
+          onResult?.(result);
+          this.ui.pushActionResult(result);
+        },
+        error: (error: HttpErrorResponse) => {
+          this.ui.pushActionResult({
+            success: false,
+            command,
+            message: this.describeHttpError(error)
+          });
+        }
+      });
+  }
+
+  private describeHttpError(error: HttpErrorResponse): string {
+    const message = typeof error.error === 'string'
+      ? error.error
+      : error.error?.message || error.message;
+    return `Request failed (${error.status || 'network'}): ${message || 'Please try again.'}`;
   }
 }

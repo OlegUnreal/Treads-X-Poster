@@ -1,6 +1,10 @@
 import { AsyncPipe, NgClass, NgFor, NgIf } from '@angular/common';
 import { Component, inject } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
+import { Observable } from 'rxjs';
+import { finalize } from 'rxjs/operators';
+import { ActionResult } from '../models/dashboard.models';
 import { DashboardService } from '../services/dashboard.service';
 import { AdminUiStateService } from '../services/admin-ui-state.service';
 
@@ -51,10 +55,18 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
             <p>Only the core actions live here.</p>
           </div>
           <div class="actions">
-            <button type="button" (click)="runDailyNow()">Run Daily Now</button>
-            <button type="button" (click)="generateMorePosts()">Generate More Posts</button>
-            <button type="button" (click)="publishThreadNow()">Publish 1 Thread</button>
-            <button type="button" (click)="publishXNow()">Publish 1 X Post</button>
+            <button type="button" [disabled]="busyAction !== null" (click)="runDailyNow()">
+              {{ busyAction === 'daily' ? 'Running Daily...' : 'Run Daily Now' }}
+            </button>
+            <button type="button" [disabled]="busyAction !== null" (click)="generateMorePosts()">
+              {{ busyAction === 'auto-create' ? 'Generating...' : 'Generate More Posts' }}
+            </button>
+            <button type="button" [disabled]="busyAction !== null" (click)="publishThreadNow()">
+              {{ busyAction === 'publish-thread' ? 'Publishing...' : 'Publish 1 Thread' }}
+            </button>
+            <button type="button" [disabled]="busyAction !== null" (click)="publishXNow()">
+              {{ busyAction === 'publish-x' ? 'Publishing...' : 'Publish 1 X Post' }}
+            </button>
           </div>
           <p class="feedback" *ngIf="ui.actionResult$ | async as result" [ngClass]="{ error: !result.success }">
             <strong>{{ result.command }}</strong>
@@ -181,6 +193,11 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
       cursor: pointer;
       box-shadow: 0 16px 30px rgba(21, 48, 74, 0.2);
     }
+    button:disabled {
+      cursor: wait;
+      opacity: 0.62;
+      box-shadow: none;
+    }
     .feedback {
       margin: 18px 0 0;
       padding: 12px 14px;
@@ -238,6 +255,7 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
 export class DashboardPageComponent {
   protected readonly ui = inject(AdminUiStateService);
   private readonly dashboardService = inject(DashboardService);
+  protected busyAction: string | null = null;
 
   protected compactSummary(message: string | null | undefined, fallback: string): string {
     const normalized = this.normalizeMessage(message);
@@ -297,11 +315,11 @@ export class DashboardPageComponent {
   }
 
   protected runDailyNow(): void {
-    this.dashboardService.runDaily().subscribe((result) => this.ui.pushActionResult(result));
+    this.runAction('daily', this.dashboardService.runDaily());
   }
 
   protected generateMorePosts(): void {
-    this.dashboardService.runAutoCreate().subscribe((result) => this.ui.pushActionResult(result));
+    this.runAction('auto-create', this.dashboardService.runAutoCreate());
   }
 
   protected switchAccount(accountId: string): void {
@@ -315,10 +333,37 @@ export class DashboardPageComponent {
   }
 
   protected publishThreadNow(): void {
-    this.dashboardService.publishThread().subscribe((result) => this.ui.pushActionResult(result));
+    this.runAction('publish-thread', this.dashboardService.publishThread());
   }
 
   protected publishXNow(): void {
-    this.dashboardService.publishX().subscribe((result) => this.ui.pushActionResult(result));
+    this.runAction('publish-x', this.dashboardService.publishX());
+  }
+
+  private runAction(command: string, request$: Observable<ActionResult>): void {
+    if (this.busyAction !== null) {
+      return;
+    }
+
+    this.busyAction = command;
+    request$
+      .pipe(finalize(() => this.busyAction = null))
+      .subscribe({
+        next: (result) => this.ui.pushActionResult(result),
+        error: (error: HttpErrorResponse) => {
+          this.ui.pushActionResult({
+            success: false,
+            command,
+            message: this.describeHttpError(error)
+          });
+        }
+      });
+  }
+
+  private describeHttpError(error: HttpErrorResponse): string {
+    const message = typeof error.error === 'string'
+      ? error.error
+      : error.error?.message || error.message;
+    return `Request failed (${error.status || 'network'}): ${message || 'Please try again.'}`;
   }
 }
