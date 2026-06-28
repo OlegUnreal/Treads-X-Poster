@@ -26,6 +26,21 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
             <p>Ask OpenAI for a few fresh post ideas in your current voice.</p>
           </div>
 
+          <div class="prompt-presets">
+            <label>
+              <span>Prompt Template</span>
+              <select [(ngModel)]="selectedPromptTemplateId">
+                <option *ngFor="let template of promptTemplates" [ngValue]="template.id">
+                  {{ template.title }}
+                </option>
+              </select>
+            </label>
+            <button type="button" class="ghost" (click)="applyPromptTemplate()">Apply Template</button>
+          </div>
+          <p class="template-note">
+            {{ selectedPromptTemplate().description }}
+          </p>
+
           <div class="focus-block">
             <label class="stacked">
               <span>Main Prompt</span>
@@ -164,6 +179,36 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
       box-shadow: 0 24px 50px rgba(69,58,42,0.12);
     }
     .panel-head h2 { margin: 0; font-size: 28px; }
+    .prompt-presets {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) max-content;
+      gap: 12px;
+      align-items: end;
+      font-family: "Segoe UI", sans-serif;
+    }
+    .prompt-presets label { display: grid; gap: 8px; }
+    .prompt-presets span {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #52606d;
+      font-family: "Segoe UI", sans-serif;
+    }
+    .prompt-presets select {
+      width: 100%;
+      border: 1px solid rgba(31,41,51,0.12);
+      border-radius: 14px;
+      padding: 12px 14px;
+      background: rgba(255,255,255,0.92);
+      color: #243b53;
+      font: 700 14px/1.5 "Segoe UI", sans-serif;
+    }
+    .template-note {
+      margin: 10px 0 0;
+      color: #52606d;
+      font: 500 14px/1.6 "Segoe UI", sans-serif;
+    }
     .focus-block {
       margin-top: 18px;
       padding: 18px;
@@ -234,7 +279,7 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
     .generated-results { margin-top: 18px; font-family: "Segoe UI", sans-serif; }
     .generated-results h3 { margin: 0 0 12px; font-size: 18px; }
     .generated-results ol { margin: 0; padding-left: 18px; display: grid; gap: 10px; }
-    @media (max-width: 900px) { .grid, .form-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 900px) { .grid, .form-grid, .prompt-presets { grid-template-columns: 1fr; } }
   `]
 })
 export class CreatePageComponent {
@@ -247,6 +292,49 @@ export class CreatePageComponent {
   protected generatedPosts: string[] = [];
   protected generationResultMessage = '';
   protected newPostPlatforms = 'x, threads';
+  protected selectedPromptTemplateId = 'quiet-vlog';
+  protected readonly promptTemplates = [
+    {
+      id: 'quiet-vlog',
+      title: 'Quiet personal vlog',
+      description: 'Soft, diary-like posts about real days, small details, and returning to yourself.',
+      prompt: 'Write in Ukrainian. Make the posts feel like a quiet voice-over from a personal vlog: short sentences, small everyday details, honest emotion, and a little silence between thoughts. Themes can include therapy, difficult days, music, lyrics, and slowly returning to yourself. Avoid slogans, generic awareness language, and unnecessary brand mentions.',
+      topic: 'Personal vlog reflections on therapy, lyrics, and difficult days',
+      tone: 'warm, honest, cinematic, diary-like, human'
+    },
+    {
+      id: 'therapy-reflection',
+      title: 'Therapy reflection',
+      description: 'Grounded posts about healing, boundaries, emotions, and gentle self-awareness.',
+      prompt: 'Write in Ukrainian. Create posts that sound like a calm therapy reflection after a difficult but important day. Keep the language simple and human. Focus on noticing feelings, setting boundaries, recovering slowly, and allowing yourself not to be perfect. Avoid clinical advice, motivational cliches, and dramatic wording.',
+      topic: 'Therapy reflections, boundaries, and emotional recovery',
+      tone: 'calm, caring, honest, grounded'
+    },
+    {
+      id: 'music-lyrics',
+      title: 'Music and lyrics',
+      description: 'Posts built around the feeling of a song without quoting lyrics directly.',
+      prompt: 'Write in Ukrainian. Make each post feel inspired by music and lyrics, but do not quote any real lyrics. Focus on the emotional aftertaste of a song: night walks, headphones, memories, quiet sadness, hope, and the moment when one line seems to understand you. Keep it short, visual, and personal.',
+      topic: 'Music, lyric-like feelings, and late-night reflections',
+      tone: 'cinematic, intimate, reflective, poetic but simple'
+    },
+    {
+      id: 'hard-day',
+      title: 'Difficult day',
+      description: 'Gentle posts for days when everything feels heavy but still survivable.',
+      prompt: 'Write in Ukrainian. Create posts for a difficult day. The voice should be honest, not polished: tired, quiet, but still trying. Include small real-world details like tea, weather, a room, a song, or a message left unanswered. Do not force optimism. End with a small sense of breathing room.',
+      topic: 'Difficult days, tiredness, and small ways to keep going',
+      tone: 'honest, gentle, minimal, human'
+    },
+    {
+      id: 'behind-the-smile',
+      title: 'Behind The Smile',
+      description: 'Brand-aligned posts for the project voice without sounding promotional.',
+      prompt: 'Write in Ukrainian for Behind The Smile. The posts should feel like a quiet note from someone who smiles in public but is learning to be honest in private. Keep it personal, warm, and restrained. Mention the idea behind the smile only naturally, not as a slogan. Avoid sales language and generic mental health phrases.',
+      topic: 'Behind The Smile: what people carry quietly',
+      tone: 'warm, sincere, reflective, restrained'
+    }
+  ];
   protected generatorForm = {
     prompt: 'Write in Ukrainian. Make the posts feel like a quiet voice-over from a personal vlog: short sentences, small everyday details, honest emotion, and a little silence between thoughts. Themes can include therapy, difficult days, music, lyrics, and slowly returning to yourself. Avoid slogans, generic awareness language, and unnecessary brand mentions.',
     topic: 'Personal vlog reflections on therapy, lyrics, and difficult days',
@@ -265,6 +353,21 @@ export class CreatePageComponent {
     language: 'uk',
     tone: 'warm, honest, cinematic, human'
   };
+
+  protected selectedPromptTemplate() {
+    return this.promptTemplates.find((template) => template.id === this.selectedPromptTemplateId) ?? this.promptTemplates[0];
+  }
+
+  protected applyPromptTemplate(): void {
+    const template = this.selectedPromptTemplate();
+    this.generatorForm = {
+      ...this.generatorForm,
+      prompt: template.prompt,
+      topic: template.topic,
+      tone: template.tone
+    };
+    this.generationResultMessage = `${template.title} template applied.`;
+  }
 
   protected generateFromPrompt(): void {
     this.dashboardService.generatePrompt({
