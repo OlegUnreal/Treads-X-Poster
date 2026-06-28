@@ -5,6 +5,15 @@ import { GeneratePromptResponse } from '../models/dashboard.models';
 import { DashboardService } from '../services/dashboard.service';
 import { AdminUiStateService } from '../services/admin-ui-state.service';
 
+interface PromptTemplate {
+  id: string;
+  title: string;
+  description: string;
+  prompt: string;
+  topic: string;
+  tone: string;
+}
+
 @Component({
   selector: 'app-create-page',
   standalone: true,
@@ -26,9 +35,9 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
             <p>Ask OpenAI for a few fresh post ideas in your current voice.</p>
           </div>
 
-          <div class="prompt-presets">
+          <div class="prompt-tools">
             <label>
-              <span>Prompt Template</span>
+              <span>Selected Template</span>
               <select [(ngModel)]="selectedPromptTemplateId">
                 <option *ngFor="let template of promptTemplates" [ngValue]="template.id">
                   {{ template.title }}
@@ -40,6 +49,29 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
           <p class="template-note">
             {{ selectedPromptTemplate().description }}
           </p>
+          <ul class="template-list">
+            <li *ngFor="let template of promptTemplates">
+              <button
+                type="button"
+                class="template-row"
+                [class.active]="template.id === selectedPromptTemplateId"
+                (click)="selectPromptTemplate(template.id)"
+              >
+                <strong>{{ template.title }}</strong>
+                <span>{{ template.topic }}</span>
+              </button>
+            </li>
+          </ul>
+          <div class="template-manager">
+            <label>
+              <span>New Template Name</span>
+              <input [(ngModel)]="newTemplateTitle" placeholder="Example: Morning note" />
+            </label>
+            <button type="button" class="ghost" (click)="saveCurrentPromptTemplate()">Save Current</button>
+            <button type="button" class="danger" [disabled]="promptTemplates.length <= 1" (click)="deletePromptTemplate()">
+              Delete Selected
+            </button>
+          </div>
 
           <div class="focus-block">
             <label class="stacked">
@@ -179,7 +211,7 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
       box-shadow: 0 24px 50px rgba(69,58,42,0.12);
     }
     .panel-head h2 { margin: 0; font-size: 28px; }
-    .prompt-presets {
+    .prompt-tools {
       margin-top: 18px;
       display: grid;
       grid-template-columns: minmax(0, 1fr) max-content;
@@ -187,15 +219,15 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
       align-items: end;
       font-family: "Segoe UI", sans-serif;
     }
-    .prompt-presets label { display: grid; gap: 8px; }
-    .prompt-presets span {
+    .prompt-tools label, .template-manager label { display: grid; gap: 8px; }
+    .prompt-tools span, .template-manager span {
       font-size: 12px;
       text-transform: uppercase;
       letter-spacing: 0.08em;
       color: #52606d;
       font-family: "Segoe UI", sans-serif;
     }
-    .prompt-presets select {
+    .prompt-tools select, .template-manager input {
       width: 100%;
       border: 1px solid rgba(31,41,51,0.12);
       border-radius: 14px;
@@ -203,6 +235,45 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
       background: rgba(255,255,255,0.92);
       color: #243b53;
       font: 700 14px/1.5 "Segoe UI", sans-serif;
+    }
+    .template-list {
+      list-style: none;
+      margin: 14px 0 0;
+      padding: 0;
+      display: grid;
+      gap: 8px;
+    }
+    .template-row {
+      width: 100%;
+      display: grid;
+      gap: 4px;
+      text-align: left;
+      border: 1px solid rgba(31,41,51,0.10);
+      border-radius: 14px;
+      padding: 12px 14px;
+      background: rgba(255,255,255,0.72);
+      color: #243b53;
+      box-shadow: none;
+    }
+    .template-row.active {
+      border-color: rgba(31,111,235,0.42);
+      background: rgba(31,111,235,0.08);
+    }
+    .template-row strong {
+      font: 800 14px/1.3 "Segoe UI", sans-serif;
+    }
+    .template-row span {
+      color: #52606d;
+      font: 500 13px/1.5 "Segoe UI", sans-serif;
+      overflow-wrap: anywhere;
+    }
+    .template-manager {
+      margin-top: 14px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) max-content max-content;
+      gap: 12px;
+      align-items: end;
+      font-family: "Segoe UI", sans-serif;
     }
     .template-note {
       margin: 10px 0 0;
@@ -261,6 +332,17 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
       border: 1px solid rgba(31,41,51,0.12);
       box-shadow: none;
     }
+    button.danger {
+      background: rgba(154,52,18,0.10);
+      color: #7c2d12;
+      border: 1px solid rgba(154,52,18,0.18);
+      box-shadow: none;
+    }
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.54;
+      box-shadow: none;
+    }
     .advanced {
       margin-top: 18px;
       padding-top: 18px;
@@ -279,10 +361,11 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
     .generated-results { margin-top: 18px; font-family: "Segoe UI", sans-serif; }
     .generated-results h3 { margin: 0 0 12px; font-size: 18px; }
     .generated-results ol { margin: 0; padding-left: 18px; display: grid; gap: 10px; }
-    @media (max-width: 900px) { .grid, .form-grid, .prompt-presets { grid-template-columns: 1fr; } }
+    @media (max-width: 900px) { .grid, .form-grid, .prompt-tools, .template-manager { grid-template-columns: 1fr; } }
   `]
 })
 export class CreatePageComponent {
+  private readonly promptTemplateStorageKey = 'behind-the-smile.promptTemplates';
   protected readonly ui = inject(AdminUiStateService);
   private readonly dashboardService = inject(DashboardService);
 
@@ -293,7 +376,9 @@ export class CreatePageComponent {
   protected generationResultMessage = '';
   protected newPostPlatforms = 'x, threads';
   protected selectedPromptTemplateId = 'quiet-vlog';
-  protected readonly promptTemplates = [
+  protected newTemplateTitle = '';
+  protected promptTemplates: PromptTemplate[] = [];
+  private readonly defaultPromptTemplates: PromptTemplate[] = [
     {
       id: 'quiet-vlog',
       title: 'Quiet personal vlog',
@@ -354,8 +439,17 @@ export class CreatePageComponent {
     tone: 'warm, honest, cinematic, human'
   };
 
-  protected selectedPromptTemplate() {
+  constructor() {
+    this.promptTemplates = this.loadPromptTemplates();
+    this.selectedPromptTemplateId = this.promptTemplates[0]?.id ?? 'quiet-vlog';
+  }
+
+  protected selectedPromptTemplate(): PromptTemplate {
     return this.promptTemplates.find((template) => template.id === this.selectedPromptTemplateId) ?? this.promptTemplates[0];
+  }
+
+  protected selectPromptTemplate(templateId: string): void {
+    this.selectedPromptTemplateId = templateId;
   }
 
   protected applyPromptTemplate(): void {
@@ -367,6 +461,42 @@ export class CreatePageComponent {
       tone: template.tone
     };
     this.generationResultMessage = `${template.title} template applied.`;
+  }
+
+  protected saveCurrentPromptTemplate(): void {
+    const title = this.newTemplateTitle.trim();
+    if (!title) {
+      this.generationResultMessage = 'Add a name before saving a new template.';
+      return;
+    }
+
+    const template: PromptTemplate = {
+      id: `custom-${Date.now()}`,
+      title,
+      description: 'Saved from your current prompt.',
+      prompt: this.generatorForm.prompt,
+      topic: this.generatorForm.topic,
+      tone: this.generatorForm.tone
+    };
+
+    this.promptTemplates = [...this.promptTemplates, template];
+    this.selectedPromptTemplateId = template.id;
+    this.newTemplateTitle = '';
+    this.savePromptTemplates();
+    this.generationResultMessage = `${template.title} saved to the prompt list.`;
+  }
+
+  protected deletePromptTemplate(): void {
+    if (this.promptTemplates.length <= 1) {
+      this.generationResultMessage = 'Keep at least one prompt template in the list.';
+      return;
+    }
+
+    const deleted = this.selectedPromptTemplate();
+    this.promptTemplates = this.promptTemplates.filter((template) => template.id !== deleted.id);
+    this.selectedPromptTemplateId = this.promptTemplates[0].id;
+    this.savePromptTemplates();
+    this.generationResultMessage = `${deleted.title} removed from the prompt list.`;
   }
 
   protected generateFromPrompt(): void {
@@ -408,5 +538,35 @@ export class CreatePageComponent {
       command: 'generate',
       message: result.message
     });
+  }
+
+  private loadPromptTemplates(): PromptTemplate[] {
+    try {
+      const stored = window.localStorage.getItem(this.promptTemplateStorageKey);
+      if (!stored) {
+        return this.defaultPromptTemplates;
+      }
+
+      const parsed = JSON.parse(stored);
+      if (!Array.isArray(parsed)) {
+        return this.defaultPromptTemplates;
+      }
+
+      const templates = parsed.filter((template): template is PromptTemplate =>
+        typeof template?.id === 'string'
+        && typeof template?.title === 'string'
+        && typeof template?.description === 'string'
+        && typeof template?.prompt === 'string'
+        && typeof template?.topic === 'string'
+        && typeof template?.tone === 'string'
+      );
+      return templates.length > 0 ? templates : this.defaultPromptTemplates;
+    } catch {
+      return this.defaultPromptTemplates;
+    }
+  }
+
+  private savePromptTemplates(): void {
+    window.localStorage.setItem(this.promptTemplateStorageKey, JSON.stringify(this.promptTemplates));
   }
 }
