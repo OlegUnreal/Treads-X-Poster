@@ -13,6 +13,8 @@ import com.behindthesmile.posting.config.AppProperties;
 import com.behindthesmile.posting.model.ContentPlan;
 import com.behindthesmile.posting.model.GeneratedPostDraft;
 import com.behindthesmile.posting.model.QueuedPost;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.nio.file.Path;
@@ -22,9 +24,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
 public class SocialPostingService {
+    private static final Logger log = LoggerFactory.getLogger(SocialPostingService.class);
+
     private final AppProperties appProperties;
     private final OpenAiService openAiService;
     private final DraftService draftService;
@@ -35,6 +41,7 @@ public class SocialPostingService {
     private final XBrowserAutomationService xBrowserAutomationService;
     private final AppPathService appPathService;
     private final AccountConfigService accountConfigService;
+    private final AtomicBoolean autoCreateRunning = new AtomicBoolean(false);
 
     public SocialPostingService(
             AppProperties appProperties,
@@ -276,7 +283,22 @@ public class SocialPostingService {
     }
 
     public ActionResult runAutoCreateNow() {
-        return executeAction("auto-create", () -> autoCreate(Map.of()));
+        if (!autoCreateRunning.compareAndSet(false, true)) {
+            return new ActionResult(false, "auto-create", "Post generation is already running. Wait for it to finish before starting another one.");
+        }
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                String result = autoCreate(Map.of());
+                log.info("Background auto-create completed: {}", result);
+            } catch (Exception ex) {
+                log.warn("Background auto-create failed: {}", ex.getMessage(), ex);
+            } finally {
+                autoCreateRunning.set(false);
+            }
+        });
+
+        return new ActionResult(true, "auto-create", "Post generation started in the background. Refresh the dashboard in a minute.");
     }
 
     public ActionResult runPublishThreadNow() {
