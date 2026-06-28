@@ -36,30 +36,29 @@ interface PromptTemplate {
           </div>
 
           <div class="prompt-tools">
-            <label>
-              <span>Selected Template</span>
-              <select [(ngModel)]="selectedPromptTemplateId">
-                <option *ngFor="let template of promptTemplates" [ngValue]="template.id">
-                  {{ template.title }}
-                </option>
-              </select>
-            </label>
-            <button type="button" class="ghost" (click)="applyPromptTemplate()">Apply Template</button>
+            <button type="button" class="ghost" [disabled]="selectedPromptTemplateIds.length === 0" (click)="applySelectedPromptTemplates()">
+              Apply Selected
+            </button>
+            <button type="button" class="ghost" [disabled]="selectedPromptTemplateIds.length === 0" (click)="clearPromptSelection()">
+              Clear Selection
+            </button>
           </div>
           <p class="template-note">
-            {{ selectedPromptTemplate().description }}
+            {{ selectedPromptTemplateIds.length }} selected from {{ promptTemplates.length }} prompt templates.
           </p>
           <ul class="template-list">
             <li *ngFor="let template of promptTemplates">
-              <button
-                type="button"
-                class="template-row"
-                [class.active]="template.id === selectedPromptTemplateId"
-                (click)="selectPromptTemplate(template.id)"
-              >
-                <strong>{{ template.title }}</strong>
-                <span>{{ template.topic }}</span>
-              </button>
+              <label class="template-row" [class.active]="isPromptTemplateSelected(template.id)">
+                <input
+                  type="checkbox"
+                  [checked]="isPromptTemplateSelected(template.id)"
+                  (change)="togglePromptTemplate(template.id, $event)"
+                />
+                <span class="template-copy">
+                  <strong>{{ template.title }}</strong>
+                  <span>{{ template.topic }}</span>
+                </span>
+              </label>
             </li>
           </ul>
           <div class="template-manager">
@@ -67,8 +66,8 @@ interface PromptTemplate {
               <span>New Template Name</span>
               <input [(ngModel)]="newTemplateTitle" placeholder="Example: Morning note" />
             </label>
-            <button type="button" class="ghost" (click)="saveCurrentPromptTemplate()">Save Current</button>
-            <button type="button" class="danger" [disabled]="promptTemplates.length <= 1" (click)="deletePromptTemplate()">
+            <button type="button" class="ghost" (click)="saveCurrentPromptTemplate()">Add Current</button>
+            <button type="button" class="danger" [disabled]="selectedPromptTemplateIds.length === 0 || promptTemplates.length <= selectedPromptTemplateIds.length" (click)="deleteSelectedPromptTemplates()">
               Delete Selected
             </button>
           </div>
@@ -214,7 +213,7 @@ interface PromptTemplate {
     .prompt-tools {
       margin-top: 18px;
       display: grid;
-      grid-template-columns: minmax(0, 1fr) max-content;
+      grid-template-columns: max-content max-content;
       gap: 12px;
       align-items: end;
       font-family: "Segoe UI", sans-serif;
@@ -245,7 +244,8 @@ interface PromptTemplate {
     }
     .template-row {
       width: 100%;
-      display: grid;
+      display: flex;
+      align-items: flex-start;
       gap: 4px;
       text-align: left;
       border: 1px solid rgba(31,41,51,0.10);
@@ -255,14 +255,26 @@ interface PromptTemplate {
       color: #243b53;
       box-shadow: none;
     }
+    .template-row input {
+      width: 18px;
+      height: 18px;
+      margin: 2px 10px 0 0;
+      accent-color: #1f6feb;
+      flex: 0 0 auto;
+    }
     .template-row.active {
       border-color: rgba(31,111,235,0.42);
       background: rgba(31,111,235,0.08);
     }
+    .template-copy {
+      min-width: 0;
+      display: grid;
+      gap: 4px;
+    }
     .template-row strong {
       font: 800 14px/1.3 "Segoe UI", sans-serif;
     }
-    .template-row span {
+    .template-copy > span {
       color: #52606d;
       font: 500 13px/1.5 "Segoe UI", sans-serif;
       overflow-wrap: anywhere;
@@ -375,7 +387,7 @@ export class CreatePageComponent {
   protected generatedPosts: string[] = [];
   protected generationResultMessage = '';
   protected newPostPlatforms = 'x, threads';
-  protected selectedPromptTemplateId = 'quiet-vlog';
+  protected selectedPromptTemplateIds: string[] = ['quiet-vlog'];
   protected newTemplateTitle = '';
   protected promptTemplates: PromptTemplate[] = [];
   private readonly defaultPromptTemplates: PromptTemplate[] = [
@@ -441,26 +453,43 @@ export class CreatePageComponent {
 
   constructor() {
     this.promptTemplates = this.loadPromptTemplates();
-    this.selectedPromptTemplateId = this.promptTemplates[0]?.id ?? 'quiet-vlog';
+    this.selectedPromptTemplateIds = this.promptTemplates[0]?.id ? [this.promptTemplates[0].id] : [];
   }
 
-  protected selectedPromptTemplate(): PromptTemplate {
-    return this.promptTemplates.find((template) => template.id === this.selectedPromptTemplateId) ?? this.promptTemplates[0];
+  protected isPromptTemplateSelected(templateId: string): boolean {
+    return this.selectedPromptTemplateIds.includes(templateId);
   }
 
-  protected selectPromptTemplate(templateId: string): void {
-    this.selectedPromptTemplateId = templateId;
+  protected togglePromptTemplate(templateId: string, event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    if (checked && !this.selectedPromptTemplateIds.includes(templateId)) {
+      this.selectedPromptTemplateIds = [...this.selectedPromptTemplateIds, templateId];
+      return;
+    }
+
+    if (!checked) {
+      this.selectedPromptTemplateIds = this.selectedPromptTemplateIds.filter((id) => id !== templateId);
+    }
   }
 
-  protected applyPromptTemplate(): void {
-    const template = this.selectedPromptTemplate();
+  protected clearPromptSelection(): void {
+    this.selectedPromptTemplateIds = [];
+  }
+
+  protected applySelectedPromptTemplates(): void {
+    const templates = this.selectedPromptTemplates();
+    if (templates.length === 0) {
+      this.generationResultMessage = 'Select at least one prompt template first.';
+      return;
+    }
+
     this.generatorForm = {
       ...this.generatorForm,
-      prompt: template.prompt,
-      topic: template.topic,
-      tone: template.tone
+      prompt: templates.map((template) => `${template.title}:\n${template.prompt}`).join('\n\n'),
+      topic: this.uniqueJoined(templates.map((template) => template.topic)),
+      tone: this.uniqueJoined(templates.map((template) => template.tone))
     };
-    this.generationResultMessage = `${template.title} template applied.`;
+    this.generationResultMessage = `${templates.length} prompt template(s) applied.`;
   }
 
   protected saveCurrentPromptTemplate(): void {
@@ -480,23 +509,28 @@ export class CreatePageComponent {
     };
 
     this.promptTemplates = [...this.promptTemplates, template];
-    this.selectedPromptTemplateId = template.id;
+    this.selectedPromptTemplateIds = [template.id];
     this.newTemplateTitle = '';
     this.savePromptTemplates();
     this.generationResultMessage = `${template.title} saved to the prompt list.`;
   }
 
-  protected deletePromptTemplate(): void {
-    if (this.promptTemplates.length <= 1) {
+  protected deleteSelectedPromptTemplates(): void {
+    if (this.selectedPromptTemplateIds.length === 0) {
+      this.generationResultMessage = 'Select one or more templates to delete.';
+      return;
+    }
+
+    if (this.promptTemplates.length <= this.selectedPromptTemplateIds.length) {
       this.generationResultMessage = 'Keep at least one prompt template in the list.';
       return;
     }
 
-    const deleted = this.selectedPromptTemplate();
-    this.promptTemplates = this.promptTemplates.filter((template) => template.id !== deleted.id);
-    this.selectedPromptTemplateId = this.promptTemplates[0].id;
+    const deletedCount = this.selectedPromptTemplateIds.length;
+    this.promptTemplates = this.promptTemplates.filter((template) => !this.selectedPromptTemplateIds.includes(template.id));
+    this.selectedPromptTemplateIds = this.promptTemplates[0]?.id ? [this.promptTemplates[0].id] : [];
     this.savePromptTemplates();
-    this.generationResultMessage = `${deleted.title} removed from the prompt list.`;
+    this.generationResultMessage = `${deletedCount} prompt template(s) removed from the list.`;
   }
 
   protected generateFromPrompt(): void {
@@ -538,6 +572,19 @@ export class CreatePageComponent {
       command: 'generate',
       message: result.message
     });
+  }
+
+  private selectedPromptTemplates(): PromptTemplate[] {
+    return this.promptTemplates.filter((template) => this.selectedPromptTemplateIds.includes(template.id));
+  }
+
+  private uniqueJoined(values: string[]): string {
+    return Array.from(new Set(
+      values
+        .flatMap((value) => value.split(','))
+        .map((value) => value.trim())
+        .filter(Boolean)
+    )).join(', ');
   }
 
   private loadPromptTemplates(): PromptTemplate[] {
