@@ -108,6 +108,10 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
               <dd>{{ vm.summary.publisherAccounts.threadsAccountLabel }}</dd>
             </div>
           </dl>
+          <div class="setup-note" *ngIf="needsThreadsSetup(vm.summary.publisherAccounts.threadsAccountLabel)">
+            <strong>Threads needs setup</strong>
+            <span>Generated posts are safe in the queue. Connect Threads before using Publish 1 Thread.</span>
+          </div>
         </article>
 
         <article class="panel">
@@ -237,6 +241,16 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
       color: #52606d;
       font: 500 13px/1.5 "Segoe UI", sans-serif;
     }
+    .setup-note {
+      margin-top: 18px;
+      padding: 14px;
+      border-radius: 14px;
+      background: rgba(154,52,18,0.09);
+      color: #7c2d12;
+      font: 600 14px/1.5 "Segoe UI", sans-serif;
+      display: grid;
+      gap: 4px;
+    }
     .signals dd {
       margin: 0;
       color: #334e68;
@@ -303,6 +317,10 @@ export class DashboardPageComponent {
     }
 
     return this.compactSummary(normalized, 'The last automation run completed.');
+  }
+
+  protected needsThreadsSetup(label: string | null | undefined): boolean {
+    return (label ?? '').toLowerCase().includes('not configured');
   }
 
   private normalizeMessage(message: string | null | undefined): string {

@@ -53,6 +53,10 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
                 <dd>{{ vm.summary.publisherAccounts.threadsAccountLabel }}</dd>
               </div>
             </dl>
+            <div class="setup-note" *ngIf="needsThreadsSetup(vm.summary.publisherAccounts.threadsAccountLabel)">
+              <strong>Threads is not connected</strong>
+              <span>Keep generating posts if needed, but connect Threads before publishing there.</span>
+            </div>
           </div>
           <div class="focus-actions">
             <button type="button" [disabled]="busyAction !== null" (click)="publishThreadNow()">
@@ -181,6 +185,15 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
       font: 700 14px/1.4 "Segoe UI", sans-serif;
       overflow-wrap: anywhere;
     }
+    .setup-note {
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: rgba(154,52,18,0.09);
+      color: #7c2d12;
+      font: 600 14px/1.5 "Segoe UI", sans-serif;
+      display: grid;
+      gap: 4px;
+    }
     .focus-actions {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -291,6 +304,10 @@ export class PublishPageComponent {
 
   protected publishXNow(): void {
     this.runAction('publish-x', this.dashboardService.publishX());
+  }
+
+  protected needsThreadsSetup(label: string | null | undefined): boolean {
+    return (label ?? '').toLowerCase().includes('not configured');
   }
 
   protected openXComposer(): void {

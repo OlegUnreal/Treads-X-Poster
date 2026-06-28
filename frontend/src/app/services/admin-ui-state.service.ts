@@ -46,7 +46,7 @@ export class AdminUiStateService {
   }
 
   pushActionResult(result: ActionResult): void {
-    this.actionResultSubject.next(result);
+    this.actionResultSubject.next(this.humanizeActionResult(result));
     this.refresh();
   }
 
@@ -90,5 +90,86 @@ export class AdminUiStateService {
       return '';
     }
     return value.replace(/^\uFEFF+/, '');
+  }
+
+  private humanizeActionResult(result: ActionResult): ActionResult {
+    if (result.success) {
+      return {
+        ...result,
+        command: this.humanizeCommand(result.command),
+        message: this.humanizeSuccessMessage(result.message)
+      };
+    }
+
+    return {
+      ...result,
+      command: this.humanizeCommand(result.command),
+      message: this.humanizeErrorMessage(result.message)
+    };
+  }
+
+  private humanizeCommand(command: string): string {
+    const labels: Record<string, string> = {
+      'attach-open-images': 'Attach photos',
+      'auto-create': 'Generate posts',
+      'daily': 'Daily run',
+      'open-x-composer': 'X composer',
+      'open-x-login-browser': 'X login',
+      'publish-queued-threads': 'Publish Threads',
+      'publish-thread': 'Publish Threads',
+      'publish-x': 'Publish X',
+      'publish-x-via-selenium': 'Send X',
+      'switch-account': 'Publishing account'
+    };
+
+    return labels[command] ?? command;
+  }
+
+  private humanizeSuccessMessage(message: string): string {
+    if (message.includes('Post generation started in the background')) {
+      return 'Post generation has started. Refresh the dashboard in about a minute to see the new queue count.';
+    }
+
+    if (message.includes('Active publishing account changed')) {
+      return 'Publishing account changed.';
+    }
+
+    return this.compactMessage(message);
+  }
+
+  private humanizeErrorMessage(message: string): string {
+    const compact = this.compactMessage(message);
+    const lower = compact.toLowerCase();
+
+    if (lower.includes('threads_access_token')) {
+      return 'Threads is not connected yet. Finish Threads login, then add the new access token to the server settings.';
+    }
+
+    if (lower.includes('threads_user_id')) {
+      return 'Threads is missing the profile ID. Add THREADS_USER_ID together with the access token.';
+    }
+
+    if (lower.includes('api access blocked')) {
+      return 'Meta blocked this Threads app/token. Check the Meta app access, permissions, and the connected Threads profile.';
+    }
+
+    if (lower.includes('request failed (0') || lower.includes('network')) {
+      return 'The admin panel could not reach the server. Refresh the page and try again.';
+    }
+
+    if (lower.includes('403') || lower.includes('forbidden')) {
+      return 'The server refused this action. Refresh the page; if it repeats, the server settings need a quick check.';
+    }
+
+    return compact || 'Something went wrong. Try again in a moment.';
+  }
+
+  private compactMessage(message: string): string {
+    return (message ?? '')
+      .replace(/\{[^}]*\}/g, '')
+      .replace(/https?:\/\/\S+/g, '')
+      .replace(/[A-Z]:\\[^ ]+/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 }
