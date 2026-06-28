@@ -6,6 +6,7 @@ WEB_DIR="${WEB_DIR:-/var/www/behind-the-smile}"
 SERVICE_NAME="${SERVICE_NAME:-behind-the-smile}"
 BRANCH="${1:-${DEPLOY_BRANCH:-main}}"
 BACKEND_PORT="${BACKEND_PORT:-8081}"
+FRONTEND_PORT="${FRONTEND_PORT:-4301}"
 DISPLAY_VALUE="${DISPLAY_VALUE:-:1}"
 XAUTHORITY_VALUE="${XAUTHORITY_VALUE:-/root/.Xauthority}"
 PUBLIC_HOST="${PUBLIC_HOST:-_}"
@@ -85,7 +86,7 @@ EOF
 
 cat > /etc/nginx/sites-available/behind-the-smile <<EOF
 server {
-    listen 80;
+    listen ${FRONTEND_PORT};
     server_name ${PUBLIC_HOST} _;
 
     root ${WEB_DIR};
@@ -107,7 +108,6 @@ server {
 EOF
 
 ln -sf /etc/nginx/sites-available/behind-the-smile /etc/nginx/sites-enabled/behind-the-smile
-rm -f /etc/nginx/sites-enabled/default
 
 systemctl daemon-reload
 systemctl enable "${SERVICE_NAME}"
