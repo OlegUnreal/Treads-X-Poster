@@ -27,6 +27,11 @@ fi
 git reset --hard "origin/${BRANCH}"
 git clean -fd -e generated/ -e backend/config/.env
 
+mkdir -p "${APP_DIR}/config"
+if [ ! -f "${APP_DIR}/config/content-plan.json" ] && [ -f "${APP_DIR}/backend/config/content-plan.json" ]; then
+  cp "${APP_DIR}/backend/config/content-plan.json" "${APP_DIR}/config/content-plan.json"
+fi
+
 mvn -f backend/pom.xml package -DskipTests
 
 JAR_PATH="$(find "${APP_DIR}/backend/target" -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | head -n 1)"

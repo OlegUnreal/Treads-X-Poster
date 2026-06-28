@@ -4,6 +4,8 @@ import com.behindthesmile.posting.config.AppProperties;
 import com.behindthesmile.posting.model.GeneratedPostDraft;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -13,10 +15,13 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @Service
 public class OpenAiService {
+    private static final Logger log = LoggerFactory.getLogger(OpenAiService.class);
     private static final URI RESPONSES_URI = URI.create("https://api.openai.com/v1/responses");
 
     private final HttpService httpService;
@@ -64,6 +69,8 @@ public class OpenAiService {
             throws IOException, InterruptedException {
         String apiKey = requireValue(appProperties.openAi().apiKey(), "OPENAI_API_KEY");
         String model = appProperties.openAi().model();
+        long startedAt = System.nanoTime();
+        log.info("Generating text-only posts with OpenAI: model={}, promptChars={}", model, textLength(prompt));
 
         Map<String, Object> payload = Map.of(
                 "model", model,
@@ -111,6 +118,7 @@ public class OpenAiService {
         for (JsonNode post : postsNode) {
             posts.add(post.asText());
         }
+        log.info("Generated text-only posts with OpenAI: count={}, elapsedMs={}", posts.size(), elapsedMillis(startedAt));
         return posts;
     }
 
@@ -118,6 +126,8 @@ public class OpenAiService {
             throws IOException, InterruptedException {
         String apiKey = requireValue(appProperties.openAi().apiKey(), "OPENAI_API_KEY");
         String model = appProperties.openAi().model();
+        long startedAt = System.nanoTime();
+        log.info("Generating post drafts with OpenAI: model={}, promptChars={}", model, textLength(prompt));
 
         Map<String, Object> payload = Map.of(
                 "model", model,
@@ -180,11 +190,14 @@ public class OpenAiService {
             draft.setVisualHint(post.path("visualHint").asText());
             posts.add(draft);
         }
+        log.info("Generated post drafts with OpenAI: count={}, elapsedMs={}", posts.size(), elapsedMillis(startedAt));
         return posts;
     }
 
     private JsonNode sendAndParse(String apiKey, String model, Map<String, Object> payload)
             throws IOException, InterruptedException {
+        long startedAt = System.nanoTime();
+        log.info("Sending OpenAI request: model={}", model);
         HttpRequest request = HttpRequest.newBuilder(RESPONSES_URI)
                 .header("Authorization", "Bearer " + apiKey)
                 .header("Content-Type", "application/json")
@@ -192,13 +205,21 @@ public class OpenAiService {
                 .build();
 
         HttpResponse<String> response = httpService.client().send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        log.info("OpenAI response received: status={}, elapsedMs={}, bodyChars={}",
+                response.statusCode(),
+                elapsedMillis(startedAt),
+                textLength(response.body()));
         JsonNode responseJson = objectMapper.readTree(response.body());
 
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new IllegalStateException("OpenAI request failed: " + formatApiError(responseJson));
+            String error = formatApiError(responseJson);
+            log.warn("OpenAI request failed: status={}, error={}", response.statusCode(), error);
+            throw new IllegalStateException("OpenAI request failed: " + error);
         }
 
-        return objectMapper.readTree(extractOutputText(responseJson));
+        String outputText = extractOutputText(responseJson);
+        log.info("OpenAI output text extracted: chars={}", textLength(outputText));
+        return objectMapper.readTree(outputText);
     }
 
     private String buildSystemPrompt() {
@@ -250,6 +271,29 @@ public class OpenAiService {
         if (value == null || value.isBlank()) {
             throw new IllegalStateException("Missing required setting: " + name);
         }
-        return value;
+        String trimmed = value.trim();
+        String normalized = trimmed.toLowerCase(Locale.ROOT);
+        if (normalized.startsWith("bearer ")) {
+            throw new IllegalStateException("Required setting " + name + " must contain only the raw token, without Bearer prefix.");
+        }
+        if (trimmed.chars().anyMatch(Character::isWhitespace)) {
+            throw new IllegalStateException("Required setting " + name + " contains whitespace. Paste only the raw token.");
+        }
+        if (normalized.startsWith("your_")
+                || normalized.startsWith("your-")
+                || normalized.contains("api_key_here")
+                || normalized.contains("your api")
+                || normalized.contains("твій")) {
+            throw new IllegalStateException("Required setting " + name + " still contains a placeholder value.");
+        }
+        return trimmed;
+    }
+
+    private long elapsedMillis(long startedAt) {
+        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
+    }
+
+    private int textLength(String value) {
+        return value == null ? 0 : value.length();
     }
 }
