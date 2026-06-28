@@ -107,6 +107,17 @@ server {
 }
 EOF
 
+for enabled_site in /etc/nginx/sites-enabled/*; do
+    [ -e "${enabled_site}" ] || continue
+    if [ "$(basename "${enabled_site}")" = "behind-the-smile" ]; then
+        continue
+    fi
+    if grep -Eq "listen[[:space:]]+[^;]*${FRONTEND_PORT}" "${enabled_site}"; then
+        echo "Disabling nginx site on port ${FRONTEND_PORT}: ${enabled_site}"
+        rm -f "${enabled_site}"
+    fi
+done
+
 ln -sf /etc/nginx/sites-available/behind-the-smile /etc/nginx/sites-enabled/behind-the-smile
 
 systemctl daemon-reload
