@@ -136,6 +136,7 @@ public class XBrowserAutomationService {
             options.addArguments("--user-data-dir=" + profilePath);
             options.addArguments("--profile-directory=Default");
             options.addArguments("--start-maximized");
+            addServerBrowserArguments(options);
             options.addArguments("--disable-blink-features=AutomationControlled");
             if (detachBrowser) {
                 options.setExperimentalOption("detach", true);
@@ -150,6 +151,7 @@ public class XBrowserAutomationService {
         options.addArguments("--user-data-dir=" + profilePath);
         options.addArguments("--profile-directory=Default");
         options.addArguments("--start-maximized");
+        addServerBrowserArguments(options);
         options.addArguments("--disable-blink-features=AutomationControlled");
         if (detachBrowser) {
             options.setExperimentalOption("detach", true);
@@ -158,6 +160,26 @@ public class XBrowserAutomationService {
             options.addArguments("--headless=new");
         }
         return new ChromeDriver(options);
+    }
+
+    private void addServerBrowserArguments(ChromeOptions options) {
+        options.addArguments("--no-sandbox");
+        options.addArguments("--disable-dev-shm-usage");
+        options.addArguments("--disable-gpu");
+        options.addArguments("--no-first-run");
+        options.addArguments("--no-default-browser-check");
+        options.addArguments("--window-size=1365,900");
+        options.addArguments("--remote-allow-origins=*");
+    }
+
+    private void addServerBrowserArguments(EdgeOptions options) {
+        options.addArguments("--no-sandbox");
+        options.addArguments("--disable-dev-shm-usage");
+        options.addArguments("--disable-gpu");
+        options.addArguments("--no-first-run");
+        options.addArguments("--no-default-browser-check");
+        options.addArguments("--window-size=1365,900");
+        options.addArguments("--remote-allow-origins=*");
     }
 
     private Path downloadImage(String imageUrl) throws IOException, InterruptedException {

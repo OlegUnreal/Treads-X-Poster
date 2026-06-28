@@ -114,6 +114,21 @@ Important production variables:
 - `X_PUBLISH_MODE=selenium` uses the browser automation path for X.
 - `THREADS_ACCESS_TOKEN` and `THREADS_USER_ID` enable Threads publishing.
 
+For Selenium publishing through a visible Chrome window on a TigerVNC server, start the backend from the same VNC desktop session or export the VNC display before starting it:
+
+```bash
+export DISPLAY=:1
+java -jar backend/target/social-posting-0.1.0.jar
+```
+
+If the backend runs under systemd, add the same display to the service environment:
+
+```ini
+Environment=DISPLAY=:1
+```
+
+Do not open the configured `X_BROWSER_PROFILE_DIR` manually in another Chrome window while Selenium is publishing, because Chrome locks an active profile.
+
 Build and run the backend:
 
 ```powershell
