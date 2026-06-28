@@ -17,7 +17,11 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api")
-@CrossOrigin(origins = {"http://localhost:4200", "http://127.0.0.1:4200"})
+@CrossOrigin(origins = {
+        "http://localhost:4200",
+        "http://127.0.0.1:4200",
+        "http://167.233.93.6:4301"
+})
 public class DashboardController {
     private final SocialPostingService socialPostingService;
     private final com.behindthesmile.posting.service.PostingJobService postingJobService;
