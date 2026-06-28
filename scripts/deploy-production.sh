@@ -7,6 +7,7 @@ SERVICE_NAME="${SERVICE_NAME:-behind-the-smile}"
 BRANCH="${1:-${DEPLOY_BRANCH:-main}}"
 BACKEND_PORT="${BACKEND_PORT:-8081}"
 DISPLAY_VALUE="${DISPLAY_VALUE:-:1}"
+XAUTHORITY_VALUE="${XAUTHORITY_VALUE:-/root/.Xauthority}"
 PUBLIC_HOST="${PUBLIC_HOST:-_}"
 
 echo "Deploying branch '${BRANCH}' from ${APP_DIR}"
@@ -73,6 +74,7 @@ WorkingDirectory=${APP_DIR}/backend
 EnvironmentFile=-${APP_DIR}/backend/config/.env
 Environment=SERVER_PORT=${BACKEND_PORT}
 Environment=DISPLAY=${DISPLAY_VALUE}
+Environment=XAUTHORITY=${XAUTHORITY_VALUE}
 ExecStart=/usr/bin/java -jar ${APP_DIR}/backend/target/app.jar
 Restart=always
 RestartSec=10

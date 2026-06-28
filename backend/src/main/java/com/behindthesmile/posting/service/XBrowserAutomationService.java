@@ -10,6 +10,7 @@ import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.interactions.Actions;
 import org.openqa.selenium.chrome.ChromeDriver;
+import org.openqa.selenium.chrome.ChromeDriverService;
 import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.edge.EdgeDriver;
 import org.openqa.selenium.edge.EdgeOptions;
@@ -19,6 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
@@ -159,7 +161,14 @@ public class XBrowserAutomationService {
         if (x.browserHeadless()) {
             options.addArguments("--headless=new");
         }
-        return new ChromeDriver(options);
+        return new ChromeDriver(chromeDriverService(), options);
+    }
+
+    private ChromeDriverService chromeDriverService() {
+        return new ChromeDriverService.Builder()
+                .withLogFile(new File("/tmp/behind-the-smile-chromedriver.log"))
+                .withVerbose(true)
+                .build();
     }
 
     private void addServerBrowserArguments(ChromeOptions options) {
