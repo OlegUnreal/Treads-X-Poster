@@ -31,7 +31,7 @@ interface PromptTemplate {
       <article class="panel target-panel">
         <div class="panel-head">
           <h2>Target Accounts</h2>
-          <p>New posts are copied into each selected account queue. Leave all unchecked to use the active account only.</p>
+          <p>Choose publishing profiles. Leave all unchecked to use the active profile only.</p>
         </div>
         <div class="account-targets">
           <label
@@ -46,7 +46,38 @@ interface PromptTemplate {
             />
             <span>
               <strong>{{ account.label }}</strong>
-              <small>X: {{ account.xAccountLabel }} · Threads: {{ account.threadsAccountLabel }}</small>
+              <small>Publishing profile</small>
+            </span>
+          </label>
+        </div>
+      </article>
+
+      <article class="panel target-panel">
+        <div class="panel-head">
+          <h2>Target Platforms</h2>
+          <p>Choose where new posts should be queued. X and Threads are separate queues.</p>
+        </div>
+        <div class="account-targets">
+          <label class="target-account" [class.active]="isTargetPlatformSelected('x')">
+            <input
+              type="checkbox"
+              [checked]="isTargetPlatformSelected('x')"
+              (change)="toggleTargetPlatform('x', $event)"
+            />
+            <span>
+              <strong>X</strong>
+              <small>Queue for X only</small>
+            </span>
+          </label>
+          <label class="target-account" [class.active]="isTargetPlatformSelected('threads')">
+            <input
+              type="checkbox"
+              [checked]="isTargetPlatformSelected('threads')"
+              (change)="toggleTargetPlatform('threads', $event)"
+            />
+            <span>
+              <strong>Threads</strong>
+              <small>Queue for Threads only</small>
             </span>
           </label>
         </div>
@@ -55,34 +86,7 @@ interface PromptTemplate {
       <article class="panel photo-panel">
         <div class="panel-head">
           <h2>Photo Batch</h2>
-          <p>Upload photos, generate one caption per photo, then save or publish through selected accounts.</p>
-        </div>
-
-        <div class="account-strip">
-          <label>
-            <span>Active Account</span>
-            <select
-              [ngModel]="vm.summary.publisherAccounts.activeAccountId"
-              (ngModelChange)="switchAccount($event)"
-            >
-              <option
-                *ngFor="let account of vm.summary.publisherAccounts.availableAccounts"
-                [ngValue]="account.id"
-              >
-                {{ account.label }}
-              </option>
-            </select>
-          </label>
-          <dl>
-            <div>
-              <dt>X</dt>
-              <dd>{{ vm.summary.publisherAccounts.xAccountLabel }}</dd>
-            </div>
-            <div>
-              <dt>Threads</dt>
-              <dd>{{ vm.summary.publisherAccounts.threadsAccountLabel }}</dd>
-            </div>
-          </dl>
+          <p>Upload photos, generate one caption per photo, then save or publish through selected profiles and platforms.</p>
         </div>
 
         <div class="photo-upload">
@@ -101,10 +105,6 @@ interface PromptTemplate {
           <label>
             <span>Topic</span>
             <input [(ngModel)]="photoBatchForm.topic" />
-          </label>
-          <label>
-            <span>Platforms</span>
-            <input [(ngModel)]="photoBatchPlatforms" />
           </label>
           <label>
             <span>Language</span>
@@ -210,10 +210,6 @@ interface PromptTemplate {
                 <span>Language</span>
                 <input [(ngModel)]="generatorForm.language" />
               </label>
-              <label class="wide">
-                <span>Platforms (comma separated)</span>
-                <input [(ngModel)]="generatorPlatforms" />
-              </label>
               <label class="wide checkbox">
                 <input [(ngModel)]="generatorForm.saveToQueue" type="checkbox" />
                 <span>Save generated posts directly to queue</span>
@@ -247,10 +243,6 @@ interface PromptTemplate {
             <label>
               <span>Topic</span>
               <input [(ngModel)]="newPostForm.topic" />
-            </label>
-            <label>
-              <span>Platforms</span>
-              <input [(ngModel)]="newPostPlatforms" />
             </label>
           </div>
 
@@ -583,13 +575,11 @@ export class CreatePageComponent {
   protected photoBatchBusy = false;
   protected photoBatchMessage = '';
   protected photoBatchError = false;
-  protected generatorPlatforms = 'x, threads';
-  protected photoBatchPlatforms = 'x, threads';
   protected generatedPosts: string[] = [];
   protected generationResultMessage = '';
-  protected newPostPlatforms = 'x, threads';
   protected selectedPhotoFiles: File[] = [];
   protected selectedTargetAccountIds: string[] = [];
+  protected selectedTargetPlatforms: Array<'x' | 'threads'> = ['x'];
   protected selectedPromptTemplateIds: string[] = ['quiet-vlog'];
   protected newTemplateTitle = '';
   protected promptTemplates: PromptTemplate[] = [];
@@ -746,7 +736,7 @@ export class CreatePageComponent {
   protected generateFromPrompt(): void {
     this.dashboardService.generatePrompt({
       ...this.generatorForm,
-      platforms: this.ui.parsePlatforms(this.generatorPlatforms),
+      platforms: this.selectedTargetPlatforms,
       accountIds: this.selectedTargetAccountIds
     }).subscribe((result) => this.handleGenerationResult(result));
   }
@@ -764,6 +754,23 @@ export class CreatePageComponent {
 
     if (!checked) {
       this.selectedTargetAccountIds = this.selectedTargetAccountIds.filter((id) => id !== accountId);
+    }
+  }
+
+  protected isTargetPlatformSelected(platform: 'x' | 'threads'): boolean {
+    return this.selectedTargetPlatforms.includes(platform);
+  }
+
+  protected toggleTargetPlatform(platform: 'x' | 'threads', event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    if (checked && !this.selectedTargetPlatforms.includes(platform)) {
+      this.selectedTargetPlatforms = [...this.selectedTargetPlatforms, platform];
+      return;
+    }
+
+    if (!checked) {
+      const next = this.selectedTargetPlatforms.filter((item) => item !== platform);
+      this.selectedTargetPlatforms = next.length > 0 ? next : ['x'];
     }
   }
 
@@ -792,7 +799,7 @@ export class CreatePageComponent {
       topic: this.photoBatchForm.topic,
       tone: this.photoBatchForm.tone,
       language: this.photoBatchForm.language,
-      platforms: this.ui.parsePlatforms(this.photoBatchPlatforms),
+      platforms: this.selectedTargetPlatforms,
       accountIds: this.selectedTargetAccountIds,
       publishNow: this.photoBatchForm.publishNow
     }).subscribe({
@@ -826,7 +833,7 @@ export class CreatePageComponent {
   protected createManualPost(): void {
     this.dashboardService.createQueuePost({
       ...this.ui.sanitizeStringFields(this.newPostForm),
-      platforms: this.ui.parsePlatforms(this.newPostPlatforms),
+      platforms: this.selectedTargetPlatforms,
       accountIds: this.selectedTargetAccountIds
     }).subscribe(() => {
       this.ui.pushActionResult({
@@ -844,7 +851,6 @@ export class CreatePageComponent {
         language: 'uk',
         tone: 'warm, honest, cinematic, human'
       };
-      this.newPostPlatforms = 'x, threads';
     });
   }
 
