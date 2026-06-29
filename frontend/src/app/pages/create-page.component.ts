@@ -86,10 +86,6 @@ interface PromptTemplate {
         </label>
 
         <div class="settings-row">
-          <label class="field topic-field">
-            <span>Topic</span>
-            <input class="form-control form-control-sm" [(ngModel)]="generatorForm.topic" />
-          </label>
           <label class="field count-field" *ngIf="selectedPhotoFiles.length === 0">
             <span>Count</span>
             <input class="form-control form-control-sm" [(ngModel)]="generatorForm.count" type="number" min="1" max="12" />
@@ -142,10 +138,6 @@ interface PromptTemplate {
             <textarea class="form-control" [(ngModel)]="newPostForm.text" rows="4"></textarea>
           </label>
           <div class="settings-row manual-row">
-            <label class="field topic-field">
-              <span>Topic</span>
-              <input class="form-control form-control-sm" [(ngModel)]="newPostForm.topic" />
-            </label>
             <button type="button" class="btn btn-primary btn-sm action-button" (click)="createManualPost()">Add to queue</button>
           </div>
         </div>
@@ -225,7 +217,7 @@ interface PromptTemplate {
     textarea.form-control { resize: vertical; line-height: 1.45; }
     .settings-row {
       display: grid;
-      grid-template-columns: minmax(220px, 1fr) 92px auto auto;
+      grid-template-columns: 92px auto auto;
       gap: 10px;
       align-items: end;
       margin-top: 10px;
@@ -262,7 +254,7 @@ interface PromptTemplate {
     .manual-panel strong { display: block; color: #17212b; font: 800 15px/1.25 "Segoe UI", sans-serif; }
     .manual-panel small { color: #64748b; font: 600 12px/1.3 "Segoe UI", sans-serif; }
     .manual-body { padding: 0 14px 14px; }
-    .manual-row { grid-template-columns: minmax(220px, 1fr) auto; }
+    .manual-row { display: flex; justify-content: flex-end; }
     .feedback {
       margin: 10px 0 0;
       padding: 8px 10px;
@@ -405,6 +397,7 @@ export class CreatePageComponent {
     this.photoBatchMessage = '';
     this.dashboardService.generatePrompt({
       ...this.generatorForm,
+      topic: this.resolveAiTopic(),
       platforms: [],
       accountIds: [],
       targetProfiles: this.selectedTargetProfileIds
@@ -423,7 +416,7 @@ export class CreatePageComponent {
     this.dashboardService.createPhotoBatch({
       photos: this.selectedPhotoFiles,
       prompt: this.generatorForm.prompt,
-      topic: this.generatorForm.topic,
+      topic: this.resolveAiTopic(),
       tone: this.generatorForm.tone,
       language: this.generatorForm.language,
       platforms: [],
@@ -454,6 +447,7 @@ export class CreatePageComponent {
     }
     this.dashboardService.createQueuePost({
       ...this.ui.sanitizeStringFields(this.newPostForm),
+      topic: this.resolveManualTopic(),
       platforms: [],
       accountIds: [],
       targetProfiles: this.selectedTargetProfileIds
@@ -474,6 +468,23 @@ export class CreatePageComponent {
         tone: 'warm, honest, cinematic, human'
       };
     });
+  }
+
+  private resolveAiTopic(): string {
+    const template = this.promptTemplates.find((item) => item.id === this.selectedPromptTemplateId);
+    return this.compactTopic(template?.topic || this.generatorForm.prompt || 'AI generated posts');
+  }
+
+  private resolveManualTopic(): string {
+    return this.compactTopic(this.newPostForm.topic || this.newPostForm.text || 'Manual post');
+  }
+
+  private compactTopic(value: string): string {
+    const normalized = value.replace(/\s+/g, ' ').trim();
+    if (!normalized) {
+      return 'Untitled post';
+    }
+    return normalized.length > 80 ? `${normalized.slice(0, 77)}...` : normalized;
   }
 
   private ensureTargetProfiles(): boolean {
