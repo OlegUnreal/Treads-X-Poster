@@ -74,9 +74,7 @@ public class SocialPostingService {
         String language = args.getOrDefault("language", appProperties.defaults().language());
         String platforms = args.getOrDefault("platforms", "x,threads");
 
-        List<GeneratedPostDraft> posts = openAiService.generateDrafts(topic, tone, language, count).stream()
-                .map(post -> openSourceImageService.enrichDraftWithOpenImage(post, topic))
-                .toList();
+        List<GeneratedPostDraft> posts = enrichDraftsWithUniqueImages(openAiService.generateDrafts(topic, tone, language, count), topic);
         Path savedPath = draftService.saveDraft(posts, topic, appPathService.draftPath());
         int selectedIndex = Math.max(parseInt(args.get("index"), 1) - 1, 0);
         String selectedPost = selectedIndex < posts.size()
@@ -200,6 +198,7 @@ public class SocialPostingService {
         List<ContentPlan.Item> items = queueService.readContentPlan(planPath);
         int total = 0;
         StringBuilder output = new StringBuilder();
+        Set<String> usedImageUrls = readUsedImageUrls();
 
         for (ContentPlan.Item item : items) {
             String topic = item.getTopic() != null ? item.getTopic() : appProperties.defaults().topic();
@@ -208,9 +207,11 @@ public class SocialPostingService {
             int count = item.getCount() != null ? item.getCount() : appProperties.defaults().count();
             List<String> platforms = item.getPlatforms() != null ? item.getPlatforms() : List.of("x", "threads");
 
-            List<GeneratedPostDraft> posts = openAiService.generateDrafts(topic, tone, language, count).stream()
-                    .map(post -> openSourceImageService.enrichDraftWithOpenImage(post, topic))
-                    .toList();
+            List<GeneratedPostDraft> posts = enrichDraftsWithUniqueImages(
+                    openAiService.generateDrafts(topic, tone, language, count),
+                    topic,
+                    usedImageUrls
+            );
             Path savedPath = queueService.saveQueuedPosts(
                     posts,
                     topic,
@@ -416,6 +417,26 @@ public class SocialPostingService {
         return queueService.updateQueuedPost(appPathService.queuePath(), id, updated);
     }
 
+    public ActionResult deleteQueuedPost(String id) {
+        return executeAction("delete-queue-post", () -> {
+            queueService.deleteQueuedPost(appPathService.queuePath(), id);
+            return "Queued post removed.";
+        });
+    }
+
+    public ActionResult moveQueuedPost(String id, String direction) {
+        return executeAction("move-queue-post", () -> {
+            int offset = switch (direction == null ? "" : direction.trim().toLowerCase(Locale.ROOT)) {
+                case "up" -> -1;
+                case "down" -> 1;
+                default -> throw new IllegalStateException("Move direction must be up or down.");
+            };
+
+            queueService.moveQueuedPost(appPathService.queuePath(), id, offset);
+            return offset < 0 ? "Queued post moved up." : "Queued post moved down.";
+        });
+    }
+
     public QueuedPost createQueuedPost(QueuePostUpsertRequest request) throws Exception {
         if (request.text() == null || request.text().isBlank()) {
             throw new IllegalStateException("Post text is required.");
@@ -453,7 +474,8 @@ public class SocialPostingService {
                 draft.setText(text);
                 draft.setVisualHint("Personal photo idea: notebook, headphones, evening window, or a quiet street.");
                 return draft;
-            }).map(draft -> openSourceImageService.enrichDraftWithOpenImage(draft, topic)).toList();
+            }).toList();
+            drafts = enrichDraftsWithUniqueImages(drafts, topic, readUsedImageUrls());
 
             queueService.saveQueuedPosts(
                     drafts,
@@ -524,6 +546,41 @@ public class SocialPostingService {
         } catch (Exception ex) {
             return new ActionResult(false, command, ex.getMessage());
         }
+    }
+
+    private List<GeneratedPostDraft> enrichDraftsWithUniqueImages(List<GeneratedPostDraft> drafts, String topic) {
+        try {
+            return enrichDraftsWithUniqueImages(drafts, topic, readUsedImageUrls());
+        } catch (Exception ex) {
+            log.warn("Could not read existing queue images before enrichment: {}", ex.getMessage());
+            return enrichDraftsWithUniqueImages(drafts, topic, new HashSet<>());
+        }
+    }
+
+    private List<GeneratedPostDraft> enrichDraftsWithUniqueImages(
+            List<GeneratedPostDraft> drafts,
+            String topic,
+            Set<String> usedImageUrls
+    ) {
+        List<GeneratedPostDraft> enrichedDrafts = new ArrayList<>();
+        for (GeneratedPostDraft draft : drafts) {
+            GeneratedPostDraft enriched = openSourceImageService.enrichDraftWithOpenImage(draft, topic, usedImageUrls);
+            if (enriched.getImageUrl() != null && !enriched.getImageUrl().isBlank()) {
+                usedImageUrls.add(enriched.getImageUrl());
+            }
+            enrichedDrafts.add(enriched);
+        }
+        return enrichedDrafts;
+    }
+
+    private Set<String> readUsedImageUrls() throws Exception {
+        Set<String> usedImageUrls = new HashSet<>();
+        for (QueuedPost post : queueService.readQueuedPosts(appPathService.queuePath())) {
+            if (post.getImageUrl() != null && !post.getImageUrl().isBlank()) {
+                usedImageUrls.add(post.getImageUrl());
+            }
+        }
+        return usedImageUrls;
     }
 
     private List<Object> publishPost(String text, String platforms, boolean shouldPublish) throws Exception {

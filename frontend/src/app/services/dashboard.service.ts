@@ -45,6 +45,14 @@ export class DashboardService {
     return this.http.put<QueuePost>(`${API_BASE_URL}/queue/${id}`, request);
   }
 
+  deleteQueuePost(id: string): Observable<ActionResult> {
+    return this.http.delete<ActionResult>(`${API_BASE_URL}/queue/${id}`);
+  }
+
+  moveQueuePost(id: string, direction: 'up' | 'down'): Observable<ActionResult> {
+    return this.http.post<ActionResult>(`${API_BASE_URL}/queue/${id}/move/${direction}`, {});
+  }
+
   markPostPublished(id: string, platform: string): Observable<ActionResult> {
     return this.http.post<ActionResult>(`${API_BASE_URL}/queue/${id}/mark-published/${platform}`, {});
   }

@@ -73,7 +73,10 @@ public class OpenSourceImageService {
 
         Optional<ImageMatch> cached = queryCache.get(query);
         if (cached != null) {
-            return cached.filter(match -> !excludedImageUrls.contains(match.imageUrl()));
+            Optional<ImageMatch> allowedCached = cached.filter(match -> !excludedImageUrls.contains(match.imageUrl()));
+            if (allowedCached.isPresent() || cached.isEmpty()) {
+                return allowedCached;
+            }
         }
 
         try {

@@ -113,6 +113,8 @@ export class AdminUiStateService {
       'attach-open-images': 'Attach photos',
       'auto-create': 'Generate posts',
       'daily': 'Daily run',
+      'delete-queue-post': 'Queue',
+      'move-queue-post': 'Queue',
       'open-x-composer': 'X composer',
       'open-x-login-browser': 'X login',
       'publish-queued-threads': 'Publish Threads',

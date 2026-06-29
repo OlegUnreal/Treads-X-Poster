@@ -3,6 +3,7 @@ package com.behindthesmile.posting.api;
 import com.behindthesmile.posting.model.QueuedPost;
 import com.behindthesmile.posting.service.AppPathService;
 import com.behindthesmile.posting.service.SocialPostingService;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -83,6 +84,16 @@ public class DashboardController {
     @PutMapping("/queue/{id}")
     public QueuedPost updateQueuePost(@PathVariable String id, @RequestBody QueuePostUpsertRequest request) throws Exception {
         return socialPostingService.updateQueuedPost(id, request);
+    }
+
+    @DeleteMapping("/queue/{id}")
+    public ActionResult deleteQueuePost(@PathVariable String id) {
+        return socialPostingService.deleteQueuedPost(id);
+    }
+
+    @PostMapping("/queue/{id}/move/{direction}")
+    public ActionResult moveQueuePost(@PathVariable String id, @PathVariable String direction) {
+        return socialPostingService.moveQueuedPost(id, direction);
     }
 
     @PostMapping("/queue/{id}/mark-published/{platform}")

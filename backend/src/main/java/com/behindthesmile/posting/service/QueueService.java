@@ -177,6 +177,44 @@ public class QueueService {
         throw new IllegalStateException("Queued post not found: " + id);
     }
 
+    public void deleteQueuedPost(Path filePath, String id) throws IOException {
+        List<QueuedPost> posts = new ArrayList<>(readQueuedPosts(filePath));
+        boolean removed = posts.removeIf(post -> id.equals(post.getId()));
+        if (!removed) {
+            throw new IllegalStateException("Queued post not found: " + id);
+        }
+        writeQueuedPosts(posts, filePath);
+    }
+
+    public QueuedPost moveQueuedPost(Path filePath, String id, int offset) throws IOException {
+        if (offset == 0) {
+            throw new IllegalStateException("Move offset must not be 0.");
+        }
+
+        List<QueuedPost> posts = new ArrayList<>(readQueuedPosts(filePath));
+        int currentIndex = -1;
+        for (int index = 0; index < posts.size(); index++) {
+            if (id.equals(posts.get(index).getId())) {
+                currentIndex = index;
+                break;
+            }
+        }
+
+        if (currentIndex < 0) {
+            throw new IllegalStateException("Queued post not found: " + id);
+        }
+
+        int targetIndex = Math.max(0, Math.min(posts.size() - 1, currentIndex + offset));
+        if (targetIndex == currentIndex) {
+            return posts.get(currentIndex);
+        }
+
+        QueuedPost moved = posts.remove(currentIndex);
+        posts.add(targetIndex, moved);
+        writeQueuedPosts(posts, filePath);
+        return moved;
+    }
+
     public QueuedPost appendQueuedPost(Path filePath, QueuedPost post) throws IOException {
         List<QueuedPost> posts = new ArrayList<>(readQueuedPosts(filePath));
         posts.add(post);

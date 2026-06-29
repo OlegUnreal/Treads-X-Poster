@@ -26,7 +26,7 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
         </p>
 
         <div class="queue-list" *ngIf="ui.editableQueue(vm.queue).length > 0; else emptyState">
-          <article class="queue-card" *ngFor="let post of ui.editableQueue(vm.queue)">
+          <article class="queue-card" *ngFor="let post of ui.editableQueue(vm.queue); let index = index; let last = last">
             <div class="meta">
               <div class="meta-copy">
                 <small>{{ post.createdAt | date:'yyyy-MM-dd HH:mm' }}</small>
@@ -42,10 +42,14 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
             </div>
 
             <div class="actions split">
+              <button type="button" class="ghost icon-action" [disabled]="index === 0" (click)="movePost(post, 'up')">Move Up</button>
+              <button type="button" class="ghost icon-action" [disabled]="last" (click)="movePost(post, 'down')">Move Down</button>
               <button type="button" (click)="toggleEditor(post.id)">
                 {{ expandedPostId === post.id ? 'Close Editor' : 'Edit Post' }}
               </button>
               <button type="button" class="ghost" *ngIf="expandedPostId === post.id" (click)="saveQueuePost(post)">Save Changes</button>
+              <button type="button" class="ghost" *ngIf="post.imageUrl" (click)="removePhoto(post)">Remove Photo</button>
+              <button type="button" class="danger" (click)="deletePost(post)">Delete</button>
             </div>
 
             <div class="editor" *ngIf="expandedPostId === post.id">
@@ -186,7 +190,7 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
       resize: vertical;
     }
     .actions { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 14px; }
-    .actions.split { grid-template-columns: repeat(2, minmax(0, max-content)); align-items: center; }
+    .actions.split { grid-template-columns: repeat(5, minmax(0, max-content)); align-items: center; }
     button {
       border: 0;
       border-radius: 999px;
@@ -201,6 +205,17 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
       background: rgba(255,255,255,0.9);
       color: #243b53;
       border: 1px solid rgba(31,41,51,0.12);
+      box-shadow: none;
+    }
+    button.danger {
+      background: rgba(154,52,18,0.10);
+      color: #7c2d12;
+      border: 1px solid rgba(154,52,18,0.18);
+      box-shadow: none;
+    }
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
       box-shadow: none;
     }
     .editor {
@@ -221,6 +236,7 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
     .empty { color: #52606d; font: 600 15px/1.5 "Segoe UI", sans-serif; }
     @media (max-width: 900px) {
       .form-grid { grid-template-columns: 1fr; }
+      .actions.split { grid-template-columns: repeat(2, minmax(0, max-content)); }
       .summary { grid-template-columns: 88px minmax(0, 1fr); }
       .image-thumb {
         width: 88px;
@@ -279,6 +295,53 @@ export class QueuePageComponent {
 
   protected toggleEditor(postId: string): void {
     this.expandedPostId = this.expandedPostId === postId ? null : postId;
+  }
+
+  protected movePost(post: QueuePost, direction: 'up' | 'down'): void {
+    this.dashboardService.moveQueuePost(post.id, direction).subscribe((result) => {
+      this.ui.pushActionResult(result);
+      this.queueDrafts.clear();
+    });
+  }
+
+  protected deletePost(post: QueuePost): void {
+    const preview = (post.topic || post.text || post.id).slice(0, 80);
+    if (!window.confirm(`Delete this queued post?\n\n${preview}`)) {
+      return;
+    }
+
+    this.dashboardService.deleteQueuePost(post.id).subscribe((result) => {
+      this.ui.pushActionResult(result);
+      this.queueDrafts.delete(post.id);
+      if (this.expandedPostId === post.id) {
+        this.expandedPostId = null;
+      }
+    });
+  }
+
+  protected removePhoto(post: QueuePost): void {
+    const payload: QueuePostUpsertRequest = this.ui.sanitizeQueueUpsertRequest({
+      topic: post.topic,
+      text: post.text,
+      visualHint: post.visualHint,
+      imageUrl: '',
+      imageSourcePage: '',
+      imageAttribution: '',
+      imageLicense: '',
+      status: post.status,
+      language: post.language ?? 'uk',
+      tone: post.tone ?? '',
+      platforms: post.platforms ?? ['x', 'threads']
+    });
+
+    this.dashboardService.updateQueuePost(post.id, payload).subscribe(() => {
+      this.ui.pushActionResult({
+        success: true,
+        command: 'update-queue-post',
+        message: 'Photo removed from queued post.'
+      });
+      this.queueDrafts.delete(post.id);
+    });
   }
 
   protected draftFor(post: QueuePost) {
