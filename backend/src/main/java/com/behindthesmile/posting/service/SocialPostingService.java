@@ -459,17 +459,22 @@ public class SocialPostingService {
             List<QueuedPost> posts = queueService.readQueuedPosts(appPathService.queuePath());
             Set<String> usedImageUrls = readUsedImageUrls();
             int updatedCount = 0;
+            int missingCount = 0;
+            int skippedWithoutMatchCount = 0;
+            int skippedStorageErrorCount = 0;
 
             for (QueuedPost post : posts) {
                 if (!"ready".equals(post.getStatus()) || (post.getImageUrl() != null && !post.getImageUrl().isBlank())) {
                     continue;
                 }
+                missingCount++;
 
                 GeneratedPostDraft draft = new GeneratedPostDraft();
                 draft.setText(post.getText());
                 draft.setVisualHint(post.getVisualHint());
                 GeneratedPostDraft enriched = openSourceImageService.enrichDraftWithOpenImage(draft, post.getTopic(), usedImageUrls);
                 if (enriched.getImageUrl() == null || enriched.getImageUrl().isBlank()) {
+                    skippedWithoutMatchCount++;
                     continue;
                 }
 
@@ -480,6 +485,7 @@ public class SocialPostingService {
                 } catch (Exception ex) {
                     log.warn("Could not store queue image for post {}: {}", post.getId(), ex.getMessage());
                     usedImageUrls.add(originalImageUrl);
+                    skippedStorageErrorCount++;
                     continue;
                 }
                 post.setImageOriginalUrl(originalImageUrl);
@@ -495,9 +501,24 @@ public class SocialPostingService {
             if (updatedCount > 0) {
                 queueService.writeQueuedPosts(posts, appPathService.queuePath());
             }
-            return updatedCount == 0
-                    ? "No missing queue photos were filled."
-                    : "Filled missing photos for " + updatedCount + " queued post(s).";
+            if (missingCount == 0) {
+                return "No ready posts are missing photos.";
+            }
+            if (updatedCount == 0) {
+                return "Found " + missingCount + " ready post(s) without photos, but no suitable new photos were found.";
+            }
+
+            String message = "Filled missing photos for " + updatedCount + " queued post(s).";
+            int remainingCount = missingCount - updatedCount;
+            if (remainingCount > 0) {
+                message += " " + remainingCount + " still need photos";
+                if (skippedWithoutMatchCount > 0 || skippedStorageErrorCount > 0) {
+                    message += " (" + skippedWithoutMatchCount + " had no suitable match, "
+                            + skippedStorageErrorCount + " could not be stored)";
+                }
+                message += ".";
+            }
+            return message;
         });
     }
 

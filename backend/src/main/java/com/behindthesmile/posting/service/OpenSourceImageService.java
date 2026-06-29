@@ -171,7 +171,11 @@ public class OpenSourceImageService {
         queries.add("coffee mug window");
         queries.add("headphones");
         queries.add("street evening");
-        return queries.stream().distinct().limit(4).toList();
+        queries.add("tea cup table");
+        queries.add("kitchen table");
+        queries.add("bedroom night");
+        queries.add("walking street");
+        return queries.stream().distinct().limit(10).toList();
     }
 
     private String normalizeVisualHintQuery(String visualHint) {
