@@ -37,6 +37,22 @@ public class AppPathService {
         return dataPath(appProperties.runtime().activeAccountFile());
     }
 
+    public Path mediaDir() {
+        return Path.of(appProperties.runtime().mediaDir()).toAbsolutePath().normalize();
+    }
+
+    public Path queueImagesDir() {
+        return mediaDir().resolve("queue-images").normalize();
+    }
+
+    public Path queueImagePath(String fileName) {
+        return queueImagesDir().resolve(fileName).normalize();
+    }
+
+    public String publicBaseUrl() {
+        return appProperties.runtime().publicBaseUrl().replaceAll("/+$", "");
+    }
+
     public Path dataDir() {
         return Path.of(appProperties.runtime().dataDir()).toAbsolutePath().normalize();
     }
@@ -51,6 +67,7 @@ public class AppPathService {
         details.put("draftPath", draftPath().toString());
         details.put("xLinksPath", xLinksPath().toString());
         details.put("activeAccountPath", activeAccountPath().toString());
+        details.put("mediaDir", mediaDir().toString());
         details.put("contentPlanPath", contentPlanPath.toString());
         details.put("contentPlanExists", Files.exists(contentPlanPath));
         return details;

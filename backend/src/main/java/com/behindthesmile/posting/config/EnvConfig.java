@@ -51,7 +51,9 @@ public class EnvConfig {
                 values.getOrDefault("DRAFTS_FILE", "posts.jsonl"),
                 values.getOrDefault("X_LINKS_FILE", "x-ready.html"),
                 values.getOrDefault("CONTENT_PLAN_FILE", "config/content-plan.json"),
-                values.getOrDefault("ACTIVE_ACCOUNT_FILE", "active-account.txt")
+                values.getOrDefault("ACTIVE_ACCOUNT_FILE", "active-account.txt"),
+                values.getOrDefault("MEDIA_DIR", "../generated/media"),
+                values.getOrDefault("PUBLIC_BASE_URL", "http://167.233.93.6:4301")
         );
 
         AppProperties.X defaultX = buildX(values, "", runtime);

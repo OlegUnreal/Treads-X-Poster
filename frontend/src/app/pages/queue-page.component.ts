@@ -26,6 +26,7 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
         </p>
 
         <div class="queue-tools">
+          <button type="button" (click)="fillMissingPhotos()">Fill Missing Photos</button>
           <button type="button" class="ghost" (click)="cleanDuplicatePhotos()">Clean Duplicate Photos</button>
         </div>
 
@@ -132,7 +133,9 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
       max-width: 760px;
       margin: 0 auto 16px;
       display: flex;
+      gap: 12px;
       justify-content: flex-end;
+      flex-wrap: wrap;
     }
     .queue-card {
       padding: 18px 20px;
@@ -334,6 +337,13 @@ export class QueuePageComponent {
 
   protected cleanDuplicatePhotos(): void {
     this.dashboardService.cleanDuplicateQueueImages().subscribe((result) => {
+      this.ui.pushActionResult(result);
+      this.queueDrafts.clear();
+    });
+  }
+
+  protected fillMissingPhotos(): void {
+    this.dashboardService.fillMissingQueuePhotos().subscribe((result) => {
       this.ui.pushActionResult(result);
       this.queueDrafts.clear();
     });

@@ -101,6 +101,11 @@ public class DashboardController {
         return socialPostingService.clearDuplicateQueueImages();
     }
 
+    @PostMapping("/queue/fill-missing-photos")
+    public ActionResult fillMissingQueuePhotos() {
+        return socialPostingService.fillMissingQueuePhotos();
+    }
+
     @PostMapping("/queue/{id}/mark-published/{platform}")
     public ActionResult markQueuePostPublished(@PathVariable String id, @PathVariable String platform) {
         return socialPostingService.markQueuedPostPublishedManually(id, platform);

@@ -17,6 +17,7 @@ public class QueuedPost {
     private String imageSourcePage;
     private String imageAttribution;
     private String imageLicense;
+    private String imageOriginalUrl;
     private Map<String, PublishedInfo> published;
 
     public String getId() { return id; }
@@ -45,6 +46,8 @@ public class QueuedPost {
     public void setImageAttribution(String imageAttribution) { this.imageAttribution = imageAttribution; }
     public String getImageLicense() { return imageLicense; }
     public void setImageLicense(String imageLicense) { this.imageLicense = imageLicense; }
+    public String getImageOriginalUrl() { return imageOriginalUrl; }
+    public void setImageOriginalUrl(String imageOriginalUrl) { this.imageOriginalUrl = imageOriginalUrl; }
     public Map<String, PublishedInfo> getPublished() { return published; }
     public void setPublished(Map<String, PublishedInfo> published) { this.published = published; }
 

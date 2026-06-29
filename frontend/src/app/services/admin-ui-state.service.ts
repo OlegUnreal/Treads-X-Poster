@@ -115,6 +115,7 @@ export class AdminUiStateService {
       'clean-duplicate-images': 'Queue photos',
       'daily': 'Daily run',
       'delete-queue-post': 'Queue',
+      'fill-missing-photos': 'Queue photos',
       'move-queue-post': 'Queue',
       'open-x-composer': 'X composer',
       'open-x-login-browser': 'X login',

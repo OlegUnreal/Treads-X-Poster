@@ -80,6 +80,7 @@ public class QueueService {
             post.setImageSourcePage(draft.getImageSourcePage());
             post.setImageAttribution(draft.getImageAttribution());
             post.setImageLicense(draft.getImageLicense());
+            post.setImageOriginalUrl(draft.getImageOriginalUrl());
             lines.add(objectMapper.writeValueAsString(post));
         }
 
@@ -238,6 +239,7 @@ public class QueueService {
             post.setImageSourcePage("");
             post.setImageAttribution("");
             post.setImageLicense("");
+            post.setImageOriginalUrl("");
             clearedCount++;
         }
 
@@ -408,6 +410,7 @@ public class QueueService {
         post.setImageSourcePage(normalizeBrokenUtf8(post.getImageSourcePage()));
         post.setImageAttribution(normalizeBrokenUtf8(post.getImageAttribution()));
         post.setImageLicense(normalizeBrokenUtf8(post.getImageLicense()));
+        post.setImageOriginalUrl(normalizeBrokenUtf8(post.getImageOriginalUrl()));
         return post;
     }
 

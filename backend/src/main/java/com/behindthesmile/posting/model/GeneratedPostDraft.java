@@ -7,6 +7,7 @@ public class GeneratedPostDraft {
     private String imageSourcePage;
     private String imageAttribution;
     private String imageLicense;
+    private String imageOriginalUrl;
 
     public String getText() {
         return text;
@@ -54,5 +55,13 @@ public class GeneratedPostDraft {
 
     public void setImageLicense(String imageLicense) {
         this.imageLicense = imageLicense;
+    }
+
+    public String getImageOriginalUrl() {
+        return imageOriginalUrl;
+    }
+
+    public void setImageOriginalUrl(String imageOriginalUrl) {
+        this.imageOriginalUrl = imageOriginalUrl;
     }
 }

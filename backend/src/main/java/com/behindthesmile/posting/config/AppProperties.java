@@ -20,7 +20,9 @@ public record AppProperties(
             String draftsFile,
             String xLinksFile,
             String contentPlanFile,
-            String activeAccountFile
+            String activeAccountFile,
+            String mediaDir,
+            String publicBaseUrl
     ) {}
 
     public record Account(

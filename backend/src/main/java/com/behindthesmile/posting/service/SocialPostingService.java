@@ -41,6 +41,7 @@ public class SocialPostingService {
     private final XBrowserAutomationService xBrowserAutomationService;
     private final AppPathService appPathService;
     private final AccountConfigService accountConfigService;
+    private final MediaStorageService mediaStorageService;
     private final AtomicBoolean autoCreateRunning = new AtomicBoolean(false);
 
     public SocialPostingService(
@@ -53,7 +54,8 @@ public class SocialPostingService {
             XService xService,
             XBrowserAutomationService xBrowserAutomationService,
             AppPathService appPathService,
-            AccountConfigService accountConfigService
+            AccountConfigService accountConfigService,
+            MediaStorageService mediaStorageService
     ) {
         this.appProperties = appProperties;
         this.openAiService = openAiService;
@@ -65,6 +67,7 @@ public class SocialPostingService {
         this.xBrowserAutomationService = xBrowserAutomationService;
         this.appPathService = appPathService;
         this.accountConfigService = accountConfigService;
+        this.mediaStorageService = mediaStorageService;
     }
 
     public String draft(Map<String, String> args, boolean publish) throws Exception {
@@ -347,13 +350,7 @@ public class SocialPostingService {
         return executeAction("attach-open-images", () -> {
             List<QueuedPost> posts = queueService.readQueuedPosts(appPathService.queuePath());
             int updatedCount = 0;
-            Set<String> usedImageUrls = new HashSet<>();
-
-            for (QueuedPost post : posts) {
-                if (post.getImageUrl() != null && !post.getImageUrl().isBlank()) {
-                    usedImageUrls.add(post.getImageUrl());
-                }
-            }
+            Set<String> usedImageUrls = readUsedImageUrls();
 
             for (QueuedPost post : posts) {
                 if (!"ready".equals(post.getStatus())) {
@@ -371,11 +368,15 @@ public class SocialPostingService {
                     continue;
                 }
 
-                post.setImageUrl(enriched.getImageUrl());
+                String originalImageUrl = enriched.getImageUrl();
+                String storedImageUrl = mediaStorageService.storeRemoteQueueImage(originalImageUrl, post.getId());
+                post.setImageOriginalUrl(originalImageUrl);
+                post.setImageUrl(storedImageUrl);
                 post.setImageSourcePage(enriched.getImageSourcePage());
                 post.setImageAttribution(enriched.getImageAttribution());
                 post.setImageLicense(enriched.getImageLicense());
-                usedImageUrls.add(enriched.getImageUrl());
+                usedImageUrls.add(originalImageUrl);
+                usedImageUrls.add(storedImageUrl);
                 updatedCount++;
             }
 
@@ -443,6 +444,46 @@ public class SocialPostingService {
             return clearedCount == 0
                     ? "No duplicate queue photos found."
                     : "Removed duplicate photos from " + clearedCount + " queued post(s).";
+        });
+    }
+
+    public ActionResult fillMissingQueuePhotos() {
+        return executeAction("fill-missing-photos", () -> {
+            List<QueuedPost> posts = queueService.readQueuedPosts(appPathService.queuePath());
+            Set<String> usedImageUrls = readUsedImageUrls();
+            int updatedCount = 0;
+
+            for (QueuedPost post : posts) {
+                if (!"ready".equals(post.getStatus()) || (post.getImageUrl() != null && !post.getImageUrl().isBlank())) {
+                    continue;
+                }
+
+                GeneratedPostDraft draft = new GeneratedPostDraft();
+                draft.setText(post.getText());
+                draft.setVisualHint(post.getVisualHint());
+                GeneratedPostDraft enriched = openSourceImageService.enrichDraftWithOpenImage(draft, post.getTopic(), usedImageUrls);
+                if (enriched.getImageUrl() == null || enriched.getImageUrl().isBlank()) {
+                    continue;
+                }
+
+                String originalImageUrl = enriched.getImageUrl();
+                String storedImageUrl = mediaStorageService.storeRemoteQueueImage(originalImageUrl, post.getId());
+                post.setImageOriginalUrl(originalImageUrl);
+                post.setImageUrl(storedImageUrl);
+                post.setImageSourcePage(enriched.getImageSourcePage());
+                post.setImageAttribution(enriched.getImageAttribution());
+                post.setImageLicense(enriched.getImageLicense());
+                usedImageUrls.add(originalImageUrl);
+                usedImageUrls.add(storedImageUrl);
+                updatedCount++;
+            }
+
+            if (updatedCount > 0) {
+                queueService.writeQueuedPosts(posts, appPathService.queuePath());
+            }
+            return updatedCount == 0
+                    ? "No missing queue photos were filled."
+                    : "Filled missing photos for " + updatedCount + " queued post(s).";
         });
     }
 
@@ -575,7 +616,17 @@ public class SocialPostingService {
         for (GeneratedPostDraft draft : drafts) {
             GeneratedPostDraft enriched = openSourceImageService.enrichDraftWithOpenImage(draft, topic, usedImageUrls);
             if (enriched.getImageUrl() != null && !enriched.getImageUrl().isBlank()) {
-                usedImageUrls.add(enriched.getImageUrl());
+                String originalImageUrl = enriched.getImageUrl();
+                try {
+                    String storedImageUrl = mediaStorageService.storeRemoteQueueImage(originalImageUrl, topic);
+                    enriched.setImageOriginalUrl(originalImageUrl);
+                    enriched.setImageUrl(storedImageUrl);
+                    usedImageUrls.add(originalImageUrl);
+                    usedImageUrls.add(storedImageUrl);
+                } catch (Exception ex) {
+                    log.warn("Could not store queue image on server: {}", ex.getMessage());
+                    usedImageUrls.add(originalImageUrl);
+                }
             }
             enrichedDrafts.add(enriched);
         }
@@ -587,6 +638,9 @@ public class SocialPostingService {
         for (QueuedPost post : queueService.readQueuedPosts(appPathService.queuePath())) {
             if (post.getImageUrl() != null && !post.getImageUrl().isBlank()) {
                 usedImageUrls.add(post.getImageUrl());
+            }
+            if (post.getImageOriginalUrl() != null && !post.getImageOriginalUrl().isBlank()) {
+                usedImageUrls.add(post.getImageOriginalUrl());
             }
         }
         return usedImageUrls;
