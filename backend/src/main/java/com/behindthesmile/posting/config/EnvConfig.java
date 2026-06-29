@@ -64,7 +64,7 @@ public class EnvConfig {
                         values.get("OPENAI_API_KEY"),
                         values.getOrDefault("OPENAI_MODEL", "gpt-4.1-mini"),
                         values.getOrDefault("OPENAI_IMAGE_MODEL", "gpt-image-1"),
-                        Integer.parseInt(values.getOrDefault("OPENAI_IMAGE_FILL_LIMIT", "5"))
+                        Integer.parseInt(values.getOrDefault("OPENAI_IMAGE_FILL_LIMIT", "1"))
                 ),
                 new AppProperties.Defaults(
                         values.getOrDefault("POST_LANGUAGE", "uk"),
