@@ -437,6 +437,15 @@ public class SocialPostingService {
         });
     }
 
+    public ActionResult clearDuplicateQueueImages() {
+        return executeAction("clean-duplicate-images", () -> {
+            int clearedCount = queueService.clearDuplicateImages(appPathService.queuePath());
+            return clearedCount == 0
+                    ? "No duplicate queue photos found."
+                    : "Removed duplicate photos from " + clearedCount + " queued post(s).";
+        });
+    }
+
     public QueuedPost createQueuedPost(QueuePostUpsertRequest request) throws Exception {
         if (request.text() == null || request.text().isBlank()) {
             throw new IllegalStateException("Post text is required.");

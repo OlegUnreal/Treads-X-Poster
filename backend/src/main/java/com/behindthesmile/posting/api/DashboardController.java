@@ -96,6 +96,11 @@ public class DashboardController {
         return socialPostingService.moveQueuedPost(id, direction);
     }
 
+    @PostMapping("/queue/clean-duplicate-images")
+    public ActionResult cleanDuplicateQueueImages() {
+        return socialPostingService.clearDuplicateQueueImages();
+    }
+
     @PostMapping("/queue/{id}/mark-published/{platform}")
     public ActionResult markQueuePostPublished(@PathVariable String id, @PathVariable String platform) {
         return socialPostingService.markQueuedPostPublishedManually(id, platform);

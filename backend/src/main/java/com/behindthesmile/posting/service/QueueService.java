@@ -18,9 +18,11 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -213,6 +215,36 @@ public class QueueService {
         posts.add(targetIndex, moved);
         writeQueuedPosts(posts, filePath);
         return moved;
+    }
+
+    public int clearDuplicateImages(Path filePath) throws IOException {
+        List<QueuedPost> posts = new ArrayList<>(readQueuedPosts(filePath));
+        Set<String> seenImageUrls = new HashSet<>();
+        int clearedCount = 0;
+
+        for (QueuedPost post : posts) {
+            String imageUrl = post.getImageUrl();
+            if (imageUrl == null || imageUrl.isBlank()) {
+                continue;
+            }
+
+            String normalizedImageUrl = imageUrl.trim();
+            if (!seenImageUrls.contains(normalizedImageUrl)) {
+                seenImageUrls.add(normalizedImageUrl);
+                continue;
+            }
+
+            post.setImageUrl("");
+            post.setImageSourcePage("");
+            post.setImageAttribution("");
+            post.setImageLicense("");
+            clearedCount++;
+        }
+
+        if (clearedCount > 0) {
+            writeQueuedPosts(posts, filePath);
+        }
+        return clearedCount;
     }
 
     public QueuedPost appendQueuedPost(Path filePath, QueuedPost post) throws IOException {

@@ -25,6 +25,10 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
           <span>{{ result.message }}</span>
         </p>
 
+        <div class="queue-tools">
+          <button type="button" class="ghost" (click)="cleanDuplicatePhotos()">Clean Duplicate Photos</button>
+        </div>
+
         <div class="queue-list" *ngIf="ui.editableQueue(vm.queue).length > 0; else emptyState">
           <article class="queue-card" *ngFor="let post of ui.editableQueue(vm.queue); let index = index; let last = last">
             <div class="meta">
@@ -123,6 +127,12 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
       gap: 16px;
       max-width: 760px;
       margin: 0 auto;
+    }
+    .queue-tools {
+      max-width: 760px;
+      margin: 0 auto 16px;
+      display: flex;
+      justify-content: flex-end;
     }
     .queue-card {
       padding: 18px 20px;
@@ -319,6 +329,13 @@ export class QueuePageComponent {
       if (this.expandedPostId === post.id) {
         this.expandedPostId = null;
       }
+    });
+  }
+
+  protected cleanDuplicatePhotos(): void {
+    this.dashboardService.cleanDuplicateQueueImages().subscribe((result) => {
+      this.ui.pushActionResult(result);
+      this.queueDrafts.clear();
     });
   }
 

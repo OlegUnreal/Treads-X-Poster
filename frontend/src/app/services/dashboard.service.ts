@@ -53,6 +53,10 @@ export class DashboardService {
     return this.http.post<ActionResult>(`${API_BASE_URL}/queue/${id}/move/${direction}`, {});
   }
 
+  cleanDuplicateQueueImages(): Observable<ActionResult> {
+    return this.http.post<ActionResult>(`${API_BASE_URL}/queue/clean-duplicate-images`, {});
+  }
+
   generatePrompt(request: GeneratePromptRequest): Observable<GeneratePromptResponse> {
     return this.http.post<GeneratePromptResponse>(`${API_BASE_URL}/generate`, request);
   }

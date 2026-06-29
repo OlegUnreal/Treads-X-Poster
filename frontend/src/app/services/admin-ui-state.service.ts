@@ -112,6 +112,7 @@ export class AdminUiStateService {
     const labels: Record<string, string> = {
       'attach-open-images': 'Attach photos',
       'auto-create': 'Generate posts',
+      'clean-duplicate-images': 'Queue photos',
       'daily': 'Daily run',
       'delete-queue-post': 'Queue',
       'move-queue-post': 'Queue',
