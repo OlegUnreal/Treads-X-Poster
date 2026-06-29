@@ -10,7 +10,7 @@ public record AppProperties(
         X x,
         Threads threads
 ) {
-    public record OpenAi(String apiKey, String model) {}
+    public record OpenAi(String apiKey, String model, String imageModel, int imageFillLimit) {}
 
     public record Defaults(String language, String topic, String tone, int count) {}
 

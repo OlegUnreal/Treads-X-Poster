@@ -9,6 +9,7 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -53,6 +54,29 @@ public class MediaStorageService {
 
         String extension = extension(response, trimmed);
         String fileName = sanitize(idHint) + "-" + UUID.randomUUID().toString().replace("-", "").substring(0, 12) + extension;
+        Path target = appPathService.queueImagePath(fileName);
+        Files.createDirectories(target.getParent());
+        Files.write(target, body, StandardOpenOption.CREATE_NEW);
+        return appPathService.publicBaseUrl() + "/api/media/queue-images/" + fileName;
+    }
+
+    public String storeQueueImageBytes(byte[] body, String extension, String idHint) throws IOException {
+        if (body == null || body.length == 0) {
+            throw new IOException("Generated image returned an empty file.");
+        }
+        if (body.length > MAX_IMAGE_BYTES) {
+            throw new IOException("Generated image is larger than " + MAX_IMAGE_BYTES + " bytes.");
+        }
+
+        String safeExtension = extension == null || extension.isBlank() ? ".jpg" : extension.trim().toLowerCase(Locale.ROOT);
+        if (!safeExtension.startsWith(".")) {
+            safeExtension = "." + safeExtension;
+        }
+        if (!List.of(".jpg", ".jpeg", ".png", ".webp").contains(safeExtension)) {
+            safeExtension = ".jpg";
+        }
+
+        String fileName = sanitize(idHint) + "-" + UUID.randomUUID().toString().replace("-", "").substring(0, 12) + safeExtension;
         Path target = appPathService.queueImagePath(fileName);
         Files.createDirectories(target.getParent());
         Files.write(target, body, StandardOpenOption.CREATE_NEW);

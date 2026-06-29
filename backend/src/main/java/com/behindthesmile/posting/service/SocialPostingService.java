@@ -462,6 +462,9 @@ public class SocialPostingService {
             int missingCount = 0;
             int skippedWithoutMatchCount = 0;
             int skippedStorageErrorCount = 0;
+            int aiGeneratedCount = 0;
+            int aiErrorCount = 0;
+            int aiFillLimit = Math.max(appProperties.openAi().imageFillLimit(), 0);
 
             for (QueuedPost post : posts) {
                 if (!"ready".equals(post.getStatus()) || (post.getImageUrl() != null && !post.getImageUrl().isBlank())) {
@@ -473,29 +476,53 @@ public class SocialPostingService {
                 draft.setText(post.getText());
                 draft.setVisualHint(post.getVisualHint());
                 GeneratedPostDraft enriched = openSourceImageService.enrichDraftWithOpenImage(draft, post.getTopic(), usedImageUrls);
-                if (enriched.getImageUrl() == null || enriched.getImageUrl().isBlank()) {
+                boolean updated = false;
+                if (enriched.getImageUrl() != null && !enriched.getImageUrl().isBlank()) {
+                    String originalImageUrl = enriched.getImageUrl();
+                    try {
+                        String storedImageUrl = mediaStorageService.storeRemoteQueueImage(originalImageUrl, post.getId());
+                        post.setImageOriginalUrl(originalImageUrl);
+                        post.setImageUrl(storedImageUrl);
+                        post.setImageSourcePage(enriched.getImageSourcePage());
+                        post.setImageAttribution(enriched.getImageAttribution());
+                        post.setImageLicense(enriched.getImageLicense());
+                        usedImageUrls.add(originalImageUrl);
+                        usedImageUrls.add(storedImageUrl);
+                        updated = true;
+                    } catch (Exception ex) {
+                        log.warn("Could not store queue image for post {}: {}", post.getId(), ex.getMessage());
+                        usedImageUrls.add(originalImageUrl);
+                        skippedStorageErrorCount++;
+                    }
+                } else {
                     skippedWithoutMatchCount++;
-                    continue;
                 }
 
-                String originalImageUrl = enriched.getImageUrl();
-                String storedImageUrl;
-                try {
-                    storedImageUrl = mediaStorageService.storeRemoteQueueImage(originalImageUrl, post.getId());
-                } catch (Exception ex) {
-                    log.warn("Could not store queue image for post {}: {}", post.getId(), ex.getMessage());
-                    usedImageUrls.add(originalImageUrl);
-                    skippedStorageErrorCount++;
-                    continue;
+                if (!updated && aiGeneratedCount < aiFillLimit) {
+                    try {
+                        OpenAiService.GeneratedImage image = openAiService.generateQueueImage(
+                                post.getText(),
+                                post.getTopic(),
+                                firstNonBlank(post.getVisualHint(), enriched.getVisualHint())
+                        );
+                        String storedImageUrl = mediaStorageService.storeQueueImageBytes(image.bytes(), image.extension(), post.getId());
+                        post.setImageOriginalUrl("");
+                        post.setImageUrl(storedImageUrl);
+                        post.setImageSourcePage("OpenAI image generation");
+                        post.setImageAttribution("AI-generated image from post text");
+                        post.setImageLicense("AI-generated");
+                        usedImageUrls.add(storedImageUrl);
+                        aiGeneratedCount++;
+                        updated = true;
+                    } catch (Exception ex) {
+                        log.warn("Could not generate AI queue image for post {}: {}", post.getId(), ex.getMessage());
+                        aiErrorCount++;
+                    }
                 }
-                post.setImageOriginalUrl(originalImageUrl);
-                post.setImageUrl(storedImageUrl);
-                post.setImageSourcePage(enriched.getImageSourcePage());
-                post.setImageAttribution(enriched.getImageAttribution());
-                post.setImageLicense(enriched.getImageLicense());
-                usedImageUrls.add(originalImageUrl);
-                usedImageUrls.add(storedImageUrl);
-                updatedCount++;
+
+                if (updated) {
+                    updatedCount++;
+                }
             }
 
             if (updatedCount > 0) {
@@ -509,12 +536,16 @@ public class SocialPostingService {
             }
 
             String message = "Filled missing photos for " + updatedCount + " queued post(s).";
+            if (aiGeneratedCount > 0) {
+                message += " " + aiGeneratedCount + " were AI-generated from the post text.";
+            }
             int remainingCount = missingCount - updatedCount;
             if (remainingCount > 0) {
                 message += " " + remainingCount + " still need photos";
-                if (skippedWithoutMatchCount > 0 || skippedStorageErrorCount > 0) {
+                if (skippedWithoutMatchCount > 0 || skippedStorageErrorCount > 0 || aiErrorCount > 0) {
                     message += " (" + skippedWithoutMatchCount + " had no suitable match, "
-                            + skippedStorageErrorCount + " could not be stored)";
+                            + skippedStorageErrorCount + " could not be stored, "
+                            + aiErrorCount + " AI generation attempt(s) failed)";
                 }
                 message += ".";
             }

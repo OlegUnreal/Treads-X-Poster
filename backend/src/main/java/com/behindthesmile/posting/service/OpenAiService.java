@@ -14,6 +14,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -23,6 +24,7 @@ import java.util.concurrent.TimeUnit;
 public class OpenAiService {
     private static final Logger log = LoggerFactory.getLogger(OpenAiService.class);
     private static final URI RESPONSES_URI = URI.create("https://api.openai.com/v1/responses");
+    private static final URI IMAGE_GENERATIONS_URI = URI.create("https://api.openai.com/v1/images/generations");
 
     private final HttpService httpService;
     private final ObjectMapper objectMapper;
@@ -194,6 +196,51 @@ public class OpenAiService {
         return posts;
     }
 
+    public GeneratedImage generateQueueImage(String postText, String topic, String visualHint)
+            throws IOException, InterruptedException {
+        String apiKey = requireValue(appProperties.openAi().apiKey(), "OPENAI_API_KEY");
+        String model = appProperties.openAi().imageModel();
+        String prompt = buildImagePrompt(postText, topic, visualHint);
+        long startedAt = System.nanoTime();
+        log.info("Generating queue image with OpenAI: model={}, promptChars={}", model, textLength(prompt));
+
+        Map<String, Object> payload = Map.of(
+                "model", model,
+                "prompt", prompt,
+                "size", "1024x1024",
+                "quality", "low",
+                "output_format", "jpeg"
+        );
+
+        HttpRequest request = HttpRequest.newBuilder(IMAGE_GENERATIONS_URI)
+                .header("Authorization", "Bearer " + apiKey)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload), StandardCharsets.UTF_8))
+                .build();
+
+        HttpResponse<String> response = httpService.client().send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        JsonNode responseJson = objectMapper.readTree(response.body());
+        log.info("OpenAI image response received: status={}, elapsedMs={}, bodyChars={}",
+                response.statusCode(),
+                elapsedMillis(startedAt),
+                textLength(response.body()));
+
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            String error = formatApiError(responseJson);
+            log.warn("OpenAI image request failed: status={}, error={}", response.statusCode(), error);
+            throw new IllegalStateException("OpenAI image request failed: " + error);
+        }
+
+        String b64 = responseJson.path("data").path(0).path("b64_json").asText("");
+        if (b64.isBlank()) {
+            throw new IllegalStateException("OpenAI image response did not include b64_json.");
+        }
+
+        byte[] bytes = Base64.getDecoder().decode(b64);
+        log.info("Generated queue image with OpenAI: bytes={}, elapsedMs={}", bytes.length, elapsedMillis(startedAt));
+        return new GeneratedImage(bytes, ".jpg");
+    }
+
     private JsonNode sendAndParse(String apiKey, String model, Map<String, Object> payload)
             throws IOException, InterruptedException {
         long startedAt = System.nanoTime();
@@ -236,6 +283,28 @@ public class OpenAiService {
                 "If therapy, dependence, or pain appears, frame it as lived experience, reflection, and support for professional care rather than instruction.",
                 "Prefer soft, stigma-reducing, Ukraine-aware language that sounds like one person talking to another."
         );
+    }
+
+    private String buildImagePrompt(String postText, String topic, String visualHint) {
+        return String.join("\n",
+                "Create one square social media image for a reflective Ukrainian personal post.",
+                "Use the post itself as the main creative brief, but do not put any text, captions, logos, UI, watermarks, or readable words in the image.",
+                "Style: natural documentary photo, soft light, ordinary real-life objects, quiet cinematic mood, human but not staged.",
+                "Avoid medical scenes, pills, alcohol, self-harm imagery, crying closeups, hospital rooms, weapons, and anything sensational.",
+                "Prefer symbolic everyday visuals: room light, window, mug, notebook, headphones, empty chair, street at dusk, kitchen table, blanket, phone face down.",
+                "No identifiable person unless the post clearly requires it; if a person appears, keep them anonymous from behind or cropped.",
+                "Topic: " + safeForPrompt(topic),
+                "Visual idea: " + safeForPrompt(visualHint),
+                "Post text: " + safeForPrompt(postText)
+        );
+    }
+
+    private String safeForPrompt(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        String normalized = value.replaceAll("\\s+", " ").trim();
+        return normalized.length() > 900 ? normalized.substring(0, 900).trim() : normalized;
     }
 
     private String extractOutputText(JsonNode payload) {
@@ -296,4 +365,6 @@ public class OpenAiService {
     private int textLength(String value) {
         return value == null ? 0 : value.length();
     }
+
+    public record GeneratedImage(byte[] bytes, String extension) {}
 }
