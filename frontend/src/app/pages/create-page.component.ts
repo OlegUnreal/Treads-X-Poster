@@ -66,11 +66,14 @@ interface PromptTemplate {
         <div class="simple-grid">
           <label class="field">
             <span>Preset</span>
-            <select class="form-select form-select-sm" [(ngModel)]="selectedPromptTemplateId" (ngModelChange)="applyPromptTemplate($event)">
-              <option *ngFor="let template of promptTemplates" [ngValue]="template.id">
-                {{ template.title }}
-              </option>
-            </select>
+            <div class="preset-control">
+              <select class="form-select form-select-sm" [(ngModel)]="selectedPromptTemplateId" (ngModelChange)="applyPromptTemplate($event)">
+                <option *ngFor="let template of promptTemplates" [ngValue]="template.id">
+                  {{ template.title }}
+                </option>
+              </select>
+              <button class="btn btn-outline-secondary btn-sm" type="button" (click)="saveCurrentPreset()">Save</button>
+            </div>
           </label>
 
           <label class="file-field">
@@ -211,6 +214,7 @@ interface PromptTemplate {
     .profile-copy small { color: #64748b; font: 600 12px/1.25 "Segoe UI", sans-serif; }
     .simple-grid { display: grid; grid-template-columns: minmax(180px, 280px) minmax(220px, 1fr); gap: 10px; }
     .field, .file-field { display: grid; gap: 4px; }
+    .preset-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
     .file-field small { color: #64748b; font: 600 12px/1.2 "Segoe UI", sans-serif; }
     .prompt-field { margin-top: 10px; }
     .form-control, .form-select { border-radius: 8px; }
@@ -270,6 +274,7 @@ interface PromptTemplate {
     .generated-results { margin: 10px 0 0; padding-left: 18px; color: #334155; font: 500 13px/1.5 "Segoe UI", sans-serif; }
     @media (max-width: 900px) {
       .page-head, .simple-grid, .settings-row, .advanced-grid, .manual-row { grid-template-columns: 1fr; display: grid; align-items: stretch; }
+      .preset-control { grid-template-columns: 1fr; }
       .action-button { width: 100%; }
     }
   `]
@@ -357,6 +362,33 @@ export class CreatePageComponent {
       topic: template.topic,
       tone: template.tone
     };
+  }
+
+  protected saveCurrentPreset(): void {
+    const prompt = this.generatorForm.prompt.trim();
+    if (!prompt) {
+      this.generationResultMessage = 'Add a prompt before saving a preset.';
+      return;
+    }
+
+    const fallbackName = this.compactTopic(prompt).slice(0, 42);
+    const title = window.prompt('Preset name', fallbackName)?.trim();
+    if (!title) {
+      return;
+    }
+
+    const template: PromptTemplate = {
+      id: `custom-${Date.now()}`,
+      title,
+      description: 'Saved from Create page.',
+      prompt,
+      topic: this.compactTopic(prompt),
+      tone: this.generatorForm.tone
+    };
+    this.promptTemplates = [...this.promptTemplates, template];
+    this.selectedPromptTemplateId = template.id;
+    this.savePromptTemplates();
+    this.generationResultMessage = `Preset "${template.title}" saved.`;
   }
 
   protected isTargetProfileSelected(profileId: string): boolean {
@@ -528,5 +560,9 @@ export class CreatePageComponent {
     } catch {
       return this.defaultPromptTemplates;
     }
+  }
+
+  private savePromptTemplates(): void {
+    window.localStorage.setItem(this.promptTemplateStorageKey, JSON.stringify(this.promptTemplates));
   }
 }
