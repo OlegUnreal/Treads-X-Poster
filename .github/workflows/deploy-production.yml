@@ -73,14 +73,14 @@ jobs:
           bash "${APP_DIR}/scripts/deploy-production.sh" "${DEPLOY_BRANCH}"
           REMOTE
 
-          if [ -n "${DEPLOY_PASSWORD}" ]; then
-            sudo apt-get update
-            sudo apt-get install -y sshpass
-            sshpass -p "${DEPLOY_PASSWORD}" ssh -p "${PORT}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-              "APP_DIR='${APP_DIR}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' PUBLIC_HOST='${DEPLOY_HOST}' bash -s" < "${REMOTE_SCRIPT}"
-          else
+          if [ -n "${DEPLOY_SSH_KEY}" ]; then
             printf '%s\n' "${DEPLOY_SSH_KEY}" > ~/.ssh/deploy_key
             chmod 600 ~/.ssh/deploy_key
             ssh -i ~/.ssh/deploy_key -p "${PORT}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+              "APP_DIR='${APP_DIR}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' PUBLIC_HOST='${DEPLOY_HOST}' bash -s" < "${REMOTE_SCRIPT}"
+          else
+            sudo apt-get update
+            sudo apt-get install -y sshpass
+            sshpass -p "${DEPLOY_PASSWORD}" ssh -p "${PORT}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
               "APP_DIR='${APP_DIR}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' PUBLIC_HOST='${DEPLOY_HOST}' bash -s" < "${REMOTE_SCRIPT}"
           fi
