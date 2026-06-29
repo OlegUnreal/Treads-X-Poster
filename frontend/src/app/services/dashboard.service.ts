@@ -33,32 +33,44 @@ export class DashboardService {
     return this.http.put<AccountSelectionResponse>(`${API_BASE_URL}/accounts/active`, { accountId });
   }
 
-  getQueue(): Observable<QueuePost[]> {
-    return this.http.get<QueuePost[]>(`${API_BASE_URL}/queue`);
+  getQueue(platform = 'x'): Observable<QueuePost[]> {
+    return this.http.get<QueuePost[]>(`${API_BASE_URL}/queue`, {
+      params: { platform }
+    });
   }
 
   createQueuePost(request: QueuePostUpsertRequest): Observable<QueuePost> {
     return this.http.post<QueuePost>(`${API_BASE_URL}/queue`, request);
   }
 
-  updateQueuePost(id: string, request: QueuePostUpsertRequest): Observable<QueuePost> {
-    return this.http.put<QueuePost>(`${API_BASE_URL}/queue/${id}`, request);
+  updateQueuePost(id: string, request: QueuePostUpsertRequest, platform = 'x'): Observable<QueuePost> {
+    return this.http.put<QueuePost>(`${API_BASE_URL}/queue/${id}`, request, {
+      params: { platform }
+    });
   }
 
-  deleteQueuePost(id: string): Observable<ActionResult> {
-    return this.http.delete<ActionResult>(`${API_BASE_URL}/queue/${id}`);
+  deleteQueuePost(id: string, platform = 'x'): Observable<ActionResult> {
+    return this.http.delete<ActionResult>(`${API_BASE_URL}/queue/${id}`, {
+      params: { platform }
+    });
   }
 
-  moveQueuePost(id: string, direction: 'up' | 'down'): Observable<ActionResult> {
-    return this.http.post<ActionResult>(`${API_BASE_URL}/queue/${id}/move/${direction}`, {});
+  moveQueuePost(id: string, direction: 'up' | 'down', platform = 'x'): Observable<ActionResult> {
+    return this.http.post<ActionResult>(`${API_BASE_URL}/queue/${id}/move/${direction}`, {}, {
+      params: { platform }
+    });
   }
 
-  cleanDuplicateQueueImages(): Observable<ActionResult> {
-    return this.http.post<ActionResult>(`${API_BASE_URL}/queue/clean-duplicate-images`, {});
+  cleanDuplicateQueueImages(platform = 'x'): Observable<ActionResult> {
+    return this.http.post<ActionResult>(`${API_BASE_URL}/queue/clean-duplicate-images`, {}, {
+      params: { platform }
+    });
   }
 
-  fillMissingQueuePhotos(): Observable<ActionResult> {
-    return this.http.post<ActionResult>(`${API_BASE_URL}/queue/fill-missing-photos`, {});
+  fillMissingQueuePhotos(platform = 'x'): Observable<ActionResult> {
+    return this.http.post<ActionResult>(`${API_BASE_URL}/queue/fill-missing-photos`, {}, {
+      params: { platform }
+    });
   }
 
   generatePrompt(request: GeneratePromptRequest): Observable<GeneratePromptResponse> {

@@ -53,6 +53,13 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
         </div>
 
         <div class="queue-tools">
+          <label class="platform-switcher">
+            <span>Platform Queue</span>
+            <select [ngModel]="queuePlatform" (ngModelChange)="switchQueuePlatform($event)">
+              <option value="x">X</option>
+              <option value="threads">Threads</option>
+            </select>
+          </label>
           <button type="button" (click)="fillMissingPhotos()">Fill Missing Photos</button>
           <button type="button" class="ghost" (click)="cleanDuplicatePhotos()">Clean Duplicate Photos</button>
         </div>
@@ -162,7 +169,29 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
       display: flex;
       gap: 12px;
       justify-content: flex-end;
+      align-items: end;
       flex-wrap: wrap;
+    }
+    .platform-switcher {
+      display: grid;
+      gap: 6px;
+      margin-right: auto;
+      font-family: "Segoe UI", sans-serif;
+    }
+    .platform-switcher span {
+      color: #52606d;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .platform-switcher select {
+      min-width: 150px;
+      border: 1px solid rgba(31,41,51,0.12);
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: white;
+      color: #243b53;
+      font: 700 14px/1.4 "Segoe UI", sans-serif;
     }
     .account-switcher {
       max-width: 760px;
@@ -333,6 +362,7 @@ export class QueuePageComponent {
   protected readonly ui = inject(AdminUiStateService);
   private readonly dashboardService = inject(DashboardService);
   protected expandedPostId: string | null = null;
+  protected queuePlatform: 'x' | 'threads' = 'x';
   private readonly queueDrafts = new Map<string, {
     topic: string;
     text: string;
@@ -361,7 +391,7 @@ export class QueuePageComponent {
       platforms: this.ui.parsePlatforms(draft.platformsText)
     });
 
-    this.dashboardService.updateQueuePost(post.id, payload).subscribe(() => {
+    this.dashboardService.updateQueuePost(post.id, payload, this.queuePlatform).subscribe(() => {
       this.ui.pushActionResult({
         success: true,
         command: 'update-queue-post',
@@ -377,7 +407,7 @@ export class QueuePageComponent {
   }
 
   protected movePost(post: QueuePost, direction: 'up' | 'down'): void {
-    this.dashboardService.moveQueuePost(post.id, direction).subscribe((result) => {
+    this.dashboardService.moveQueuePost(post.id, direction, this.queuePlatform).subscribe((result) => {
       this.ui.pushActionResult(result);
       this.queueDrafts.clear();
     });
@@ -389,7 +419,7 @@ export class QueuePageComponent {
       return;
     }
 
-    this.dashboardService.deleteQueuePost(post.id).subscribe((result) => {
+    this.dashboardService.deleteQueuePost(post.id, this.queuePlatform).subscribe((result) => {
       this.ui.pushActionResult(result);
       this.queueDrafts.delete(post.id);
       if (this.expandedPostId === post.id) {
@@ -399,14 +429,14 @@ export class QueuePageComponent {
   }
 
   protected cleanDuplicatePhotos(): void {
-    this.dashboardService.cleanDuplicateQueueImages().subscribe((result) => {
+    this.dashboardService.cleanDuplicateQueueImages(this.queuePlatform).subscribe((result) => {
       this.ui.pushActionResult(result);
       this.queueDrafts.clear();
     });
   }
 
   protected fillMissingPhotos(): void {
-    this.dashboardService.fillMissingQueuePhotos().subscribe((result) => {
+    this.dashboardService.fillMissingQueuePhotos(this.queuePlatform).subscribe((result) => {
       this.ui.pushActionResult(result);
       this.queueDrafts.clear();
     });
@@ -424,6 +454,13 @@ export class QueuePageComponent {
     });
   }
 
+  protected switchQueuePlatform(platform: 'x' | 'threads'): void {
+    this.queuePlatform = platform === 'threads' ? 'threads' : 'x';
+    this.queueDrafts.clear();
+    this.expandedPostId = null;
+    this.ui.setQueuePlatform(this.queuePlatform);
+  }
+
   protected removePhoto(post: QueuePost): void {
     const payload: QueuePostUpsertRequest = this.ui.sanitizeQueueUpsertRequest({
       topic: post.topic,
@@ -439,7 +476,7 @@ export class QueuePageComponent {
       platforms: post.platforms ?? ['x', 'threads']
     });
 
-    this.dashboardService.updateQueuePost(post.id, payload).subscribe(() => {
+    this.dashboardService.updateQueuePost(post.id, payload, this.queuePlatform).subscribe(() => {
       this.ui.pushActionResult({
         success: true,
         command: 'update-queue-post',

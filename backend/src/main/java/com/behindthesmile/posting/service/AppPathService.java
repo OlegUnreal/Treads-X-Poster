@@ -32,6 +32,15 @@ public class AppPathService {
         return dataDir().resolve("queues").resolve(safeFileName(accountId) + ".jsonl").normalize();
     }
 
+    public Path queuePath(String accountId, String platform) {
+        if (accountId == null || accountId.isBlank() || platform == null || platform.isBlank()) {
+            return queuePath(accountId);
+        }
+        return dataDir().resolve("queues")
+                .resolve(safeFileName(accountId) + "-" + safeFileName(platform) + ".jsonl")
+                .normalize();
+    }
+
     public Path xLinksPath() {
         return dataPath(appProperties.runtime().xLinksFile());
     }

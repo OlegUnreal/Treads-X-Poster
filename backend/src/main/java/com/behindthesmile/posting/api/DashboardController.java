@@ -74,8 +74,8 @@ public class DashboardController {
     }
 
     @GetMapping("/queue")
-    public List<QueuedPost> queue() throws Exception {
-        return socialPostingService.getQueue();
+    public List<QueuedPost> queue(@RequestParam(value = "platform", required = false) String platform) throws Exception {
+        return socialPostingService.getQueue(platform);
     }
 
     @PostMapping("/queue")
@@ -84,28 +84,36 @@ public class DashboardController {
     }
 
     @PutMapping("/queue/{id}")
-    public QueuedPost updateQueuePost(@PathVariable String id, @RequestBody QueuePostUpsertRequest request) throws Exception {
-        return socialPostingService.updateQueuedPost(id, request);
+    public QueuedPost updateQueuePost(
+            @PathVariable String id,
+            @RequestParam(value = "platform", required = false) String platform,
+            @RequestBody QueuePostUpsertRequest request
+    ) throws Exception {
+        return socialPostingService.updateQueuedPost(id, platform, request);
     }
 
     @DeleteMapping("/queue/{id}")
-    public ActionResult deleteQueuePost(@PathVariable String id) {
-        return socialPostingService.deleteQueuedPost(id);
+    public ActionResult deleteQueuePost(@PathVariable String id, @RequestParam(value = "platform", required = false) String platform) {
+        return socialPostingService.deleteQueuedPost(id, platform);
     }
 
     @PostMapping("/queue/{id}/move/{direction}")
-    public ActionResult moveQueuePost(@PathVariable String id, @PathVariable String direction) {
-        return socialPostingService.moveQueuedPost(id, direction);
+    public ActionResult moveQueuePost(
+            @PathVariable String id,
+            @PathVariable String direction,
+            @RequestParam(value = "platform", required = false) String platform
+    ) {
+        return socialPostingService.moveQueuedPost(id, direction, platform);
     }
 
     @PostMapping("/queue/clean-duplicate-images")
-    public ActionResult cleanDuplicateQueueImages() {
-        return socialPostingService.clearDuplicateQueueImages();
+    public ActionResult cleanDuplicateQueueImages(@RequestParam(value = "platform", required = false) String platform) {
+        return socialPostingService.clearDuplicateQueueImages(platform);
     }
 
     @PostMapping("/queue/fill-missing-photos")
-    public ActionResult fillMissingQueuePhotos() {
-        return socialPostingService.fillMissingQueuePhotos();
+    public ActionResult fillMissingQueuePhotos(@RequestParam(value = "platform", required = false) String platform) {
+        return socialPostingService.fillMissingQueuePhotos(platform);
     }
 
     @PostMapping("/queue/{id}/mark-published/{platform}")

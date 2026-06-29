@@ -9,16 +9,18 @@ import { DashboardService } from './dashboard.service';
 export class AdminUiStateService {
   private readonly dashboardService = inject(DashboardService);
   private readonly refreshTrigger$ = new BehaviorSubject<void>(undefined);
+  private readonly queuePlatformSubject = new BehaviorSubject<'x' | 'threads'>('x');
   private readonly actionResultSubject = new Subject<ActionResult>();
 
   readonly actionResult$ = this.actionResultSubject.asObservable();
+  readonly queuePlatform$ = this.queuePlatformSubject.asObservable();
 
-  readonly vm$ = this.refreshTrigger$.pipe(
-    switchMap(() => combineLatest([
+  readonly vm$ = combineLatest([this.refreshTrigger$, this.queuePlatformSubject]).pipe(
+    switchMap(([, platform]) => combineLatest([
       this.dashboardService.getSummary(),
-      this.dashboardService.getQueue()
+      this.dashboardService.getQueue(platform)
     ])),
-    map(([summary, queue]) => ({ summary, queue })),
+    map(([summary, queue]) => ({ summary, queue, queuePlatform: this.queuePlatformSubject.value })),
     startWith({
       summary: {
         queueReady: 0,
@@ -37,7 +39,8 @@ export class AdminUiStateService {
         },
         jobStatus: null
       },
-      queue: []
+      queue: [],
+      queuePlatform: 'x' as const
     })
   );
 
@@ -48,6 +51,10 @@ export class AdminUiStateService {
   pushActionResult(result: ActionResult): void {
     this.actionResultSubject.next(this.humanizeActionResult(result));
     this.refresh();
+  }
+
+  setQueuePlatform(platform: 'x' | 'threads'): void {
+    this.queuePlatformSubject.next(platform);
   }
 
   xReadyPosts(queue: QueuePost[]): QueuePost[] {
