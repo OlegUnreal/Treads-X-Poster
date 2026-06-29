@@ -73,14 +73,8 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
           </div>
           <div class="support-actions" *ngIf="showSupportActions">
             <div class="actions">
-              <button type="button" class="secondary" [disabled]="busyAction !== null" (click)="runDailyNow()">
-                {{ busyAction === 'daily' ? 'Running Daily...' : 'Run Daily Now' }}
-              </button>
               <button type="button" class="secondary" [disabled]="busyAction !== null" (click)="generateMorePosts()">
                 {{ busyAction === 'auto-create' ? 'Generating...' : 'Generate More Posts' }}
-              </button>
-              <button type="button" class="secondary" [disabled]="busyAction !== null" (click)="attachOpenImages()">
-                {{ busyAction === 'attach-open-images' ? 'Attaching...' : 'Attach Open Photos To Queue' }}
               </button>
             </div>
           </div>
@@ -276,16 +270,8 @@ export class PublishPageComponent {
   protected xComposerText = '';
   protected busyAction: string | null = null;
 
-  protected runDailyNow(): void {
-    this.runAction('daily', this.dashboardService.runDaily());
-  }
-
   protected generateMorePosts(): void {
     this.runAction('auto-create', this.dashboardService.runAutoCreate());
-  }
-
-  protected attachOpenImages(): void {
-    this.runAction('attach-open-images', this.dashboardService.attachOpenImages());
   }
 
   protected switchAccount(accountId: string): void {

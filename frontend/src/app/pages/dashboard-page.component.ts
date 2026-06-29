@@ -55,9 +55,6 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
             <p>Only the core actions live here.</p>
           </div>
           <div class="actions">
-            <button type="button" [disabled]="busyAction !== null" (click)="runDailyNow()">
-              {{ busyAction === 'daily' ? 'Running Daily...' : 'Run Daily Now' }}
-            </button>
             <button type="button" [disabled]="busyAction !== null" (click)="generateMorePosts()">
               {{ busyAction === 'auto-create' ? 'Generating...' : 'Generate More Posts' }}
             </button>
@@ -330,10 +327,6 @@ export class DashboardPageComponent {
       .replace(/[A-Z]:\\[^ ]+/g, '')
       .replace(/\s+/g, ' ')
       .trim();
-  }
-
-  protected runDailyNow(): void {
-    this.runAction('daily', this.dashboardService.runDaily());
   }
 
   protected generateMorePosts(): void {

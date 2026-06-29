@@ -53,10 +53,6 @@ export class DashboardService {
     return this.http.post<ActionResult>(`${API_BASE_URL}/queue/${id}/move/${direction}`, {});
   }
 
-  markPostPublished(id: string, platform: string): Observable<ActionResult> {
-    return this.http.post<ActionResult>(`${API_BASE_URL}/queue/${id}/mark-published/${platform}`, {});
-  }
-
   generatePrompt(request: GeneratePromptRequest): Observable<GeneratePromptResponse> {
     return this.http.post<GeneratePromptResponse>(`${API_BASE_URL}/generate`, request);
   }
@@ -77,16 +73,8 @@ export class DashboardService {
     return this.http.post<ActionResult>(`${API_BASE_URL}/job/stop`, {});
   }
 
-  runDaily(): Observable<ActionResult> {
-    return this.http.post<ActionResult>(`${API_BASE_URL}/actions/daily`, {});
-  }
-
   runAutoCreate(): Observable<ActionResult> {
     return this.http.post<ActionResult>(`${API_BASE_URL}/actions/auto-create`, {});
-  }
-
-  attachOpenImages(): Observable<ActionResult> {
-    return this.http.post<ActionResult>(`${API_BASE_URL}/actions/attach-open-images`, {});
   }
 
   publishThread(): Observable<ActionResult> {
