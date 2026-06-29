@@ -34,7 +34,7 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
               <span class="badge">{{ post.status }}</span>
             </div>
 
-            <div class="summary">
+            <div class="summary" [class.no-image]="!post.imageUrl">
               <div class="image-thumb" *ngIf="post.imageUrl">
                 <img [src]="post.imageUrl" alt="Queue preview" />
               </div>
@@ -153,6 +153,9 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
       gap: 12px;
       align-items: start;
       max-width: 700px;
+    }
+    .summary.no-image {
+      grid-template-columns: 1fr;
     }
     .image-thumb {
       width: 88px;
