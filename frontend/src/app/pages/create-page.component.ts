@@ -4,15 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { GeneratePromptResponse } from '../models/dashboard.models';
 import { DashboardService } from '../services/dashboard.service';
 import { AdminUiStateService } from '../services/admin-ui-state.service';
-
-interface PromptTemplate {
-  id: string;
-  title: string;
-  description: string;
-  prompt: string;
-  topic: string;
-  tone: string;
-}
+import { ContentConfigService, PromptPreset } from '../services/content-config.service';
 
 @Component({
   selector: 'app-create-page',
@@ -66,14 +58,11 @@ interface PromptTemplate {
         <div class="simple-grid">
           <label class="field">
             <span>Preset</span>
-            <div class="preset-control">
-              <select class="form-select form-select-sm" [(ngModel)]="selectedPromptTemplateId" (ngModelChange)="applyPromptTemplate($event)">
-                <option *ngFor="let template of promptTemplates" [ngValue]="template.id">
-                  {{ template.title }}
-                </option>
-              </select>
-              <button class="btn btn-outline-secondary btn-sm" type="button" (click)="saveCurrentPreset()">Save</button>
-            </div>
+            <select class="form-select form-select-sm" [(ngModel)]="selectedPromptTemplateId" (ngModelChange)="applyPromptTemplate($event)">
+              <option *ngFor="let template of promptTemplates" [ngValue]="template.id">
+                {{ template.title }}
+              </option>
+            </select>
           </label>
 
           <label class="file-field">
@@ -115,7 +104,9 @@ interface PromptTemplate {
             </label>
             <label class="field">
               <span>Tone</span>
-              <input class="form-control form-control-sm" [(ngModel)]="generatorForm.tone" />
+              <select class="form-select form-select-sm" [(ngModel)]="generatorForm.tone">
+                <option *ngFor="let tone of allowedTones" [ngValue]="tone">{{ tone }}</option>
+              </select>
             </label>
           </div>
         </details>
@@ -214,7 +205,6 @@ interface PromptTemplate {
     .profile-copy small { color: #64748b; font: 600 12px/1.25 "Segoe UI", sans-serif; }
     .simple-grid { display: grid; grid-template-columns: minmax(180px, 280px) minmax(220px, 1fr); gap: 10px; }
     .field, .file-field { display: grid; gap: 4px; }
-    .preset-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
     .file-field small { color: #64748b; font: 600 12px/1.2 "Segoe UI", sans-serif; }
     .prompt-field { margin-top: 10px; }
     .form-control, .form-select { border-radius: 8px; }
@@ -274,15 +264,14 @@ interface PromptTemplate {
     .generated-results { margin: 10px 0 0; padding-left: 18px; color: #334155; font: 500 13px/1.5 "Segoe UI", sans-serif; }
     @media (max-width: 900px) {
       .page-head, .simple-grid, .settings-row, .advanced-grid, .manual-row { grid-template-columns: 1fr; display: grid; align-items: stretch; }
-      .preset-control { grid-template-columns: 1fr; }
       .action-button { width: 100%; }
     }
   `]
 })
 export class CreatePageComponent {
-  private readonly promptTemplateStorageKey = 'behind-the-smile.promptTemplates';
   protected readonly ui = inject(AdminUiStateService);
   private readonly dashboardService = inject(DashboardService);
+  private readonly contentConfig = inject(ContentConfigService);
 
   protected photoBatchBusy = false;
   protected photoBatchMessage = '';
@@ -293,37 +282,12 @@ export class CreatePageComponent {
   protected selectedTargetProfileIds: string[] = [];
   protected targetProfileError = '';
   protected selectedPromptTemplateId = 'quiet-vlog';
-  protected promptTemplates: PromptTemplate[] = [];
-  private readonly defaultPromptTemplates: PromptTemplate[] = [
-    {
-      id: 'quiet-vlog',
-      title: 'Quiet personal vlog',
-      description: 'Soft diary-like posts.',
-      prompt: 'Write in Ukrainian. Make the posts feel like a quiet voice-over from a personal vlog: short sentences, small everyday details, honest emotion, and a little silence between thoughts. Avoid slogans, generic awareness language, and unnecessary brand mentions.',
-      topic: 'Personal vlog reflections on therapy, lyrics, and difficult days',
-      tone: 'warm, honest, cinematic, diary-like, human'
-    },
-    {
-      id: 'therapy-reflection',
-      title: 'Therapy reflection',
-      description: 'Grounded healing reflections.',
-      prompt: 'Write in Ukrainian. Create posts that sound like a calm therapy reflection after a difficult but important day. Keep the language simple and human. Avoid clinical advice, motivational cliches, and dramatic wording.',
-      topic: 'Therapy reflections, boundaries, and emotional recovery',
-      tone: 'calm, caring, honest, grounded'
-    },
-    {
-      id: 'music-lyrics',
-      title: 'Music and lyrics',
-      description: 'Song-feeling posts without quotes.',
-      prompt: 'Write in Ukrainian. Make each post feel inspired by music and lyrics, but do not quote any real lyrics. Keep it short, visual, and personal.',
-      topic: 'Music, lyric-like feelings, and late-night reflections',
-      tone: 'cinematic, intimate, reflective, simple'
-    }
-  ];
+  protected promptTemplates: PromptPreset[] = [];
+  protected allowedTones: string[] = [];
   protected generatorForm = {
-    prompt: this.defaultPromptTemplates[0].prompt,
-    topic: this.defaultPromptTemplates[0].topic,
-    tone: this.defaultPromptTemplates[0].tone,
+    prompt: '',
+    topic: '',
+    tone: '',
     language: 'uk',
     count: 3,
     saveToQueue: true
@@ -343,11 +307,14 @@ export class CreatePageComponent {
   };
 
   constructor() {
-    this.promptTemplates = this.loadPromptTemplates();
+    this.promptTemplates = this.contentConfig.loadPresets();
+    this.allowedTones = this.contentConfig.loadTones();
     const firstTemplate = this.promptTemplates[0];
     if (firstTemplate) {
       this.selectedPromptTemplateId = firstTemplate.id;
       this.applyPromptTemplate(firstTemplate.id);
+    } else {
+      this.generatorForm.tone = this.allowedTones[0] ?? 'warm, honest, cinematic, human';
     }
   }
 
@@ -362,33 +329,6 @@ export class CreatePageComponent {
       topic: template.topic,
       tone: template.tone
     };
-  }
-
-  protected saveCurrentPreset(): void {
-    const prompt = this.generatorForm.prompt.trim();
-    if (!prompt) {
-      this.generationResultMessage = 'Add a prompt before saving a preset.';
-      return;
-    }
-
-    const fallbackName = this.compactTopic(prompt).slice(0, 42);
-    const title = window.prompt('Preset name', fallbackName)?.trim();
-    if (!title) {
-      return;
-    }
-
-    const template: PromptTemplate = {
-      id: `custom-${Date.now()}`,
-      title,
-      description: 'Saved from Create page.',
-      prompt,
-      topic: this.compactTopic(prompt),
-      tone: this.generatorForm.tone
-    };
-    this.promptTemplates = [...this.promptTemplates, template];
-    this.selectedPromptTemplateId = template.id;
-    this.savePromptTemplates();
-    this.generationResultMessage = `Preset "${template.title}" saved.`;
   }
 
   protected isTargetProfileSelected(profileId: string): boolean {
@@ -538,31 +478,4 @@ export class CreatePageComponent {
     });
   }
 
-  private loadPromptTemplates(): PromptTemplate[] {
-    try {
-      const stored = window.localStorage.getItem(this.promptTemplateStorageKey);
-      if (!stored) {
-        return this.defaultPromptTemplates;
-      }
-      const parsed = JSON.parse(stored);
-      if (!Array.isArray(parsed)) {
-        return this.defaultPromptTemplates;
-      }
-      const templates = parsed.filter((template): template is PromptTemplate =>
-        typeof template?.id === 'string'
-        && typeof template?.title === 'string'
-        && typeof template?.description === 'string'
-        && typeof template?.prompt === 'string'
-        && typeof template?.topic === 'string'
-        && typeof template?.tone === 'string'
-      );
-      return templates.length > 0 ? templates : this.defaultPromptTemplates;
-    } catch {
-      return this.defaultPromptTemplates;
-    }
-  }
-
-  private savePromptTemplates(): void {
-    window.localStorage.setItem(this.promptTemplateStorageKey, JSON.stringify(this.promptTemplates));
-  }
 }
