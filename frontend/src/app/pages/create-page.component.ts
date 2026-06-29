@@ -28,6 +28,85 @@ interface PromptTemplate {
         </div>
       </header>
 
+      <article class="panel photo-panel" *ngIf="ui.vm$ | async as vm">
+        <div class="panel-head">
+          <h2>Photo Batch</h2>
+          <p>Upload photos, generate one caption per photo, then save or publish through the active account.</p>
+        </div>
+
+        <div class="account-strip">
+          <label>
+            <span>Active Account</span>
+            <select
+              [ngModel]="vm.summary.publisherAccounts.activeAccountId"
+              (ngModelChange)="switchAccount($event)"
+            >
+              <option
+                *ngFor="let account of vm.summary.publisherAccounts.availableAccounts"
+                [ngValue]="account.id"
+              >
+                {{ account.label }}
+              </option>
+            </select>
+          </label>
+          <dl>
+            <div>
+              <dt>X</dt>
+              <dd>{{ vm.summary.publisherAccounts.xAccountLabel }}</dd>
+            </div>
+            <div>
+              <dt>Threads</dt>
+              <dd>{{ vm.summary.publisherAccounts.threadsAccountLabel }}</dd>
+            </div>
+          </dl>
+        </div>
+
+        <div class="photo-upload">
+          <label class="file-drop">
+            <span>Photos</span>
+            <input type="file" accept="image/*" multiple (change)="selectPhotoBatch($event)" />
+            <strong>{{ selectedPhotoFiles.length || 'No' }} photo(s) selected</strong>
+          </label>
+          <label class="stacked">
+            <span>Caption Prompt</span>
+            <textarea [(ngModel)]="photoBatchForm.prompt" rows="5"></textarea>
+          </label>
+        </div>
+
+        <div class="form-grid compact">
+          <label>
+            <span>Topic</span>
+            <input [(ngModel)]="photoBatchForm.topic" />
+          </label>
+          <label>
+            <span>Platforms</span>
+            <input [(ngModel)]="photoBatchPlatforms" />
+          </label>
+          <label>
+            <span>Language</span>
+            <input [(ngModel)]="photoBatchForm.language" />
+          </label>
+          <label>
+            <span>Tone</span>
+            <input [(ngModel)]="photoBatchForm.tone" />
+          </label>
+          <label class="wide checkbox">
+            <input [(ngModel)]="photoBatchForm.publishNow" type="checkbox" />
+            <span>Publish immediately instead of only adding to queue</span>
+          </label>
+        </div>
+
+        <div class="actions split">
+          <button type="button" [disabled]="photoBatchBusy || selectedPhotoFiles.length === 0" (click)="createPhotoBatch()">
+            {{ photoBatchBusy ? 'Processing Photos...' : photoBatchForm.publishNow ? 'Generate And Publish' : 'Generate To Queue' }}
+          </button>
+        </div>
+
+        <p class="feedback" *ngIf="photoBatchMessage" [class.error]="photoBatchError">
+          {{ photoBatchMessage }}
+        </p>
+      </article>
+
       <section class="grid">
         <article class="panel">
           <div class="panel-head">
@@ -210,6 +289,59 @@ interface PromptTemplate {
       box-shadow: 0 24px 50px rgba(69,58,42,0.12);
     }
     .panel-head h2 { margin: 0; font-size: 28px; }
+    .photo-panel { display: grid; gap: 18px; }
+    .account-strip {
+      display: grid;
+      grid-template-columns: minmax(220px, 320px) minmax(0, 1fr);
+      gap: 14px;
+      padding: 14px;
+      border: 1px solid rgba(31,41,51,0.10);
+      border-radius: 16px;
+      background: rgba(255,255,255,0.64);
+      font-family: "Segoe UI", sans-serif;
+    }
+    .account-strip label { display: grid; gap: 8px; }
+    .account-strip span, .account-strip dt {
+      color: #52606d;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .account-strip select {
+      width: 100%;
+      border: 1px solid rgba(31,41,51,0.12);
+      border-radius: 12px;
+      padding: 11px 12px;
+      background: white;
+      color: #243b53;
+      font: 700 14px/1.4 "Segoe UI", sans-serif;
+    }
+    .account-strip dl { margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .account-strip dd {
+      margin: 4px 0 0;
+      color: #243b53;
+      font: 700 14px/1.4 "Segoe UI", sans-serif;
+      overflow-wrap: anywhere;
+    }
+    .photo-upload {
+      display: grid;
+      grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
+      gap: 14px;
+      align-items: stretch;
+    }
+    .file-drop {
+      display: grid;
+      gap: 10px;
+      align-content: center;
+      min-height: 150px;
+      padding: 18px;
+      border: 1px dashed rgba(31,41,51,0.24);
+      border-radius: 18px;
+      background: rgba(255,255,255,0.68);
+      font-family: "Segoe UI", sans-serif;
+    }
+    .file-drop input { width: 100%; }
+    .file-drop strong { color: #243b53; font: 800 18px/1.3 "Segoe UI", sans-serif; }
     .prompt-tools {
       margin-top: 18px;
       display: grid;
@@ -373,7 +505,7 @@ interface PromptTemplate {
     .generated-results { margin-top: 18px; font-family: "Segoe UI", sans-serif; }
     .generated-results h3 { margin: 0 0 12px; font-size: 18px; }
     .generated-results ol { margin: 0; padding-left: 18px; display: grid; gap: 10px; }
-    @media (max-width: 900px) { .grid, .form-grid, .prompt-tools, .template-manager { grid-template-columns: 1fr; } }
+    @media (max-width: 900px) { .grid, .form-grid, .prompt-tools, .template-manager, .account-strip, .photo-upload { grid-template-columns: 1fr; } }
   `]
 })
 export class CreatePageComponent {
@@ -383,10 +515,15 @@ export class CreatePageComponent {
 
   protected showGeneratorDetails = false;
   protected showManualDetails = false;
+  protected photoBatchBusy = false;
+  protected photoBatchMessage = '';
+  protected photoBatchError = false;
   protected generatorPlatforms = 'x, threads';
+  protected photoBatchPlatforms = 'x, threads';
   protected generatedPosts: string[] = [];
   protected generationResultMessage = '';
   protected newPostPlatforms = 'x, threads';
+  protected selectedPhotoFiles: File[] = [];
   protected selectedPromptTemplateIds: string[] = ['quiet-vlog'];
   protected newTemplateTitle = '';
   protected promptTemplates: PromptTemplate[] = [];
@@ -439,6 +576,13 @@ export class CreatePageComponent {
     language: 'uk',
     count: 3,
     saveToQueue: true
+  };
+  protected photoBatchForm = {
+    prompt: 'Напиши українські підписи, які відштовхуються від деталей фото. Тон: живий, короткий, ненавʼязливий, ніби кадр з особистого влогу. Без хештегів.',
+    topic: 'Uploaded photo batch',
+    tone: 'warm, honest, cinematic, human',
+    language: 'uk',
+    publishNow: false
   };
   protected newPostForm = {
     topic: '',
@@ -538,6 +682,61 @@ export class CreatePageComponent {
       ...this.generatorForm,
       platforms: this.ui.parsePlatforms(this.generatorPlatforms)
     }).subscribe((result) => this.handleGenerationResult(result));
+  }
+
+  protected selectPhotoBatch(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.selectedPhotoFiles = Array.from(input.files ?? []);
+    this.photoBatchMessage = this.selectedPhotoFiles.length
+      ? `${this.selectedPhotoFiles.length} photo(s) ready for caption generation.`
+      : '';
+    this.photoBatchError = false;
+  }
+
+  protected createPhotoBatch(): void {
+    if (this.selectedPhotoFiles.length === 0) {
+      this.photoBatchMessage = 'Choose one or more photos first.';
+      this.photoBatchError = true;
+      return;
+    }
+
+    this.photoBatchBusy = true;
+    this.photoBatchError = false;
+    this.photoBatchMessage = 'Generating captions from uploaded photos...';
+    this.dashboardService.createPhotoBatch({
+      photos: this.selectedPhotoFiles,
+      prompt: this.photoBatchForm.prompt,
+      topic: this.photoBatchForm.topic,
+      tone: this.photoBatchForm.tone,
+      language: this.photoBatchForm.language,
+      platforms: this.ui.parsePlatforms(this.photoBatchPlatforms),
+      publishNow: this.photoBatchForm.publishNow
+    }).subscribe({
+      next: (result) => {
+        this.photoBatchBusy = false;
+        this.photoBatchError = !result.success;
+        this.photoBatchMessage = result.message;
+        this.ui.pushActionResult(result);
+        if (result.success) {
+          this.selectedPhotoFiles = [];
+        }
+      },
+      error: (error) => {
+        this.photoBatchBusy = false;
+        this.photoBatchError = true;
+        this.photoBatchMessage = error?.error?.message || error?.message || 'Photo batch request failed.';
+      }
+    });
+  }
+
+  protected switchAccount(accountId: string): void {
+    this.dashboardService.switchActiveAccount(accountId).subscribe(() => {
+      this.ui.pushActionResult({
+        success: true,
+        command: 'switch-account',
+        message: `Active publishing account changed to ${accountId}.`
+      });
+    });
   }
 
   protected createManualPost(): void {

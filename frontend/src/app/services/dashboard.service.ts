@@ -65,6 +65,26 @@ export class DashboardService {
     return this.http.post<GeneratePromptResponse>(`${API_BASE_URL}/generate`, request);
   }
 
+  createPhotoBatch(request: {
+    photos: File[];
+    prompt: string;
+    topic: string;
+    tone: string;
+    language: string;
+    platforms: string[];
+    publishNow: boolean;
+  }): Observable<ActionResult> {
+    const formData = new FormData();
+    request.photos.forEach((photo) => formData.append('photos', photo, photo.name));
+    formData.append('prompt', request.prompt);
+    formData.append('topic', request.topic);
+    formData.append('tone', request.tone);
+    formData.append('language', request.language);
+    formData.append('platforms', request.platforms.join(','));
+    formData.append('publishNow', String(request.publishNow));
+    return this.http.post<ActionResult>(`${API_BASE_URL}/photo-batch`, formData);
+  }
+
   getJobStatus(): Observable<PostingJobStatus> {
     return this.http.get<PostingJobStatus>(`${API_BASE_URL}/job`);
   }

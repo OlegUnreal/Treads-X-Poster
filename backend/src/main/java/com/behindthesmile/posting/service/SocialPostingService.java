@@ -16,6 +16,7 @@ import com.behindthesmile.posting.model.QueuedPost;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -276,6 +277,10 @@ public class SocialPostingService {
 
     public AccountSelectionResponse switchActiveAccount(String accountId) throws Exception {
         return accountConfigService.switchActiveAccount(accountId);
+    }
+
+    public List<String> parsePlatforms(String platforms) {
+        return queueService.parsePlatforms(platforms);
     }
 
     public List<QueuedPost> getQueue() throws Exception {
@@ -572,6 +577,95 @@ public class SocialPostingService {
                 request.status()
         );
         return queueService.appendQueuedPost(appPathService.queuePath(), post);
+    }
+
+    public ActionResult createPostsFromUploadedPhotos(
+            MultipartFile[] photos,
+            String prompt,
+            String topic,
+            String tone,
+            String language,
+            List<String> platforms,
+            boolean publishNow
+    ) {
+        return executeAction("photo-batch", () -> {
+            if (photos == null || photos.length == 0) {
+                throw new IllegalStateException("Upload at least one photo.");
+            }
+
+            String resolvedTopic = firstNonBlank(topic, "Uploaded photo batch");
+            String resolvedTone = firstNonBlank(tone, appProperties.defaults().tone());
+            String resolvedLanguage = firstNonBlank(language, appProperties.defaults().language());
+            List<String> resolvedPlatforms = platforms == null || platforms.isEmpty()
+                    ? List.of("x", "threads")
+                    : platforms;
+            int queuedCount = 0;
+            int publishedCount = 0;
+
+            for (MultipartFile photo : photos) {
+                if (photo == null || photo.isEmpty()) {
+                    continue;
+                }
+                String contentType = firstNonBlank(photo.getContentType(), "");
+                if (!contentType.isBlank() && !contentType.toLowerCase(Locale.ROOT).startsWith("image/")) {
+                    throw new IllegalStateException("Only image uploads are supported: " + photo.getOriginalFilename());
+                }
+
+                byte[] bytes = photo.getBytes();
+                GeneratedPostDraft draft = openAiService.generateDraftForImage(
+                        bytes,
+                        contentType,
+                        photo.getOriginalFilename(),
+                        firstNonBlank(prompt, ""),
+                        resolvedTopic,
+                        resolvedTone,
+                        resolvedLanguage
+                );
+
+                QueuedPost post = queueService.createQueuedPost(
+                        resolvedTopic,
+                        draft.getText(),
+                        draft.getVisualHint(),
+                        "",
+                        "Uploaded photo: " + firstNonBlank(photo.getOriginalFilename(), "untitled"),
+                        "User uploaded photo",
+                        "User provided",
+                        resolvedTone,
+                        resolvedLanguage,
+                        resolvedPlatforms,
+                        "ready"
+                );
+                String imageUrl = mediaStorageService.storeUploadedQueueImage(bytes, photo.getOriginalFilename(), post.getId());
+                post.setImageUrl(imageUrl);
+                post.setImageOriginalUrl("");
+                queueService.appendQueuedPost(appPathService.queuePath(), post);
+                queuedCount++;
+
+                if (publishNow) {
+                    for (String platform : resolvedPlatforms) {
+                        if ("x".equals(platform)) {
+                            Map<String, Object> result = publishXWithConfiguredMode(post.getText(), post.getImageUrl());
+                            queueService.markQueuedPostPublished(appPathService.queuePath(), post.getId(), "x", result);
+                            publishedCount++;
+                        } else if ("threads".equals(platform)) {
+                            Map<String, Object> result = threadsService.publishToThreads(post.getText(), post.getImageUrl());
+                            queueService.markQueuedPostPublished(appPathService.queuePath(), post.getId(), "threads", result);
+                            publishedCount++;
+                        }
+                    }
+                }
+            }
+
+            if (queuedCount == 0) {
+                throw new IllegalStateException("No valid photos were uploaded.");
+            }
+
+            String message = "Created " + queuedCount + " queued post(s) from uploaded photo(s).";
+            if (publishNow) {
+                message += " Published " + publishedCount + " platform post(s) using the active account.";
+            }
+            return message;
+        });
     }
 
     public GeneratePromptResponse generateFromCustomPrompt(GeneratePromptRequest request) throws Exception {

@@ -83,6 +83,10 @@ public class MediaStorageService {
         return appPathService.publicBaseUrl() + "/api/media/queue-images/" + fileName;
     }
 
+    public String storeUploadedQueueImage(byte[] body, String originalFileName, String idHint) throws IOException {
+        return storeQueueImageBytes(body, extensionFromFileName(originalFileName), idHint);
+    }
+
     private String extension(HttpResponse<?> response, String imageUrl) {
         String contentType = response.headers().firstValue("Content-Type").orElse("").toLowerCase(Locale.ROOT);
         if (contentType.contains("png")) {
@@ -101,6 +105,20 @@ public class MediaStorageService {
         }
         if (normalized.contains(".webp")) {
             return ".webp";
+        }
+        return ".jpg";
+    }
+
+    private String extensionFromFileName(String fileName) {
+        String normalized = fileName == null ? "" : fileName.toLowerCase(Locale.ROOT);
+        if (normalized.endsWith(".png")) {
+            return ".png";
+        }
+        if (normalized.endsWith(".webp")) {
+            return ".webp";
+        }
+        if (normalized.endsWith(".jpeg")) {
+            return ".jpeg";
         }
         return ".jpg";
     }

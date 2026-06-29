@@ -11,7 +11,9 @@ import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
@@ -114,6 +116,27 @@ public class DashboardController {
     @PostMapping("/generate")
     public GeneratePromptResponse generate(@RequestBody GeneratePromptRequest request) throws Exception {
         return socialPostingService.generateFromCustomPrompt(request);
+    }
+
+    @PostMapping("/photo-batch")
+    public ActionResult createPhotoBatch(
+            @RequestParam("photos") MultipartFile[] photos,
+            @RequestParam(value = "prompt", required = false) String prompt,
+            @RequestParam(value = "topic", required = false) String topic,
+            @RequestParam(value = "tone", required = false) String tone,
+            @RequestParam(value = "language", required = false) String language,
+            @RequestParam(value = "platforms", required = false) String platforms,
+            @RequestParam(value = "publishNow", required = false, defaultValue = "false") boolean publishNow
+    ) {
+        return socialPostingService.createPostsFromUploadedPhotos(
+                photos,
+                prompt,
+                topic,
+                tone,
+                language,
+                socialPostingService.parsePlatforms(platforms),
+                publishNow
+        );
     }
 
     @PostMapping("/actions/daily")

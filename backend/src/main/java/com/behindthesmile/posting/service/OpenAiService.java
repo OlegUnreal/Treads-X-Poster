@@ -196,6 +196,74 @@ public class OpenAiService {
         return posts;
     }
 
+    public GeneratedPostDraft generateDraftForImage(
+            byte[] imageBytes,
+            String mimeType,
+            String fileName,
+            String prompt,
+            String topic,
+            String tone,
+            String language
+    ) throws IOException, InterruptedException {
+        String apiKey = requireValue(appProperties.openAi().apiKey(), "OPENAI_API_KEY");
+        String model = appProperties.openAi().model();
+        String dataUrl = "data:" + normalizeMimeType(mimeType, fileName) + ";base64,"
+                + Base64.getEncoder().encodeToString(imageBytes);
+        String userPrompt = buildImageCaptionPrompt(prompt, topic, tone, language, fileName);
+        long startedAt = System.nanoTime();
+        log.info("Generating image-based post with OpenAI: model={}, fileName={}, promptChars={}",
+                model,
+                fileName,
+                textLength(userPrompt));
+
+        Map<String, Object> payload = Map.of(
+                "model", model,
+                "input", List.of(
+                        Map.of(
+                                "role", "system",
+                                "content", buildSystemPrompt()
+                        ),
+                        Map.of(
+                                "role", "user",
+                                "content", List.of(
+                                        Map.of("type", "input_text", "text", userPrompt),
+                                        Map.of("type", "input_image", "image_url", dataUrl)
+                                )
+                        )
+                ),
+                "text", Map.of(
+                        "format", Map.of(
+                                "type", "json_schema",
+                                "name", "image_social_post",
+                                "schema", Map.of(
+                                        "type", "object",
+                                        "additionalProperties", false,
+                                        "required", List.of("text", "visualHint"),
+                                        "properties", Map.of(
+                                                "text", Map.of(
+                                                        "type", "string",
+                                                        "minLength", 1,
+                                                        "maxLength", 280
+                                                ),
+                                                "visualHint", Map.of(
+                                                        "type", "string",
+                                                        "minLength", 3,
+                                                        "maxLength", 180
+                                                )
+                                        )
+                                )
+                        )
+                )
+        );
+
+        JsonNode parsed = sendAndParse(apiKey, model, payload);
+        GeneratedPostDraft draft = new GeneratedPostDraft();
+        draft.setText(parsed.path("text").asText());
+        draft.setVisualHint(parsed.path("visualHint").asText());
+        log.info("Generated image-based post with OpenAI: elapsedMs={}", elapsedMillis(startedAt));
+        return draft;
+    }
+
     public GeneratedImage generateQueueImage(String postText, String topic, String visualHint)
             throws IOException, InterruptedException {
         String apiKey = requireValue(appProperties.openAi().apiKey(), "OPENAI_API_KEY");
@@ -297,6 +365,39 @@ public class OpenAiService {
                 "Visual idea: " + safeForPrompt(visualHint),
                 "Post text: " + safeForPrompt(postText)
         );
+    }
+
+    private String buildImageCaptionPrompt(String prompt, String topic, String tone, String language, String fileName) {
+        return String.join("\n",
+                "Look at the attached photo and create exactly one social media post caption for it.",
+                "Topic/context: " + safeForPrompt(topic),
+                "Language: " + safeForPrompt(language),
+                "Tone: " + safeForPrompt(tone),
+                "Original file name: " + safeForPrompt(fileName),
+                "User instructions: " + safeForPrompt(prompt),
+                "The post must fit both X and Threads.",
+                "Keep it under 260 characters.",
+                "Make the caption feel connected to the real image details, not generic.",
+                "Do not describe the photo mechanically. Use it as a lived moment.",
+                "Do not invent private facts about identifiable people in the photo.",
+                "Avoid hashtags unless the user explicitly asks.",
+                "Return JSON as: {\"text\":\"...\",\"visualHint\":\"...\"}"
+        );
+    }
+
+    private String normalizeMimeType(String mimeType, String fileName) {
+        String normalized = mimeType == null ? "" : mimeType.toLowerCase(Locale.ROOT);
+        if (List.of("image/jpeg", "image/png", "image/webp").contains(normalized)) {
+            return normalized;
+        }
+        String lowerName = fileName == null ? "" : fileName.toLowerCase(Locale.ROOT);
+        if (lowerName.endsWith(".png")) {
+            return "image/png";
+        }
+        if (lowerName.endsWith(".webp")) {
+            return "image/webp";
+        }
+        return "image/jpeg";
     }
 
     private String safeForPrompt(String value) {
