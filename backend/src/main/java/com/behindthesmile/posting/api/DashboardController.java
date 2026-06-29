@@ -126,6 +126,7 @@ public class DashboardController {
             @RequestParam(value = "tone", required = false) String tone,
             @RequestParam(value = "language", required = false) String language,
             @RequestParam(value = "platforms", required = false) String platforms,
+            @RequestParam(value = "accountIds", required = false) String accountIds,
             @RequestParam(value = "publishNow", required = false, defaultValue = "false") boolean publishNow
     ) {
         return socialPostingService.createPostsFromUploadedPhotos(
@@ -135,6 +136,7 @@ public class DashboardController {
                 tone,
                 language,
                 socialPostingService.parsePlatforms(platforms),
+                socialPostingService.parseAccountIds(accountIds),
                 publishNow
         );
     }

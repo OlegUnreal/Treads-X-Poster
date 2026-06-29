@@ -19,7 +19,7 @@ interface PromptTemplate {
   standalone: true,
   imports: [AsyncPipe, NgFor, NgIf, FormsModule],
   template: `
-    <section class="page">
+    <section class="page" *ngIf="ui.vm$ | async as vm">
       <header class="page-head">
         <div>
           <p class="eyebrow">Create Posts</p>
@@ -28,10 +28,34 @@ interface PromptTemplate {
         </div>
       </header>
 
-      <article class="panel photo-panel" *ngIf="ui.vm$ | async as vm">
+      <article class="panel target-panel">
+        <div class="panel-head">
+          <h2>Target Accounts</h2>
+          <p>New posts are copied into each selected account queue. Leave all unchecked to use the active account only.</p>
+        </div>
+        <div class="account-targets">
+          <label
+            class="target-account"
+            *ngFor="let account of vm.summary.publisherAccounts.availableAccounts"
+            [class.active]="isTargetAccountSelected(account.id)"
+          >
+            <input
+              type="checkbox"
+              [checked]="isTargetAccountSelected(account.id)"
+              (change)="toggleTargetAccount(account.id, $event)"
+            />
+            <span>
+              <strong>{{ account.label }}</strong>
+              <small>X: {{ account.xAccountLabel }} · Threads: {{ account.threadsAccountLabel }}</small>
+            </span>
+          </label>
+        </div>
+      </article>
+
+      <article class="panel photo-panel">
         <div class="panel-head">
           <h2>Photo Batch</h2>
-          <p>Upload photos, generate one caption per photo, then save or publish through the active account.</p>
+          <p>Upload photos, generate one caption per photo, then save or publish through selected accounts.</p>
         </div>
 
         <div class="account-strip">
@@ -289,6 +313,47 @@ interface PromptTemplate {
       box-shadow: 0 24px 50px rgba(69,58,42,0.12);
     }
     .panel-head h2 { margin: 0; font-size: 28px; }
+    .target-panel { display: grid; gap: 16px; }
+    .account-targets {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+      font-family: "Segoe UI", sans-serif;
+    }
+    .target-account {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      padding: 12px 14px;
+      border: 1px solid rgba(31,41,51,0.10);
+      border-radius: 14px;
+      background: rgba(255,255,255,0.70);
+    }
+    .target-account.active {
+      border-color: rgba(31,111,235,0.42);
+      background: rgba(31,111,235,0.08);
+    }
+    .target-account input {
+      width: 18px;
+      height: 18px;
+      margin-top: 2px;
+      accent-color: #1f6feb;
+      flex: 0 0 auto;
+    }
+    .target-account span {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+    .target-account strong {
+      color: #243b53;
+      font: 800 14px/1.3 "Segoe UI", sans-serif;
+    }
+    .target-account small {
+      color: #52606d;
+      font: 500 12px/1.45 "Segoe UI", sans-serif;
+      overflow-wrap: anywhere;
+    }
     .photo-panel { display: grid; gap: 18px; }
     .account-strip {
       display: grid;
@@ -524,6 +589,7 @@ export class CreatePageComponent {
   protected generationResultMessage = '';
   protected newPostPlatforms = 'x, threads';
   protected selectedPhotoFiles: File[] = [];
+  protected selectedTargetAccountIds: string[] = [];
   protected selectedPromptTemplateIds: string[] = ['quiet-vlog'];
   protected newTemplateTitle = '';
   protected promptTemplates: PromptTemplate[] = [];
@@ -680,8 +746,25 @@ export class CreatePageComponent {
   protected generateFromPrompt(): void {
     this.dashboardService.generatePrompt({
       ...this.generatorForm,
-      platforms: this.ui.parsePlatforms(this.generatorPlatforms)
+      platforms: this.ui.parsePlatforms(this.generatorPlatforms),
+      accountIds: this.selectedTargetAccountIds
     }).subscribe((result) => this.handleGenerationResult(result));
+  }
+
+  protected isTargetAccountSelected(accountId: string): boolean {
+    return this.selectedTargetAccountIds.includes(accountId);
+  }
+
+  protected toggleTargetAccount(accountId: string, event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    if (checked && !this.selectedTargetAccountIds.includes(accountId)) {
+      this.selectedTargetAccountIds = [...this.selectedTargetAccountIds, accountId];
+      return;
+    }
+
+    if (!checked) {
+      this.selectedTargetAccountIds = this.selectedTargetAccountIds.filter((id) => id !== accountId);
+    }
   }
 
   protected selectPhotoBatch(event: Event): void {
@@ -710,6 +793,7 @@ export class CreatePageComponent {
       tone: this.photoBatchForm.tone,
       language: this.photoBatchForm.language,
       platforms: this.ui.parsePlatforms(this.photoBatchPlatforms),
+      accountIds: this.selectedTargetAccountIds,
       publishNow: this.photoBatchForm.publishNow
     }).subscribe({
       next: (result) => {
@@ -742,7 +826,8 @@ export class CreatePageComponent {
   protected createManualPost(): void {
     this.dashboardService.createQueuePost({
       ...this.ui.sanitizeStringFields(this.newPostForm),
-      platforms: this.ui.parsePlatforms(this.newPostPlatforms)
+      platforms: this.ui.parsePlatforms(this.newPostPlatforms),
+      accountIds: this.selectedTargetAccountIds
     }).subscribe(() => {
       this.ui.pushActionResult({
         success: true,

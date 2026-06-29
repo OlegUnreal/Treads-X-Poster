@@ -18,6 +18,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -108,7 +109,7 @@ public class SocialPostingService {
     }
 
     public String daily(Map<String, String> args) throws Exception {
-        Path queuePath = Path.of(args.getOrDefault("queue", appPathService.queuePath().toString()));
+        Path queuePath = Path.of(args.getOrDefault("queue", activeQueuePath().toString()));
         int minimumReady = parseInt(args.get("minimumReady"), 3);
         int threadsPerRun = parseInt(args.get("threadsPerRun"), 1);
         int xPerRun = parseInt(args.get("xPerRun"), 1);
@@ -164,13 +165,13 @@ public class SocialPostingService {
     }
 
     public String buildXLinks(Map<String, String> args) throws Exception {
-        Path queuePath = Path.of(args.getOrDefault("queue", appPathService.queuePath().toString()));
+        Path queuePath = Path.of(args.getOrDefault("queue", activeQueuePath().toString()));
         Path savedPath = queueService.saveXComposerLinks(queuePath, appPathService.xLinksPath());
         return "Saved X composer links to " + savedPath.toAbsolutePath();
     }
 
     public String publishQueuedThreads(Map<String, String> args) throws Exception {
-        Path queuePath = Path.of(args.getOrDefault("queue", appPathService.queuePath().toString()));
+        Path queuePath = Path.of(args.getOrDefault("queue", activeQueuePath().toString()));
         QueuedPost selectedPost = queueService.selectQueuedPost(
                 queuePath,
                 "threads",
@@ -184,7 +185,7 @@ public class SocialPostingService {
     }
 
     public String publishQueuedX(Map<String, String> args) throws Exception {
-        Path queuePath = Path.of(args.getOrDefault("queue", appPathService.queuePath().toString()));
+        Path queuePath = Path.of(args.getOrDefault("queue", activeQueuePath().toString()));
         QueuedPost selectedPost = queueService.selectQueuedPost(
                 queuePath,
                 "x",
@@ -203,6 +204,8 @@ public class SocialPostingService {
         int total = 0;
         StringBuilder output = new StringBuilder();
         Set<String> usedImageUrls = readUsedImageUrls();
+        AppProperties.Account activeAccount = accountConfigService.activeAccount();
+        String activeAccountLabel = firstNonBlank(activeAccount.label(), activeAccount.id());
 
         for (ContentPlan.Item item : items) {
             String topic = item.getTopic() != null ? item.getTopic() : appProperties.defaults().topic();
@@ -222,7 +225,9 @@ public class SocialPostingService {
                     tone,
                     language,
                     platforms,
-                    appPathService.queuePath()
+                    activeQueuePath(),
+                    activeAccount.id(),
+                    activeAccountLabel
             );
 
             total += posts.size();
@@ -235,9 +240,9 @@ public class SocialPostingService {
     }
 
     public DashboardSummary getDashboardSummary() throws Exception {
-        long queueReady = queueService.countReadyPosts(appPathService.queuePath(), null);
-        long threadsReady = queueService.countReadyPosts(appPathService.queuePath(), "threads");
-        long xReady = queueService.countReadyPosts(appPathService.queuePath(), "x");
+        long queueReady = queueService.countReadyPosts(activeQueuePath(), null);
+        long threadsReady = queueService.countReadyPosts(activeQueuePath(), "threads");
+        long xReady = queueService.countReadyPosts(activeQueuePath(), "x");
 
         String postingStatus = queueReady > 0 ? "running" : "stopped";
         String lastDailyMessage = queueReady > 0
@@ -283,8 +288,18 @@ public class SocialPostingService {
         return queueService.parsePlatforms(platforms);
     }
 
+    public List<String> parseAccountIds(String accountIds) {
+        if (accountIds == null || accountIds.isBlank()) {
+            return List.of();
+        }
+        return java.util.Arrays.stream(accountIds.split(","))
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .toList();
+    }
+
     public List<QueuedPost> getQueue() throws Exception {
-        return queueService.readQueuedPosts(appPathService.queuePath());
+        return queueService.readQueuedPosts(activeQueuePath());
     }
 
     public ActionResult runDailyNow() {
@@ -328,7 +343,7 @@ public class SocialPostingService {
             String text = firstNonBlank(requestedText, "");
             String imageUrl = firstNonBlank(requestedImageUrl, "");
             if ((text == null || text.isBlank()) && queuePostId != null && !queuePostId.isBlank()) {
-                QueuedPost selected = queueService.readQueuedPosts(appPathService.queuePath()).stream()
+                QueuedPost selected = queueService.readQueuedPosts(activeQueuePath()).stream()
                         .filter(post -> queuePostId.equals(post.getId()))
                         .findFirst()
                         .orElseThrow(() -> new IllegalStateException("Queued X post not found: " + queuePostId));
@@ -338,7 +353,7 @@ public class SocialPostingService {
 
             Map<String, Object> result = xBrowserAutomationService.publishToX(text, imageUrl);
             if (queuePostId != null && !queuePostId.isBlank() && markPublished) {
-                queueService.markQueuedPostPublished(appPathService.queuePath(), queuePostId, "x", result);
+                queueService.markQueuedPostPublished(activeQueuePath(), queuePostId, "x", result);
             }
             return "Published to X with Selenium: " + result;
         });
@@ -353,7 +368,7 @@ public class SocialPostingService {
 
     public ActionResult attachImagesToReadyQueue() {
         return executeAction("attach-open-images", () -> {
-            List<QueuedPost> posts = queueService.readQueuedPosts(appPathService.queuePath());
+            List<QueuedPost> posts = queueService.readQueuedPosts(activeQueuePath());
             int updatedCount = 0;
             Set<String> usedImageUrls = readUsedImageUrls();
 
@@ -392,7 +407,7 @@ public class SocialPostingService {
                 updatedCount++;
             }
 
-            queueService.writeQueuedPosts(posts, appPathService.queuePath());
+            queueService.writeQueuedPosts(posts, activeQueuePath());
             return updatedCount == 0
                     ? "No ready posts were updated with open-source images."
                     : "Attached open-source images to " + updatedCount + " ready post(s).";
@@ -400,7 +415,7 @@ public class SocialPostingService {
     }
 
     public String publishQueuedXViaBrowser(Map<String, String> args) throws Exception {
-        Path queuePath = Path.of(args.getOrDefault("queue", appPathService.queuePath().toString()));
+        Path queuePath = Path.of(args.getOrDefault("queue", activeQueuePath().toString()));
         QueuedPost selectedPost = queueService.selectQueuedPost(
                 queuePath,
                 "x",
@@ -427,12 +442,12 @@ public class SocialPostingService {
                 request.platforms(),
                 request.status()
         );
-        return queueService.updateQueuedPost(appPathService.queuePath(), id, updated);
+        return queueService.updateQueuedPost(activeQueuePath(), id, updated);
     }
 
     public ActionResult deleteQueuedPost(String id) {
         return executeAction("delete-queue-post", () -> {
-            queueService.deleteQueuedPost(appPathService.queuePath(), id);
+            queueService.deleteQueuedPost(activeQueuePath(), id);
             return "Queued post removed.";
         });
     }
@@ -445,14 +460,14 @@ public class SocialPostingService {
                 default -> throw new IllegalStateException("Move direction must be up or down.");
             };
 
-            queueService.moveQueuedPost(appPathService.queuePath(), id, offset);
+            queueService.moveQueuedPost(activeQueuePath(), id, offset);
             return offset < 0 ? "Queued post moved up." : "Queued post moved down.";
         });
     }
 
     public ActionResult clearDuplicateQueueImages() {
         return executeAction("clean-duplicate-images", () -> {
-            int clearedCount = queueService.clearDuplicateImages(appPathService.queuePath());
+            int clearedCount = queueService.clearDuplicateImages(activeQueuePath());
             return clearedCount == 0
                     ? "No duplicate queue photos found."
                     : "Removed duplicate photos from " + clearedCount + " queued post(s).";
@@ -461,7 +476,7 @@ public class SocialPostingService {
 
     public ActionResult fillMissingQueuePhotos() {
         return executeAction("fill-missing-photos", () -> {
-            List<QueuedPost> posts = queueService.readQueuedPosts(appPathService.queuePath());
+            List<QueuedPost> posts = queueService.readQueuedPosts(activeQueuePath());
             Set<String> usedImageUrls = readUsedImageUrls();
             int updatedCount = 0;
             int missingCount = 0;
@@ -531,7 +546,7 @@ public class SocialPostingService {
             }
 
             if (updatedCount > 0) {
-                queueService.writeQueuedPosts(posts, appPathService.queuePath());
+                queueService.writeQueuedPosts(posts, activeQueuePath());
             }
             if (missingCount == 0) {
                 return "No ready posts are missing photos.";
@@ -563,20 +578,31 @@ public class SocialPostingService {
             throw new IllegalStateException("Post text is required.");
         }
 
-        QueuedPost post = queueService.createQueuedPost(
-                request.topic(),
-                request.text(),
-                request.visualHint(),
-                request.imageUrl(),
-                request.imageSourcePage(),
-                request.imageAttribution(),
-                request.imageLicense(),
-                request.tone(),
-                request.language(),
-                request.platforms(),
-                request.status()
-        );
-        return queueService.appendQueuedPost(appPathService.queuePath(), post);
+        List<String> targetAccountIds = accountConfigService.resolveTargetAccountIds(request.accountIds());
+        QueuedPost firstCreated = null;
+        for (String accountId : targetAccountIds) {
+            AppProperties.Account account = accountConfigService.requireAccount(accountId);
+            QueuedPost post = queueService.createQueuedPost(
+                    request.topic(),
+                    request.text(),
+                    request.visualHint(),
+                    request.imageUrl(),
+                    request.imageSourcePage(),
+                    request.imageAttribution(),
+                    request.imageLicense(),
+                    request.tone(),
+                    request.language(),
+                    request.platforms(),
+                    request.status(),
+                    account.id(),
+                    firstNonBlank(account.label(), account.id())
+            );
+            QueuedPost created = queueService.appendQueuedPost(appPathService.queuePath(account.id()), post);
+            if (firstCreated == null) {
+                firstCreated = created;
+            }
+        }
+        return firstCreated;
     }
 
     public ActionResult createPostsFromUploadedPhotos(
@@ -586,6 +612,7 @@ public class SocialPostingService {
             String tone,
             String language,
             List<String> platforms,
+            List<String> accountIds,
             boolean publishNow
     ) {
         return executeAction("photo-batch", () -> {
@@ -599,6 +626,7 @@ public class SocialPostingService {
             List<String> resolvedPlatforms = platforms == null || platforms.isEmpty()
                     ? List.of("x", "threads")
                     : platforms;
+            List<String> targetAccountIds = accountConfigService.resolveTargetAccountIds(accountIds);
             int queuedCount = 0;
             int publishedCount = 0;
 
@@ -622,36 +650,46 @@ public class SocialPostingService {
                         resolvedLanguage
                 );
 
-                QueuedPost post = queueService.createQueuedPost(
-                        resolvedTopic,
-                        draft.getText(),
-                        draft.getVisualHint(),
-                        "",
-                        "Uploaded photo: " + firstNonBlank(photo.getOriginalFilename(), "untitled"),
-                        "User uploaded photo",
-                        "User provided",
-                        resolvedTone,
-                        resolvedLanguage,
-                        resolvedPlatforms,
-                        "ready"
-                );
-                String imageUrl = mediaStorageService.storeUploadedQueueImage(bytes, photo.getOriginalFilename(), post.getId());
-                post.setImageUrl(imageUrl);
-                post.setImageOriginalUrl("");
-                queueService.appendQueuedPost(appPathService.queuePath(), post);
-                queuedCount++;
+                for (String accountId : targetAccountIds) {
+                    AppProperties.Account account = accountConfigService.requireAccount(accountId);
+                    QueuedPost post = queueService.createQueuedPost(
+                            resolvedTopic,
+                            draft.getText(),
+                            draft.getVisualHint(),
+                            "",
+                            "Uploaded photo: " + firstNonBlank(photo.getOriginalFilename(), "untitled"),
+                            "User uploaded photo",
+                            "User provided",
+                            resolvedTone,
+                            resolvedLanguage,
+                            resolvedPlatforms,
+                            "ready",
+                            account.id(),
+                            firstNonBlank(account.label(), account.id())
+                    );
+                    String imageUrl = mediaStorageService.storeUploadedQueueImage(bytes, photo.getOriginalFilename(), post.getId());
+                    post.setImageUrl(imageUrl);
+                    post.setImageOriginalUrl("");
+                    Path accountQueuePath = appPathService.queuePath(account.id());
+                    queueService.appendQueuedPost(accountQueuePath, post);
+                    queuedCount++;
 
-                if (publishNow) {
-                    for (String platform : resolvedPlatforms) {
-                        if ("x".equals(platform)) {
-                            Map<String, Object> result = publishXWithConfiguredMode(post.getText(), post.getImageUrl());
-                            queueService.markQueuedPostPublished(appPathService.queuePath(), post.getId(), "x", result);
-                            publishedCount++;
-                        } else if ("threads".equals(platform)) {
-                            Map<String, Object> result = threadsService.publishToThreads(post.getText(), post.getImageUrl());
-                            queueService.markQueuedPostPublished(appPathService.queuePath(), post.getId(), "threads", result);
-                            publishedCount++;
-                        }
+                    if (publishNow) {
+                        publishedCount += accountConfigService.withAccount(account.id(), () -> {
+                            int count = 0;
+                            for (String platform : resolvedPlatforms) {
+                                if ("x".equals(platform)) {
+                                    Map<String, Object> result = publishXWithConfiguredMode(post.getText(), post.getImageUrl());
+                                    queueService.markQueuedPostPublished(accountQueuePath, post.getId(), "x", result);
+                                    count++;
+                                } else if ("threads".equals(platform)) {
+                                    Map<String, Object> result = threadsService.publishToThreads(post.getText(), post.getImageUrl());
+                                    queueService.markQueuedPostPublished(accountQueuePath, post.getId(), "threads", result);
+                                    count++;
+                                }
+                            }
+                            return count;
+                        });
                     }
                 }
             }
@@ -662,7 +700,7 @@ public class SocialPostingService {
 
             String message = "Created " + queuedCount + " queued post(s) from uploaded photo(s).";
             if (publishNow) {
-                message += " Published " + publishedCount + " platform post(s) using the active account.";
+                message += " Published " + publishedCount + " platform post(s) using selected account(s).";
             }
             return message;
         });
@@ -687,21 +725,27 @@ public class SocialPostingService {
             }).toList();
             drafts = enrichDraftsWithUniqueImages(drafts, topic, readUsedImageUrls());
 
-            queueService.saveQueuedPosts(
-                    drafts,
-                    topic,
-                    tone,
-                    language,
-                    platforms,
-                    appPathService.queuePath()
-            );
+            List<String> targetAccountIds = accountConfigService.resolveTargetAccountIds(request.accountIds());
+            for (String accountId : targetAccountIds) {
+                AppProperties.Account account = accountConfigService.requireAccount(accountId);
+                queueService.saveQueuedPosts(
+                        drafts,
+                        topic,
+                        tone,
+                        language,
+                        platforms,
+                        appPathService.queuePath(account.id()),
+                        account.id(),
+                        firstNonBlank(account.label(), account.id())
+                );
+            }
         }
 
         return new GeneratePromptResponse(
                 posts,
                 request.saveToQueue(),
                 request.saveToQueue()
-                        ? "Generated " + posts.size() + " post(s) and saved them to the queue."
+                        ? "Generated " + posts.size() + " post(s) and saved them to selected account queue(s)."
                         : "Generated " + posts.size() + " post(s)."
         );
     }
@@ -714,7 +758,7 @@ public class SocialPostingService {
             }
 
             queueService.markQueuedPostPublished(
-                    appPathService.queuePath(),
+                    activeQueuePath(),
                     id,
                     normalizedPlatform,
                     Map.of("manual", true, "source", "web-composer")
@@ -758,6 +802,41 @@ public class SocialPostingService {
         }
     }
 
+    private Path activeQueuePath() {
+        AppProperties.Account activeAccount = accountConfigService.activeAccount();
+        Path activeQueuePath = appPathService.queuePath(activeAccount.id());
+        migrateLegacyQueueIfNeeded(activeQueuePath, activeAccount);
+        return activeQueuePath;
+    }
+
+    private void migrateLegacyQueueIfNeeded(Path activeQueuePath, AppProperties.Account activeAccount) {
+        try {
+            String firstAccountId = appProperties.accounts().isEmpty() ? "default" : appProperties.accounts().getFirst().id();
+            Path legacyQueuePath = appPathService.queuePath();
+            if (!activeAccount.id().equals(firstAccountId)
+                    || activeQueuePath.equals(legacyQueuePath)
+                    || Files.exists(activeQueuePath)
+                    || !Files.exists(legacyQueuePath)) {
+                return;
+            }
+
+            List<QueuedPost> legacyPosts = queueService.readQueuedPosts(legacyQueuePath);
+            if (legacyPosts.isEmpty()) {
+                return;
+            }
+
+            String accountLabel = firstNonBlank(activeAccount.label(), activeAccount.id());
+            for (QueuedPost post : legacyPosts) {
+                post.setAccountId(activeAccount.id());
+                post.setAccountLabel(accountLabel);
+            }
+            queueService.writeQueuedPosts(legacyPosts, activeQueuePath);
+            log.info("Migrated {} legacy queued post(s) to account queue {}", legacyPosts.size(), activeQueuePath);
+        } catch (Exception ex) {
+            log.warn("Could not migrate legacy queue to account queue: {}", ex.getMessage());
+        }
+    }
+
     private List<GeneratedPostDraft> enrichDraftsWithUniqueImages(List<GeneratedPostDraft> drafts, String topic) {
         try {
             return enrichDraftsWithUniqueImages(drafts, topic, readUsedImageUrls());
@@ -795,7 +874,7 @@ public class SocialPostingService {
 
     private Set<String> readUsedImageUrls() throws Exception {
         Set<String> usedImageUrls = new HashSet<>();
-        for (QueuedPost post : queueService.readQueuedPosts(appPathService.queuePath())) {
+        for (QueuedPost post : queueService.readQueuedPosts(activeQueuePath())) {
             if (post.getImageUrl() != null && !post.getImageUrl().isBlank()) {
                 usedImageUrls.add(post.getImageUrl());
             }

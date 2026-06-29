@@ -7,6 +7,8 @@ public class QueuedPost {
     private String id;
     private String status;
     private String createdAt;
+    private String accountId;
+    private String accountLabel;
     private String topic;
     private String tone;
     private String language;
@@ -26,6 +28,10 @@ public class QueuedPost {
     public void setStatus(String status) { this.status = status; }
     public String getCreatedAt() { return createdAt; }
     public void setCreatedAt(String createdAt) { this.createdAt = createdAt; }
+    public String getAccountId() { return accountId; }
+    public void setAccountId(String accountId) { this.accountId = accountId; }
+    public String getAccountLabel() { return accountLabel; }
+    public void setAccountLabel(String accountLabel) { this.accountLabel = accountLabel; }
     public String getTopic() { return topic; }
     public void setTopic(String topic) { this.topic = topic; }
     public String getTone() { return tone; }

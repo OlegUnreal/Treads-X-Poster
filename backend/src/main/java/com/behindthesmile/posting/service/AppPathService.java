@@ -25,6 +25,13 @@ public class AppPathService {
         return dataPath(appProperties.runtime().queueFile());
     }
 
+    public Path queuePath(String accountId) {
+        if (accountId == null || accountId.isBlank()) {
+            return queuePath();
+        }
+        return dataDir().resolve("queues").resolve(safeFileName(accountId) + ".jsonl").normalize();
+    }
+
     public Path xLinksPath() {
         return dataPath(appProperties.runtime().xLinksFile());
     }
@@ -84,5 +91,11 @@ public class AppPathService {
         } catch (IOException ignored) {
             return false;
         }
+    }
+
+    private String safeFileName(String value) {
+        String safe = value.toLowerCase().replaceAll("[^a-z0-9_-]+", "-");
+        safe = safe.replaceAll("^-+|-+$", "");
+        return safe.isBlank() ? "default" : safe;
     }
 }

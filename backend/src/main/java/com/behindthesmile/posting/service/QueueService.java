@@ -60,6 +60,19 @@ public class QueueService {
             List<String> platforms,
             Path filePath
     ) throws IOException {
+        return saveQueuedPosts(posts, topic, tone, language, platforms, filePath, null, null);
+    }
+
+    public Path saveQueuedPosts(
+            List<GeneratedPostDraft> posts,
+            String topic,
+            String tone,
+            String language,
+            List<String> platforms,
+            Path filePath,
+            String accountId,
+            String accountLabel
+    ) throws IOException {
         Path absolutePath = filePath.toAbsolutePath();
         Files.createDirectories(absolutePath.getParent());
         String now = Instant.now().toString();
@@ -70,6 +83,8 @@ public class QueueService {
             post.setId(createQueueId());
             post.setStatus("ready");
             post.setCreatedAt(now);
+            post.setAccountId(accountId);
+            post.setAccountLabel(accountLabel);
             post.setTopic(topic);
             post.setTone(tone);
             post.setLanguage(language);
@@ -142,10 +157,30 @@ public class QueueService {
             List<String> platforms,
             String status
     ) {
+        return createQueuedPost(topic, text, visualHint, imageUrl, imageSourcePage, imageAttribution, imageLicense, tone, language, platforms, status, null, null);
+    }
+
+    public QueuedPost createQueuedPost(
+            String topic,
+            String text,
+            String visualHint,
+            String imageUrl,
+            String imageSourcePage,
+            String imageAttribution,
+            String imageLicense,
+            String tone,
+            String language,
+            List<String> platforms,
+            String status,
+            String accountId,
+            String accountLabel
+    ) {
         QueuedPost post = new QueuedPost();
         post.setId(createQueueId());
         post.setStatus(status == null || status.isBlank() ? "ready" : status);
         post.setCreatedAt(Instant.now().toString());
+        post.setAccountId(accountId);
+        post.setAccountLabel(accountLabel);
         post.setTopic(topic);
         post.setTone(tone);
         post.setLanguage(language);
@@ -169,6 +204,12 @@ public class QueueService {
 
             updatedPost.setId(current.getId());
             updatedPost.setCreatedAt(current.getCreatedAt());
+            if (updatedPost.getAccountId() == null || updatedPost.getAccountId().isBlank()) {
+                updatedPost.setAccountId(current.getAccountId());
+            }
+            if (updatedPost.getAccountLabel() == null || updatedPost.getAccountLabel().isBlank()) {
+                updatedPost.setAccountLabel(current.getAccountLabel());
+            }
             if (updatedPost.getPublished() == null) {
                 updatedPost.setPublished(current.getPublished());
             }
@@ -403,6 +444,8 @@ public class QueueService {
 
     private QueuedPost normalizePostEncoding(QueuedPost post) {
         post.setTopic(normalizeBrokenUtf8(post.getTopic()));
+        post.setAccountId(normalizeBrokenUtf8(post.getAccountId()));
+        post.setAccountLabel(normalizeBrokenUtf8(post.getAccountLabel()));
         post.setTone(normalizeBrokenUtf8(post.getTone()));
         post.setLanguage(normalizeBrokenUtf8(post.getLanguage()));
         post.setText(normalizeBrokenUtf8(post.getText()));

@@ -25,6 +25,33 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
           <span>{{ result.message }}</span>
         </p>
 
+        <div class="account-switcher">
+          <label>
+            <span>Queue Account</span>
+            <select
+              [ngModel]="vm.summary.publisherAccounts.activeAccountId"
+              (ngModelChange)="switchAccount($event)"
+            >
+              <option
+                *ngFor="let account of vm.summary.publisherAccounts.availableAccounts"
+                [ngValue]="account.id"
+              >
+                {{ account.label }}
+              </option>
+            </select>
+          </label>
+          <dl>
+            <div>
+              <dt>X</dt>
+              <dd>{{ vm.summary.publisherAccounts.xAccountLabel }}</dd>
+            </div>
+            <div>
+              <dt>Threads</dt>
+              <dd>{{ vm.summary.publisherAccounts.threadsAccountLabel }}</dd>
+            </div>
+          </dl>
+        </div>
+
         <div class="queue-tools">
           <button type="button" (click)="fillMissingPhotos()">Fill Missing Photos</button>
           <button type="button" class="ghost" (click)="cleanDuplicatePhotos()">Clean Duplicate Photos</button>
@@ -136,6 +163,41 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
       gap: 12px;
       justify-content: flex-end;
       flex-wrap: wrap;
+    }
+    .account-switcher {
+      max-width: 760px;
+      margin: 0 auto 16px;
+      padding: 14px;
+      border: 1px solid rgba(31,41,51,0.10);
+      border-radius: 16px;
+      background: rgba(255,255,255,0.64);
+      display: grid;
+      grid-template-columns: minmax(220px, 320px) minmax(0, 1fr);
+      gap: 12px;
+      font-family: "Segoe UI", sans-serif;
+    }
+    .account-switcher label { display: grid; gap: 8px; }
+    .account-switcher span, .account-switcher dt {
+      color: #52606d;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .account-switcher select {
+      width: 100%;
+      border: 1px solid rgba(31,41,51,0.12);
+      border-radius: 12px;
+      padding: 11px 12px;
+      background: white;
+      color: #243b53;
+      font: 700 14px/1.4 "Segoe UI", sans-serif;
+    }
+    .account-switcher dl { margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .account-switcher dd {
+      margin: 4px 0 0;
+      color: #243b53;
+      font: 700 14px/1.4 "Segoe UI", sans-serif;
+      overflow-wrap: anywhere;
     }
     .queue-card {
       padding: 18px 20px;
@@ -252,6 +314,7 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
     .empty { color: #52606d; font: 600 15px/1.5 "Segoe UI", sans-serif; }
     @media (max-width: 900px) {
       .form-grid { grid-template-columns: 1fr; }
+      .account-switcher { grid-template-columns: 1fr; }
       .actions.split { grid-template-columns: repeat(2, minmax(0, max-content)); }
       .summary { grid-template-columns: 88px minmax(0, 1fr); }
       .image-thumb {
@@ -346,6 +409,18 @@ export class QueuePageComponent {
     this.dashboardService.fillMissingQueuePhotos().subscribe((result) => {
       this.ui.pushActionResult(result);
       this.queueDrafts.clear();
+    });
+  }
+
+  protected switchAccount(accountId: string): void {
+    this.dashboardService.switchActiveAccount(accountId).subscribe(() => {
+      this.ui.pushActionResult({
+        success: true,
+        command: 'switch-account',
+        message: `Active queue account changed to ${accountId}.`
+      });
+      this.queueDrafts.clear();
+      this.expandedPostId = null;
     });
   }
 

@@ -8,12 +8,16 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.concurrent.Callable;
 
 @Service
 public class AccountConfigService {
     private final AppProperties appProperties;
     private final AppPathService appPathService;
+    private final ThreadLocal<String> activeAccountOverride = new ThreadLocal<>();
 
     public AccountConfigService(AppProperties appProperties, AppPathService appPathService) {
         this.appProperties = appProperties;
@@ -21,7 +25,7 @@ public class AccountConfigService {
     }
 
     public AppProperties.Account activeAccount() {
-        String activeId = readActiveAccountId();
+        String activeId = activeAccountOverride.get() == null ? readActiveAccountId() : activeAccountOverride.get();
         return appProperties.accounts().stream()
                 .filter(account -> account.id().equals(activeId))
                 .findFirst()
@@ -50,6 +54,52 @@ public class AccountConfigService {
         Files.createDirectories(appPathService.activeAccountPath().getParent());
         Files.writeString(appPathService.activeAccountPath(), account.id(), StandardCharsets.UTF_8);
         return selection();
+    }
+
+    public <T> T withAccount(String accountId, Callable<T> action) throws Exception {
+        AppProperties.Account account = requireAccount(accountId);
+        String previous = activeAccountOverride.get();
+        activeAccountOverride.set(account.id());
+        try {
+            return action.call();
+        } finally {
+            if (previous == null) {
+                activeAccountOverride.remove();
+            } else {
+                activeAccountOverride.set(previous);
+            }
+        }
+    }
+
+    public AppProperties.Account requireAccount(String accountId) {
+        if (accountId == null || accountId.isBlank()) {
+            throw new IllegalStateException("Account id is required.");
+        }
+        return appProperties.accounts().stream()
+                .filter(candidate -> candidate.id().equals(accountId))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Unknown account: " + accountId));
+    }
+
+    public List<String> resolveTargetAccountIds(List<String> requestedAccountIds) {
+        if (requestedAccountIds == null || requestedAccountIds.isEmpty()) {
+            return List.of(activeAccount().id());
+        }
+
+        LinkedHashSet<String> normalized = new LinkedHashSet<>();
+        for (String accountId : requestedAccountIds) {
+            if (accountId == null || accountId.isBlank()) {
+                continue;
+            }
+            String trimmed = accountId.trim();
+            requireAccount(trimmed);
+            normalized.add(trimmed);
+        }
+
+        if (normalized.isEmpty()) {
+            return List.of(activeAccount().id());
+        }
+        return new ArrayList<>(normalized);
     }
 
     public PublisherAccountOption activeAccountOption() {

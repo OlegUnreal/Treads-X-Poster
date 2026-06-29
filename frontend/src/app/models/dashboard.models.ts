@@ -33,6 +33,8 @@ export interface AccountSelectionResponse {
 
 export interface QueuePost {
   id: string;
+  accountId?: string;
+  accountLabel?: string;
   topic: string;
   text: string;
   visualHint?: string;
@@ -67,6 +69,7 @@ export interface QueuePostUpsertRequest {
   imageLicense?: string;
   status: string;
   platforms: string[];
+  accountIds?: string[];
   language: string;
   tone: string;
 }
@@ -78,6 +81,7 @@ export interface GeneratePromptRequest {
   language: string;
   count: number;
   platforms: string[];
+  accountIds?: string[];
   saveToQueue: boolean;
 }
 

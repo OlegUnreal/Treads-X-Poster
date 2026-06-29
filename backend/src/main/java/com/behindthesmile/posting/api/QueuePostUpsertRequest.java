@@ -12,6 +12,7 @@ public record QueuePostUpsertRequest(
         String imageLicense,
         String status,
         List<String> platforms,
+        List<String> accountIds,
         String language,
         String tone
 ) {

@@ -9,6 +9,7 @@ public record GeneratePromptRequest(
         String language,
         Integer count,
         List<String> platforms,
+        List<String> accountIds,
         boolean saveToQueue
 ) {
 }
