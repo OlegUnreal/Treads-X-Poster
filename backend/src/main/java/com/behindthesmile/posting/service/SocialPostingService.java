@@ -369,7 +369,14 @@ public class SocialPostingService {
                 }
 
                 String originalImageUrl = enriched.getImageUrl();
-                String storedImageUrl = mediaStorageService.storeRemoteQueueImage(originalImageUrl, post.getId());
+                String storedImageUrl;
+                try {
+                    storedImageUrl = mediaStorageService.storeRemoteQueueImage(originalImageUrl, post.getId());
+                } catch (Exception ex) {
+                    log.warn("Could not store queue image for post {}: {}", post.getId(), ex.getMessage());
+                    usedImageUrls.add(originalImageUrl);
+                    continue;
+                }
                 post.setImageOriginalUrl(originalImageUrl);
                 post.setImageUrl(storedImageUrl);
                 post.setImageSourcePage(enriched.getImageSourcePage());
@@ -467,7 +474,14 @@ public class SocialPostingService {
                 }
 
                 String originalImageUrl = enriched.getImageUrl();
-                String storedImageUrl = mediaStorageService.storeRemoteQueueImage(originalImageUrl, post.getId());
+                String storedImageUrl;
+                try {
+                    storedImageUrl = mediaStorageService.storeRemoteQueueImage(originalImageUrl, post.getId());
+                } catch (Exception ex) {
+                    log.warn("Could not store queue image for post {}: {}", post.getId(), ex.getMessage());
+                    usedImageUrls.add(originalImageUrl);
+                    continue;
+                }
                 post.setImageOriginalUrl(originalImageUrl);
                 post.setImageUrl(storedImageUrl);
                 post.setImageSourcePage(enriched.getImageSourcePage());
