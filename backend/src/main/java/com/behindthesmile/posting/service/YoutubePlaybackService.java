@@ -3,6 +3,8 @@ package com.behindthesmile.posting.service;
 import com.behindthesmile.posting.api.YoutubePlaybackRequest;
 import com.behindthesmile.posting.config.AppProperties;
 import org.openqa.selenium.JavascriptExecutor;
+import org.openqa.selenium.OutputType;
+import org.openqa.selenium.TakesScreenshot;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeDriverService;
@@ -21,6 +23,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Locale;
 import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -87,11 +90,76 @@ public class YoutubePlaybackService {
     }
 
     public synchronized Map<String, Object> status() {
+        if (driver == null) {
+            return Map.of(
+                    "status", "idle",
+                    "url", currentUrl,
+                    "percent", currentPercent,
+                    "videoPresent", false
+            );
+        }
+
+        try {
+            Object details = ((JavascriptExecutor) driver).executeScript("""
+                    const video = document.querySelector('video');
+                    return {
+                      pageUrl: location.href,
+                      title: document.title || '',
+                      videoPresent: Boolean(video),
+                      paused: video ? video.paused : null,
+                      currentTime: video ? video.currentTime : 0,
+                      duration: video && Number.isFinite(video.duration) ? video.duration : 0,
+                      readyState: video ? video.readyState : 0,
+                      muted: video ? video.muted : null,
+                      volume: video ? video.volume : null
+                    };
+                    """);
+            if (details instanceof Map<?, ?> map) {
+                Map<String, Object> status = new LinkedHashMap<>();
+                status.put("status", "open");
+                status.put("url", currentUrl);
+                status.put("percent", currentPercent);
+                status.put("pageUrl", stringValue(map, "pageUrl"));
+                status.put("title", stringValue(map, "title"));
+                status.put("videoPresent", valueOrDefault(map, "videoPresent", false));
+                status.put("paused", valueOrDefault(map, "paused", true));
+                status.put("currentTime", valueOrDefault(map, "currentTime", 0));
+                status.put("durationSeconds", valueOrDefault(map, "duration", 0));
+                status.put("readyState", valueOrDefault(map, "readyState", 0));
+                status.put("muted", valueOrDefault(map, "muted", false));
+                status.put("volume", valueOrDefault(map, "volume", 0));
+                return status;
+            }
+        } catch (Exception ex) {
+            log.warn("Could not read YouTube playback status: {}", ex.getMessage());
+        }
+
         return Map.of(
-                "status", driver == null ? "idle" : "open",
+                "status", "open",
                 "url", currentUrl,
-                "percent", currentPercent
+                "percent", currentPercent,
+                "videoPresent", false
         );
+    }
+
+    public synchronized byte[] screenshot() {
+        if (driver == null) {
+            throw new IllegalStateException("YouTube browser is not open.");
+        }
+        if (!(driver instanceof TakesScreenshot screenshotDriver)) {
+            throw new IllegalStateException("Current browser does not support screenshots.");
+        }
+        return screenshotDriver.getScreenshotAs(OutputType.BYTES);
+    }
+
+    private String stringValue(Map<?, ?> map, String key) {
+        Object value = map.get(key);
+        return value == null ? "" : String.valueOf(value);
+    }
+
+    private Object valueOrDefault(Map<?, ?> map, String key, Object fallback) {
+        Object value = map.get(key);
+        return value == null ? fallback : value;
     }
 
     private WebDriver createDriver() throws Exception {

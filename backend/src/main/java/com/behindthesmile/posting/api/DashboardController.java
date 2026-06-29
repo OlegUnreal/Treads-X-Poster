@@ -4,6 +4,8 @@ import com.behindthesmile.posting.model.QueuedPost;
 import com.behindthesmile.posting.service.AppPathService;
 import com.behindthesmile.posting.service.SocialPostingService;
 import com.behindthesmile.posting.service.YoutubePlaybackService;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -198,6 +200,13 @@ public class DashboardController {
     @GetMapping("/actions/youtube/status")
     public Map<String, Object> youtubeStatus() {
         return youtubePlaybackService.status();
+    }
+
+    @GetMapping(value = "/actions/youtube/screenshot", produces = MediaType.IMAGE_PNG_VALUE)
+    public ResponseEntity<byte[]> youtubeScreenshot() {
+        return ResponseEntity.ok()
+                .contentType(MediaType.IMAGE_PNG)
+                .body(youtubePlaybackService.screenshot());
     }
 
     @PostMapping("/actions/attach-open-images")

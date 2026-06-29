@@ -127,8 +127,16 @@ export interface YoutubePlaybackRequest {
 export interface YoutubePlaybackStatus {
   status: string;
   url?: string;
+  pageUrl?: string;
+  title?: string;
   percent?: number;
   durationSeconds?: number;
+  currentTime?: number;
+  videoPresent?: boolean;
+  paused?: boolean;
+  readyState?: number;
+  muted?: boolean;
+  volume?: number;
   browser?: string;
   accountId?: string;
 }

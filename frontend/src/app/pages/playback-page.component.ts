@@ -38,6 +38,7 @@ import { DashboardService } from '../services/dashboard.service';
           </button>
           <button class="btn btn-outline-secondary btn-sm" type="button" [disabled]="busy" (click)="stop()">Stop</button>
           <button class="btn btn-outline-secondary btn-sm" type="button" [disabled]="busy" (click)="refreshStatus()">Refresh</button>
+          <a class="btn btn-outline-secondary btn-sm" href="/api/actions/youtube/screenshot" target="_blank" rel="noopener">Screenshot</a>
         </div>
 
         <p class="feedback" *ngIf="message" [class.error]="error">{{ message }}</p>
@@ -45,11 +46,19 @@ import { DashboardService } from '../services/dashboard.service';
         <dl class="status" *ngIf="status">
           <div>
             <dt>Status</dt>
-            <dd>{{ status.status }}</dd>
+            <dd>{{ playbackLabel(status) }}</dd>
           </div>
           <div>
             <dt>Target</dt>
             <dd>{{ status.percent ?? percent }}%</dd>
+          </div>
+          <div>
+            <dt>Video</dt>
+            <dd>{{ status.videoPresent ? 'Detected' : 'Not found' }}</dd>
+          </div>
+          <div *ngIf="status.currentTime !== undefined">
+            <dt>Time</dt>
+            <dd>{{ status.currentTime | number:'1.0-0' }} sec</dd>
           </div>
           <div *ngIf="status.durationSeconds">
             <dt>Duration</dt>
@@ -167,6 +176,16 @@ export class PlaybackPageComponent {
       this.message = 'Status refreshed.';
       this.error = false;
     });
+  }
+
+  protected playbackLabel(status: YoutubePlaybackStatus): string {
+    if (status.status === 'idle') {
+      return 'idle';
+    }
+    if (!status.videoPresent) {
+      return status.status;
+    }
+    return status.paused ? 'paused' : 'playing';
   }
 
   private normalizedPercent(): number {
