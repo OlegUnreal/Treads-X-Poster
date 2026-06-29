@@ -73,38 +73,21 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
 
         <article class="panel">
           <div class="panel-head">
-            <h2>Current Accounts</h2>
-            <p>So it is always clear where posts will be published from.</p>
+            <h2>Profiles</h2>
+            <p>X and Threads are treated as separate publishing profiles.</p>
           </div>
-          <label class="account-select">
-            <span>Active publishing profile</span>
-            <select
-              [ngModel]="vm.summary.publisherAccounts.activeAccountId"
-              (ngModelChange)="switchAccount($event)"
-            >
-              <option
-                *ngFor="let account of vm.summary.publisherAccounts.availableAccounts"
-                [ngValue]="account.id"
-              >
-                {{ account.label }}
-              </option>
-            </select>
-          </label>
-          <dl class="signals account-signals">
-            <div>
-              <dt>Profile</dt>
-              <dd>{{ vm.summary.publisherAccounts.activeAccountLabel }}</dd>
-            </div>
-            <div>
-              <dt>X</dt>
-              <dd>{{ vm.summary.publisherAccounts.xAccountLabel }}</dd>
-              <small>{{ vm.summary.publisherAccounts.xModeLabel }}</small>
-            </div>
-            <div>
-              <dt>Threads</dt>
-              <dd>{{ vm.summary.publisherAccounts.threadsAccountLabel }}</dd>
-            </div>
-          </dl>
+          <div class="profile-list">
+            <article class="profile-card" *ngFor="let profile of ui.publishingProfiles(vm.summary.publisherAccounts)">
+              <span class="avatar" [class.x]="profile.platform === 'x'" [class.threads]="profile.platform === 'threads'">
+                <img *ngIf="profile.avatarUrl" [src]="profile.avatarUrl" [alt]="profile.name" />
+                <span *ngIf="!profile.avatarUrl">{{ ui.profileInitial(profile) }}</span>
+              </span>
+              <span>
+                <strong>{{ profile.name }}</strong>
+                <small>{{ profile.subtitle }}</small>
+              </span>
+            </article>
+          </div>
           <div class="setup-note" *ngIf="needsThreadsSetup(vm.summary.publisherAccounts.threadsAccountLabel)">
             <strong>Threads needs setup</strong>
             <span>Generated posts are safe in the queue. Connect Threads before using Publish 1 Thread.</span>
@@ -211,33 +194,33 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
     }
     .feedback.error { background: rgba(154, 52, 18, 0.09); color: #7c2d12; }
     .signals { margin: 18px 0 0; display: grid; gap: 16px; font-family: "Segoe UI", sans-serif; }
-    .account-select {
-      margin-top: 18px;
+    .profile-list { margin-top: 16px; display: grid; gap: 8px; }
+    .profile-card {
       display: grid;
-      gap: 8px;
+      grid-template-columns: 36px minmax(0, 1fr);
+      align-items: center;
+      gap: 10px;
+      padding: 10px;
+      border: 1px solid rgba(31,41,51,0.08);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.72);
       font-family: "Segoe UI", sans-serif;
     }
-    .account-select span {
-      color: #52606d;
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
+    .avatar {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      border-radius: 50%;
+      color: white;
+      font: 800 13px/1 "Segoe UI", sans-serif;
+      background: #111827;
     }
-    .account-select select {
-      width: 100%;
-      border: 1px solid rgba(31,41,51,0.12);
-      border-radius: 14px;
-      padding: 12px 14px;
-      background: rgba(255,255,255,0.92);
-      color: #243b53;
-      font: 700 14px/1.5 "Segoe UI", sans-serif;
-    }
-    .account-signals small {
-      display: block;
-      margin-top: 6px;
-      color: #52606d;
-      font: 500 13px/1.5 "Segoe UI", sans-serif;
-    }
+    .avatar.threads { background: #5b21b6; }
+    .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .profile-card strong { display: block; color: #243b53; font: 800 14px/1.25 "Segoe UI", sans-serif; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .profile-card small { color: #52606d; font: 600 12px/1.3 "Segoe UI", sans-serif; }
     .setup-note {
       margin-top: 18px;
       padding: 14px;

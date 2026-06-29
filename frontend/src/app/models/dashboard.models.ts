@@ -24,6 +24,17 @@ export interface PublisherAccountOption {
   xAccountLabel: string;
   xModeLabel: string;
   threadsAccountLabel: string;
+  xAvatarUrl?: string;
+  threadsAvatarUrl?: string;
+}
+
+export interface PublishingProfile {
+  id: string;
+  accountId: string;
+  platform: 'x' | 'threads';
+  name: string;
+  subtitle: string;
+  avatarUrl?: string;
 }
 
 export interface AccountSelectionResponse {
@@ -70,6 +81,7 @@ export interface QueuePostUpsertRequest {
   status: string;
   platforms: string[];
   accountIds?: string[];
+  targetProfiles?: string[];
   language: string;
   tone: string;
 }
@@ -82,6 +94,7 @@ export interface GeneratePromptRequest {
   count: number;
   platforms: string[];
   accountIds?: string[];
+  targetProfiles?: string[];
   saveToQueue: boolean;
 }
 

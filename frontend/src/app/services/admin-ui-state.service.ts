@@ -1,6 +1,13 @@
 import { Injectable, inject } from '@angular/core';
 import { BehaviorSubject, Subject, combineLatest, map, startWith, switchMap } from 'rxjs';
-import { ActionResult, QueuePost, QueuePostUpsertRequest } from '../models/dashboard.models';
+import {
+  ActionResult,
+  PublisherAccountOption,
+  PublisherAccountSummary,
+  PublishingProfile,
+  QueuePost,
+  QueuePostUpsertRequest
+} from '../models/dashboard.models';
 import { DashboardService } from './dashboard.service';
 
 @Injectable({
@@ -78,6 +85,21 @@ export class AdminUiStateService {
       .filter(Boolean);
   }
 
+  publishingProfiles(summary: PublisherAccountSummary): PublishingProfile[] {
+    return (summary.availableAccounts ?? []).flatMap((account) => [
+      this.toPublishingProfile(account, 'x'),
+      this.toPublishingProfile(account, 'threads')
+    ]);
+  }
+
+  profileInitial(profile: PublishingProfile): string {
+    return profile.platform === 'x' ? 'X' : 'T';
+  }
+
+  platformLabel(platform: string | null | undefined): string {
+    return platform === 'threads' ? 'Threads' : 'X';
+  }
+
   sanitizeQueueUpsertRequest(request: QueuePostUpsertRequest): QueuePostUpsertRequest {
     return this.sanitizeStringFields(request);
   }
@@ -113,6 +135,34 @@ export class AdminUiStateService {
       command: this.humanizeCommand(result.command),
       message: this.humanizeErrorMessage(result.message)
     };
+  }
+
+  private toPublishingProfile(account: PublisherAccountOption, platform: 'x' | 'threads'): PublishingProfile {
+    const looseAccount = account as PublisherAccountOption & {
+      xAvatarUrl?: string;
+      threadsAvatarUrl?: string;
+      avatarUrl?: string;
+      profileImageUrl?: string;
+    };
+    const name = platform === 'x' ? account.xAccountLabel : account.threadsAccountLabel;
+    return {
+      id: `${account.id}:${platform}`,
+      accountId: account.id,
+      platform,
+      name: this.cleanProfileName(name, platform),
+      subtitle: this.platformLabel(platform),
+      avatarUrl: platform === 'x'
+        ? looseAccount.xAvatarUrl ?? looseAccount.avatarUrl ?? looseAccount.profileImageUrl
+        : looseAccount.threadsAvatarUrl ?? looseAccount.avatarUrl ?? looseAccount.profileImageUrl
+    };
+  }
+
+  private cleanProfileName(value: string | null | undefined, platform: 'x' | 'threads'): string {
+    const normalized = (value ?? '').trim();
+    if (!normalized || normalized.toLowerCase().includes('not configured')) {
+      return `${this.platformLabel(platform)} profile`;
+    }
+    return normalized;
   }
 
   private humanizeCommand(command: string): string {

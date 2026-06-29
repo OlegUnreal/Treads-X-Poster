@@ -28,31 +28,17 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
             <h2>Quick Publish</h2>
             <p>The shortest path when you just want one post to go out now.</p>
           </div>
-          <div class="account-switcher">
-            <label>
-              <span>Active Account</span>
-              <select
-                [ngModel]="vm.summary.publisherAccounts.activeAccountId"
-                (ngModelChange)="switchAccount($event)"
-              >
-                <option
-                  *ngFor="let account of vm.summary.publisherAccounts.availableAccounts"
-                  [ngValue]="account.id"
-                >
-                  {{ account.label }}
-                </option>
-              </select>
-            </label>
-            <dl>
-              <div>
-                <dt>X</dt>
-                <dd>{{ vm.summary.publisherAccounts.xAccountLabel }}</dd>
-              </div>
-              <div>
-                <dt>Threads</dt>
-                <dd>{{ vm.summary.publisherAccounts.threadsAccountLabel }}</dd>
-              </div>
-            </dl>
+          <div class="profile-list">
+            <article class="profile-card" *ngFor="let profile of ui.publishingProfiles(vm.summary.publisherAccounts)">
+              <span class="avatar" [class.x]="profile.platform === 'x'" [class.threads]="profile.platform === 'threads'">
+                <img *ngIf="profile.avatarUrl" [src]="profile.avatarUrl" [alt]="profile.name" />
+                <span *ngIf="!profile.avatarUrl">{{ ui.profileInitial(profile) }}</span>
+              </span>
+              <span>
+                <strong>{{ profile.name }}</strong>
+                <small>{{ profile.subtitle }}</small>
+              </span>
+            </article>
             <div class="setup-note" *ngIf="needsThreadsSetup(vm.summary.publisherAccounts.threadsAccountLabel)">
               <strong>Threads is not connected</strong>
               <span>Keep generating posts if needed, but connect Threads before publishing there.</span>
@@ -146,39 +132,42 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
       box-shadow: 0 24px 50px rgba(69,58,42,0.12);
     }
     .panel-head h2 { margin: 0; font-size: 28px; }
-    .account-switcher {
+    .profile-list {
       margin-top: 18px;
       padding: 14px;
       border: 1px solid rgba(31,41,51,0.10);
       border-radius: 16px;
       background: rgba(255,255,255,0.64);
       display: grid;
-      gap: 12px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
       font-family: "Segoe UI", sans-serif;
     }
-    .account-switcher label { display: grid; gap: 8px; }
-    .account-switcher span, .account-switcher dt {
-      color: #52606d;
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-    .account-switcher select {
-      width: 100%;
-      border: 1px solid rgba(31,41,51,0.12);
+    .profile-card {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr);
+      gap: 9px;
+      align-items: center;
+      padding: 9px;
+      border: 1px solid rgba(31,41,51,0.10);
       border-radius: 12px;
-      padding: 11px 12px;
-      background: white;
-      color: #243b53;
-      font: 700 14px/1.4 "Segoe UI", sans-serif;
+      background: rgba(255,255,255,0.76);
     }
-    .account-switcher dl { margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .account-switcher dd {
-      margin: 4px 0 0;
-      color: #243b53;
-      font: 700 14px/1.4 "Segoe UI", sans-serif;
-      overflow-wrap: anywhere;
+    .avatar {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      border-radius: 50%;
+      color: white;
+      font: 800 13px/1 "Segoe UI", sans-serif;
+      background: #111827;
     }
+    .avatar.threads { background: #5b21b6; }
+    .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .profile-card strong { display: block; color: #243b53; font: 800 13px/1.25 "Segoe UI", sans-serif; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .profile-card small { color: #52606d; font: 600 12px/1.3 "Segoe UI", sans-serif; }
     .setup-note {
       padding: 12px 14px;
       border-radius: 14px;
@@ -257,7 +246,7 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
       display: grid; gap: 4px;
     }
     .feedback.error { background: rgba(154,52,18,0.09); color: #7c2d12; }
-    @media (max-width: 900px) { .grid, .actions, .form-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 900px) { .grid, .actions, .form-grid, .profile-list { grid-template-columns: 1fr; } }
   `]
 })
 export class PublishPageComponent {

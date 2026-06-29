@@ -85,6 +85,7 @@ export class DashboardService {
     language: string;
     platforms: string[];
     accountIds: string[];
+    targetProfiles?: string[];
     publishNow: boolean;
   }): Observable<ActionResult> {
     const formData = new FormData();
@@ -95,6 +96,7 @@ export class DashboardService {
     formData.append('language', request.language);
     formData.append('platforms', request.platforms.join(','));
     formData.append('accountIds', request.accountIds.join(','));
+    formData.append('targetProfiles', (request.targetProfiles ?? []).join(','));
     formData.append('publishNow', String(request.publishNow));
     return this.http.post<ActionResult>(`${API_BASE_URL}/photo-batch`, formData);
   }

@@ -22,6 +22,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -299,6 +300,10 @@ public class SocialPostingService {
                 .map(String::trim)
                 .filter(value -> !value.isBlank())
                 .toList();
+    }
+
+    public List<String> parseTargetProfiles(String targetProfiles) {
+        return parseAccountIds(targetProfiles);
     }
 
     public List<QueuedPost> getQueue(String platform) throws Exception {
@@ -581,31 +586,32 @@ public class SocialPostingService {
             throw new IllegalStateException("Post text is required.");
         }
 
-        List<String> targetAccountIds = accountConfigService.resolveTargetAccountIds(request.accountIds());
-        List<String> targetPlatforms = normalizePlatformList(request.platforms());
+        List<TargetProfile> targetProfiles = resolveTargetProfiles(
+                request.targetProfiles(),
+                request.accountIds(),
+                request.platforms()
+        );
         QueuedPost firstCreated = null;
-        for (String accountId : targetAccountIds) {
-            AppProperties.Account account = accountConfigService.requireAccount(accountId);
-            for (String platform : targetPlatforms) {
-                QueuedPost post = queueService.createQueuedPost(
-                        request.topic(),
-                        request.text(),
-                        request.visualHint(),
-                        request.imageUrl(),
-                        request.imageSourcePage(),
-                        request.imageAttribution(),
-                        request.imageLicense(),
-                        request.tone(),
-                        request.language(),
-                        List.of(platform),
-                        request.status(),
-                        account.id(),
-                        firstNonBlank(account.label(), account.id())
-                );
-                QueuedPost created = queueService.appendQueuedPost(appPathService.queuePath(account.id(), platform), post);
-                if (firstCreated == null) {
-                    firstCreated = created;
-                }
+        for (TargetProfile targetProfile : targetProfiles) {
+            AppProperties.Account account = accountConfigService.requireAccount(targetProfile.accountId());
+            QueuedPost post = queueService.createQueuedPost(
+                    request.topic(),
+                    request.text(),
+                    request.visualHint(),
+                    request.imageUrl(),
+                    request.imageSourcePage(),
+                    request.imageAttribution(),
+                    request.imageLicense(),
+                    request.tone(),
+                    request.language(),
+                    List.of(targetProfile.platform()),
+                    request.status(),
+                    account.id(),
+                    firstNonBlank(account.label(), account.id())
+            );
+            QueuedPost created = queueService.appendQueuedPost(appPathService.queuePath(account.id(), targetProfile.platform()), post);
+            if (firstCreated == null) {
+                firstCreated = created;
             }
         }
         return firstCreated;
@@ -619,6 +625,7 @@ public class SocialPostingService {
             String language,
             List<String> platforms,
             List<String> accountIds,
+            List<String> targetProfileIds,
             boolean publishNow
     ) {
         return executeAction("photo-batch", () -> {
@@ -629,8 +636,7 @@ public class SocialPostingService {
             String resolvedTopic = firstNonBlank(topic, "Uploaded photo batch");
             String resolvedTone = firstNonBlank(tone, appProperties.defaults().tone());
             String resolvedLanguage = firstNonBlank(language, appProperties.defaults().language());
-            List<String> resolvedPlatforms = normalizePlatformList(platforms);
-            List<String> targetAccountIds = accountConfigService.resolveTargetAccountIds(accountIds);
+            List<TargetProfile> targetProfiles = resolveTargetProfiles(targetProfileIds, accountIds, platforms);
             int queuedCount = 0;
             int publishedCount = 0;
 
@@ -654,46 +660,45 @@ public class SocialPostingService {
                         resolvedLanguage
                 );
 
-                for (String accountId : targetAccountIds) {
-                    AppProperties.Account account = accountConfigService.requireAccount(accountId);
-                    for (String platform : resolvedPlatforms) {
-                        QueuedPost post = queueService.createQueuedPost(
-                                resolvedTopic,
-                                draft.getText(),
-                                draft.getVisualHint(),
-                                "",
-                                "Uploaded photo: " + firstNonBlank(photo.getOriginalFilename(), "untitled"),
-                                "User uploaded photo",
-                                "User provided",
-                                resolvedTone,
-                                resolvedLanguage,
-                                List.of(platform),
-                                "ready",
-                                account.id(),
-                                firstNonBlank(account.label(), account.id())
-                        );
-                        String imageUrl = mediaStorageService.storeUploadedQueueImage(bytes, photo.getOriginalFilename(), post.getId());
-                        post.setImageUrl(imageUrl);
-                        post.setImageOriginalUrl("");
-                        Path accountQueuePath = appPathService.queuePath(account.id(), platform);
-                        queueService.appendQueuedPost(accountQueuePath, post);
-                        queuedCount++;
+                for (TargetProfile targetProfile : targetProfiles) {
+                    AppProperties.Account account = accountConfigService.requireAccount(targetProfile.accountId());
+                    String platform = targetProfile.platform();
+                    QueuedPost post = queueService.createQueuedPost(
+                            resolvedTopic,
+                            draft.getText(),
+                            draft.getVisualHint(),
+                            "",
+                            "Uploaded photo: " + firstNonBlank(photo.getOriginalFilename(), "untitled"),
+                            "User uploaded photo",
+                            "User provided",
+                            resolvedTone,
+                            resolvedLanguage,
+                            List.of(platform),
+                            "ready",
+                            account.id(),
+                            firstNonBlank(account.label(), account.id())
+                    );
+                    String imageUrl = mediaStorageService.storeUploadedQueueImage(bytes, photo.getOriginalFilename(), post.getId());
+                    post.setImageUrl(imageUrl);
+                    post.setImageOriginalUrl("");
+                    Path accountQueuePath = appPathService.queuePath(account.id(), platform);
+                    queueService.appendQueuedPost(accountQueuePath, post);
+                    queuedCount++;
 
-                        if (publishNow) {
-                            publishedCount += accountConfigService.withAccount(account.id(), () -> {
-                                if ("x".equals(platform)) {
-                                    Map<String, Object> result = publishXWithConfiguredMode(post.getText(), post.getImageUrl());
-                                    queueService.markQueuedPostPublished(accountQueuePath, post.getId(), "x", result);
-                                    return 1;
-                                }
-                                if ("threads".equals(platform)) {
-                                    Map<String, Object> result = threadsService.publishToThreads(post.getText(), post.getImageUrl());
-                                    queueService.markQueuedPostPublished(accountQueuePath, post.getId(), "threads", result);
-                                    return 1;
-                                }
-                                return 0;
-                            });
-                        }
+                    if (publishNow) {
+                        publishedCount += accountConfigService.withAccount(account.id(), () -> {
+                            if ("x".equals(platform)) {
+                                Map<String, Object> result = publishXWithConfiguredMode(post.getText(), post.getImageUrl());
+                                queueService.markQueuedPostPublished(accountQueuePath, post.getId(), "x", result);
+                                return 1;
+                            }
+                            if ("threads".equals(platform)) {
+                                Map<String, Object> result = threadsService.publishToThreads(post.getText(), post.getImageUrl());
+                                queueService.markQueuedPostPublished(accountQueuePath, post.getId(), "threads", result);
+                                return 1;
+                            }
+                            return 0;
+                        });
                     }
                 }
             }
@@ -718,7 +723,6 @@ public class SocialPostingService {
             String topic = firstNonBlank(request.topic(), "Custom prompt");
             String tone = firstNonBlank(request.tone(), appProperties.defaults().tone());
             String language = firstNonBlank(request.language(), appProperties.defaults().language());
-            List<String> platforms = normalizePlatformList(request.platforms());
             List<GeneratedPostDraft> drafts = posts.stream().map(text -> {
                 GeneratedPostDraft draft = new GeneratedPostDraft();
                 draft.setText(text);
@@ -727,21 +731,23 @@ public class SocialPostingService {
             }).toList();
             drafts = enrichDraftsWithUniqueImages(drafts, topic, readUsedImageUrls());
 
-            List<String> targetAccountIds = accountConfigService.resolveTargetAccountIds(request.accountIds());
-            for (String accountId : targetAccountIds) {
-                AppProperties.Account account = accountConfigService.requireAccount(accountId);
-                for (String platform : platforms) {
-                    queueService.saveQueuedPosts(
-                            drafts,
-                            topic,
-                            tone,
-                            language,
-                            List.of(platform),
-                            appPathService.queuePath(account.id(), platform),
-                            account.id(),
-                            firstNonBlank(account.label(), account.id())
-                    );
-                }
+            List<TargetProfile> targetProfiles = resolveTargetProfiles(
+                    request.targetProfiles(),
+                    request.accountIds(),
+                    request.platforms()
+            );
+            for (TargetProfile targetProfile : targetProfiles) {
+                AppProperties.Account account = accountConfigService.requireAccount(targetProfile.accountId());
+                queueService.saveQueuedPosts(
+                        drafts,
+                        topic,
+                        tone,
+                        language,
+                        List.of(targetProfile.platform()),
+                        appPathService.queuePath(account.id(), targetProfile.platform()),
+                        account.id(),
+                        firstNonBlank(account.label(), account.id())
+                );
             }
         }
 
@@ -832,6 +838,54 @@ public class SocialPostingService {
                 .distinct()
                 .toList();
         return normalized.isEmpty() ? List.of("x", "threads") : normalized;
+    }
+
+    private List<TargetProfile> resolveTargetProfiles(
+            List<String> requestedTargetProfiles,
+            List<String> requestedAccountIds,
+            List<String> requestedPlatforms
+    ) {
+        if (requestedTargetProfiles != null && !requestedTargetProfiles.isEmpty()) {
+            LinkedHashSet<TargetProfile> profiles = new LinkedHashSet<>();
+            for (String requestedTargetProfile : requestedTargetProfiles) {
+                TargetProfile targetProfile = parseTargetProfile(requestedTargetProfile);
+                accountConfigService.requireAccount(targetProfile.accountId());
+                profiles.add(targetProfile);
+            }
+            if (!profiles.isEmpty()) {
+                return new ArrayList<>(profiles);
+            }
+        }
+
+        List<String> targetAccountIds = accountConfigService.resolveTargetAccountIds(requestedAccountIds);
+        List<String> targetPlatforms = normalizePlatformList(requestedPlatforms);
+        List<TargetProfile> profiles = new ArrayList<>();
+        for (String accountId : targetAccountIds) {
+            for (String platform : targetPlatforms) {
+                profiles.add(new TargetProfile(accountId, platform));
+            }
+        }
+        return profiles;
+    }
+
+    private TargetProfile parseTargetProfile(String value) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalStateException("Target profile is required.");
+        }
+        String trimmed = value.trim();
+        int separator = trimmed.lastIndexOf(':');
+        if (separator <= 0 || separator >= trimmed.length() - 1) {
+            throw new IllegalStateException("Target profile must use accountId:platform format.");
+        }
+        String accountId = trimmed.substring(0, separator).trim();
+        String platform = normalizeQueuePlatform(trimmed.substring(separator + 1));
+        if (accountId.isBlank()) {
+            throw new IllegalStateException("Target profile account id is required.");
+        }
+        return new TargetProfile(accountId, platform);
+    }
+
+    private record TargetProfile(String accountId, String platform) {
     }
 
     private void migrateLegacyQueueIfNeeded(Path activeQueuePath, AppProperties.Account activeAccount, String platform) {

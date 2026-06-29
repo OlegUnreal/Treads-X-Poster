@@ -13,6 +13,7 @@ public record QueuePostUpsertRequest(
         String status,
         List<String> platforms,
         List<String> accountIds,
+        List<String> targetProfiles,
         String language,
         String tone
 ) {

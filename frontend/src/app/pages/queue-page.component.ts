@@ -11,11 +11,26 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
   imports: [AsyncPipe, DatePipe, NgFor, NgIf, FormsModule],
   template: `
     <section class="page" *ngIf="ui.vm$ | async as vm">
-      <header class="page-head">
+      <header class="page-head d-flex flex-wrap justify-content-between align-items-end gap-2">
         <div>
           <p class="eyebrow">Queue</p>
-          <h1>Upcoming Posts</h1>
-          <p>Only editable, upcoming posts are shown here. Posted history is hidden to keep the page calm.</p>
+          <h1>Upcoming</h1>
+        </div>
+        <div class="toolbar">
+          <select
+            class="form-select form-select-sm"
+            [ngModel]="selectedQueueProfileId(vm.summary.publisherAccounts.activeAccountId)"
+            (ngModelChange)="switchQueueProfile($event)"
+          >
+            <option
+              *ngFor="let profile of ui.publishingProfiles(vm.summary.publisherAccounts)"
+              [ngValue]="profile.id"
+            >
+              {{ profile.name }} · {{ profile.subtitle }}
+            </option>
+          </select>
+          <button type="button" class="btn btn-outline-primary btn-sm" (click)="fillMissingPhotos()">Fill Photos</button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" (click)="cleanDuplicatePhotos()">Clean Photos</button>
         </div>
       </header>
 
@@ -25,337 +40,129 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
           <span>{{ result.message }}</span>
         </p>
 
-        <div class="account-switcher">
-          <label>
-            <span>Queue Account</span>
-            <select
-              [ngModel]="vm.summary.publisherAccounts.activeAccountId"
-              (ngModelChange)="switchAccount($event)"
-            >
-              <option
-                *ngFor="let account of vm.summary.publisherAccounts.availableAccounts"
-                [ngValue]="account.id"
-              >
-                {{ account.label }}
-              </option>
-            </select>
-          </label>
-          <dl>
-            <div>
-              <dt>X</dt>
-              <dd>{{ vm.summary.publisherAccounts.xAccountLabel }}</dd>
-            </div>
-            <div>
-              <dt>Threads</dt>
-              <dd>{{ vm.summary.publisherAccounts.threadsAccountLabel }}</dd>
-            </div>
-          </dl>
-        </div>
-
-        <div class="queue-tools">
-          <label class="platform-switcher">
-            <span>Platform Queue</span>
-            <select [ngModel]="queuePlatform" (ngModelChange)="switchQueuePlatform($event)">
-              <option value="x">X</option>
-              <option value="threads">Threads</option>
-            </select>
-          </label>
-          <button type="button" (click)="fillMissingPhotos()">Fill Missing Photos</button>
-          <button type="button" class="ghost" (click)="cleanDuplicatePhotos()">Clean Duplicate Photos</button>
-        </div>
-
         <div class="queue-list" *ngIf="ui.editableQueue(vm.queue).length > 0; else emptyState">
           <article class="queue-card" *ngFor="let post of ui.editableQueue(vm.queue); let index = index; let last = last">
             <div class="meta">
-              <div class="meta-copy">
-                <small>{{ post.createdAt | date:'yyyy-MM-dd HH:mm' }}</small>
-              </div>
-              <span class="badge">{{ post.status }}</span>
+              <span>{{ post.createdAt | date:'yyyy-MM-dd HH:mm' }}</span>
+              <span class="badge text-bg-light">{{ post.status }}</span>
             </div>
 
             <div class="summary" [class.no-image]="!post.imageUrl">
               <div class="image-thumb" *ngIf="post.imageUrl">
                 <img [src]="post.imageUrl" alt="Queue preview" />
               </div>
-              <p class="text-preview">{{ post.text }}</p>
+              <p>{{ post.text }}</p>
             </div>
 
-            <div class="actions split">
-              <button type="button" class="ghost icon-action" [disabled]="index === 0" (click)="movePost(post, 'up')">Move Up</button>
-              <button type="button" class="ghost icon-action" [disabled]="last" (click)="movePost(post, 'down')">Move Down</button>
-              <button type="button" (click)="toggleEditor(post.id)">
-                {{ expandedPostId === post.id ? 'Close Editor' : 'Edit Post' }}
+            <div class="actions">
+              <button type="button" class="btn btn-outline-secondary btn-sm" [disabled]="index === 0" (click)="movePost(post, 'up')">Up</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm" [disabled]="last" (click)="movePost(post, 'down')">Down</button>
+              <button type="button" class="btn btn-primary btn-sm" (click)="toggleEditor(post.id)">
+                {{ expandedPostId === post.id ? 'Close' : 'Edit' }}
               </button>
-              <button type="button" class="ghost" *ngIf="expandedPostId === post.id" (click)="saveQueuePost(post)">Save Changes</button>
-              <button type="button" class="ghost" *ngIf="post.imageUrl" (click)="removePhoto(post)">Remove Photo</button>
-              <button type="button" class="danger" (click)="deletePost(post)">Delete</button>
+              <button type="button" class="btn btn-outline-primary btn-sm" *ngIf="expandedPostId === post.id" (click)="saveQueuePost(post)">Save</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm" *ngIf="post.imageUrl" (click)="removePhoto(post)">Remove Photo</button>
+              <button type="button" class="btn btn-outline-danger btn-sm" (click)="deletePost(post)">Delete</button>
             </div>
 
             <div class="editor" *ngIf="expandedPostId === post.id">
-              <div class="form-grid">
-                <label>
-                  <span>Topic</span>
-                  <input [ngModel]="draftFor(post).topic" (ngModelChange)="draftFor(post).topic = $event" />
-                </label>
-                <label>
-                  <span>Status</span>
-                  <input [ngModel]="draftFor(post).status" (ngModelChange)="draftFor(post).status = $event" />
-                </label>
-                <label>
-                  <span>Language</span>
-                  <input [ngModel]="draftFor(post).language" (ngModelChange)="draftFor(post).language = $event" />
-                </label>
-                <label>
-                  <span>Tone</span>
-                  <input [ngModel]="draftFor(post).tone" (ngModelChange)="draftFor(post).tone = $event" />
-                </label>
-                <label class="wide">
-                  <span>Platforms (comma separated)</span>
-                  <input [ngModel]="draftFor(post).platformsText" (ngModelChange)="draftFor(post).platformsText = $event" />
-                </label>
-                <label class="wide">
-                  <span>Real Photo Idea</span>
-                  <input [ngModel]="draftFor(post).visualHint" (ngModelChange)="draftFor(post).visualHint = $event" />
-                </label>
-                <label class="wide">
-                  <span>Image URL</span>
-                  <input [ngModel]="draftFor(post).imageUrl" (ngModelChange)="draftFor(post).imageUrl = $event" />
-                </label>
-                <label class="wide">
-                  <span>Source Page</span>
-                  <input [ngModel]="draftFor(post).imageSourcePage" (ngModelChange)="draftFor(post).imageSourcePage = $event" />
-                </label>
-                <label class="wide">
-                  <span>Text</span>
-                  <textarea [ngModel]="draftFor(post).text" (ngModelChange)="draftFor(post).text = $event" rows="6"></textarea>
-                </label>
+              <div class="row g-2">
+                <div class="col-md-6">
+                  <label class="field">
+                    <span>Topic</span>
+                    <input class="form-control form-control-sm" [ngModel]="draftFor(post).topic" (ngModelChange)="draftFor(post).topic = $event" />
+                  </label>
+                </div>
+                <div class="col-md-3">
+                  <label class="field">
+                    <span>Status</span>
+                    <input class="form-control form-control-sm" [ngModel]="draftFor(post).status" (ngModelChange)="draftFor(post).status = $event" />
+                  </label>
+                </div>
+                <div class="col-md-3">
+                  <label class="field">
+                    <span>Language</span>
+                    <input class="form-control form-control-sm" [ngModel]="draftFor(post).language" (ngModelChange)="draftFor(post).language = $event" />
+                  </label>
+                </div>
+                <div class="col-12">
+                  <label class="field">
+                    <span>Text</span>
+                    <textarea class="form-control" [ngModel]="draftFor(post).text" (ngModelChange)="draftFor(post).text = $event" rows="4"></textarea>
+                  </label>
+                </div>
+                <div class="col-md-6">
+                  <label class="field">
+                    <span>Image URL</span>
+                    <input class="form-control form-control-sm" [ngModel]="draftFor(post).imageUrl" (ngModelChange)="draftFor(post).imageUrl = $event" />
+                  </label>
+                </div>
+                <div class="col-md-6">
+                  <label class="field">
+                    <span>Source Page</span>
+                    <input class="form-control form-control-sm" [ngModel]="draftFor(post).imageSourcePage" (ngModelChange)="draftFor(post).imageSourcePage = $event" />
+                  </label>
+                </div>
               </div>
             </div>
           </article>
         </div>
 
         <ng-template #emptyState>
-          <div class="empty">
-            There are no editable upcoming posts right now.
-          </div>
+          <div class="empty">No editable posts in this profile queue.</div>
         </ng-template>
       </article>
     </section>
   `,
   styles: [`
     :host { display: block; }
-    .page { display: grid; gap: 24px; }
-    .eyebrow { margin: 0 0 10px; text-transform: uppercase; letter-spacing: 0.14em; font: 700 12px/1.2 "Segoe UI", sans-serif; color: #8a5a24; }
-    h1 { margin: 0; font-size: clamp(2.1rem, 4vw, 3.4rem); }
-    .page-head p { color: #52606d; font: 500 15px/1.6 "Segoe UI", sans-serif; margin: 10px 0 0; }
+    .page { display: grid; gap: 12px; }
+    .page-head h1 { margin: 0; font-size: 28px; line-height: 1.05; }
+    .eyebrow, .field span {
+      margin: 0 0 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #64748b;
+      font: 700 11px/1.2 "Segoe UI", sans-serif;
+    }
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .toolbar select { min-width: 280px; }
     .panel {
-      padding: 24px;
-      background: rgba(255,255,255,0.78);
-      border: 1px solid rgba(31,41,51,0.08);
-      border-radius: 24px;
-      box-shadow: 0 24px 50px rgba(69,58,42,0.12);
-      margin: 0 auto;
-      width: 100%;
-    }
-    .queue-list {
-      display: grid;
-      gap: 16px;
-      max-width: 760px;
-      margin: 0 auto;
-    }
-    .queue-tools {
-      max-width: 760px;
-      margin: 0 auto 16px;
-      display: flex;
-      gap: 12px;
-      justify-content: flex-end;
-      align-items: end;
-      flex-wrap: wrap;
-    }
-    .platform-switcher {
-      display: grid;
-      gap: 6px;
-      margin-right: auto;
-      font-family: "Segoe UI", sans-serif;
-    }
-    .platform-switcher span {
-      color: #52606d;
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-    .platform-switcher select {
-      min-width: 150px;
-      border: 1px solid rgba(31,41,51,0.12);
+      padding: 12px;
+      background: #fff;
+      border: 1px solid #dde3ea;
       border-radius: 12px;
-      padding: 10px 12px;
-      background: white;
-      color: #243b53;
-      font: 700 14px/1.4 "Segoe UI", sans-serif;
+      box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
     }
-    .account-switcher {
-      max-width: 760px;
-      margin: 0 auto 16px;
-      padding: 14px;
-      border: 1px solid rgba(31,41,51,0.10);
-      border-radius: 16px;
-      background: rgba(255,255,255,0.64);
-      display: grid;
-      grid-template-columns: minmax(220px, 320px) minmax(0, 1fr);
-      gap: 12px;
-      font-family: "Segoe UI", sans-serif;
-    }
-    .account-switcher label { display: grid; gap: 8px; }
-    .account-switcher span, .account-switcher dt {
-      color: #52606d;
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-    .account-switcher select {
-      width: 100%;
-      border: 1px solid rgba(31,41,51,0.12);
-      border-radius: 12px;
-      padding: 11px 12px;
-      background: white;
-      color: #243b53;
-      font: 700 14px/1.4 "Segoe UI", sans-serif;
-    }
-    .account-switcher dl { margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .account-switcher dd {
-      margin: 4px 0 0;
-      color: #243b53;
-      font: 700 14px/1.4 "Segoe UI", sans-serif;
-      overflow-wrap: anywhere;
-    }
+    .queue-list { display: grid; gap: 10px; }
     .queue-card {
-      padding: 18px 20px;
-      border: 1px solid rgba(31,41,51,0.08);
-      border-radius: 24px;
-      background: rgba(255,255,255,0.82);
-      max-width: 760px;
-      box-shadow: 0 14px 30px rgba(69,58,42,0.08);
+      padding: 12px;
+      border: 1px solid #dde3ea;
+      border-radius: 10px;
+      background: #f8fafc;
     }
-    .queue-card:first-child { border-top: 0; }
-    .meta { display: flex; justify-content: space-between; gap: 16px; align-items: center; margin-bottom: 12px; }
-    .meta-copy { display: grid; gap: 4px; }
-    .meta-copy small { color: #52606d; font: 600 12px/1.5 "Segoe UI", sans-serif; }
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      padding: 8px 12px;
-      border-radius: 999px;
-      background: rgba(15,118,110,0.1);
-      color: #0f766e;
-      font: 700 12px/1 "Segoe UI", sans-serif;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-    .summary {
-      display: grid;
-      grid-template-columns: 88px minmax(0, 1fr);
-      gap: 12px;
-      align-items: start;
-      max-width: 700px;
-    }
-    .summary.no-image {
-      grid-template-columns: 1fr;
-    }
-    .image-thumb {
-      width: 88px;
-      height: 88px;
-      border-radius: 18px;
-      overflow: hidden;
-      background: rgba(31,41,51,0.06);
-      border: 1px solid rgba(31,41,51,0.08);
-      flex-shrink: 0;
-    }
-    .image-thumb img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
-    }
-    .text-preview {
-      margin: 0;
-      color: #243b53;
-      font: 500 15px/1.65 "Segoe UI", sans-serif;
-      min-width: 0;
-    }
-    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 12px; }
-    .wide { grid-column: 1 / -1; }
-    .form-grid label { display: grid; gap: 8px; }
-    .form-grid span { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: #52606d; font-family: "Segoe UI", sans-serif; }
-    .form-grid input, .form-grid textarea {
-      width: 100%;
-      border: 1px solid rgba(31,41,51,0.12);
-      border-radius: 14px;
-      padding: 12px 14px;
-      background: rgba(255,255,255,0.92);
-      color: #243b53;
-      font: 500 14px/1.5 "Segoe UI", sans-serif;
-      resize: vertical;
-    }
-    .actions { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 14px; }
-    .actions.split { grid-template-columns: repeat(5, minmax(0, max-content)); align-items: center; }
-    button {
-      border: 0;
-      border-radius: 999px;
-      padding: 12px 16px;
-      font: 700 13px/1.2 "Segoe UI", sans-serif;
-      background: linear-gradient(135deg, #1f6feb, #0f766e);
-      color: white;
-      cursor: pointer;
-      box-shadow: 0 16px 30px rgba(21, 48, 74, 0.2);
-    }
-    button.ghost {
-      background: rgba(255,255,255,0.9);
-      color: #243b53;
-      border: 1px solid rgba(31,41,51,0.12);
-      box-shadow: none;
-    }
-    button.danger {
-      background: rgba(154,52,18,0.10);
-      color: #7c2d12;
-      border: 1px solid rgba(154,52,18,0.18);
-      box-shadow: none;
-    }
-    button:disabled {
-      cursor: not-allowed;
-      opacity: 0.5;
-      box-shadow: none;
-    }
-    .editor {
-      margin-top: 18px;
-      padding-top: 18px;
-      border-top: 1px dashed rgba(31,41,51,0.12);
-    }
+    .meta { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; color: #64748b; font: 700 12px/1.3 "Segoe UI", sans-serif; }
+    .summary { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 10px; align-items: start; }
+    .summary.no-image { grid-template-columns: 1fr; }
+    .summary p { margin: 0; color: #17212b; font: 500 14px/1.5 "Segoe UI", sans-serif; }
+    .image-thumb { width: 72px; height: 72px; border-radius: 8px; overflow: hidden; background: #e2e8f0; }
+    .image-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; margin-top: 10px; }
+    .editor { margin-top: 10px; padding-top: 10px; border-top: 1px dashed #cbd5e1; }
+    .field { display: grid; gap: 4px; }
     .feedback {
-      margin: 0 0 18px;
-      padding: 12px 14px;
-      border-radius: 14px;
-      background: rgba(15,118,110,0.09);
-      color: #0f5132;
-      font: 600 14px/1.5 "Segoe UI", sans-serif;
-      display: grid; gap: 4px;
+      margin: 0 0 10px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: #e9f7ef;
+      color: #146c43;
+      font: 600 13px/1.35 "Segoe UI", sans-serif;
+      display: grid;
+      gap: 2px;
     }
-    .feedback.error { background: rgba(154,52,18,0.09); color: #7c2d12; }
-    .empty { color: #52606d; font: 600 15px/1.5 "Segoe UI", sans-serif; }
-    @media (max-width: 900px) {
-      .form-grid { grid-template-columns: 1fr; }
-      .account-switcher { grid-template-columns: 1fr; }
-      .actions.split { grid-template-columns: repeat(2, minmax(0, max-content)); }
-      .summary { grid-template-columns: 88px minmax(0, 1fr); }
-      .image-thumb {
-        width: 88px;
-        height: 88px;
-      }
-    }
-    @media (min-width: 901px) {
-      .panel {
-        max-width: 860px;
-      }
-    }
+    .feedback.error { background: #fff1f2; color: #be123c; }
+    .empty { color: #64748b; font: 700 14px/1.4 "Segoe UI", sans-serif; padding: 10px; }
+    @media (max-width: 760px) { .toolbar { justify-content: stretch; } .toolbar select, .toolbar button { width: 100%; } }
   `]
 })
 export class QueuePageComponent {
@@ -375,6 +182,25 @@ export class QueuePageComponent {
     platformsText: string;
   }>();
 
+  protected selectedQueueProfileId(activeAccountId: string): string {
+    return `${activeAccountId}:${this.queuePlatform}`;
+  }
+
+  protected switchQueueProfile(profileId: string): void {
+    const [accountId, platform] = profileId.split(':');
+    this.queuePlatform = platform === 'threads' ? 'threads' : 'x';
+    this.ui.setQueuePlatform(this.queuePlatform);
+    this.dashboardService.switchActiveAccount(accountId).subscribe(() => {
+      this.ui.pushActionResult({
+        success: true,
+        command: 'switch-account',
+        message: 'Queue profile changed.'
+      });
+      this.queueDrafts.clear();
+      this.expandedPostId = null;
+    });
+  }
+
   protected saveQueuePost(post: QueuePost): void {
     const draft = this.draftFor(post);
     const payload: QueuePostUpsertRequest = this.ui.sanitizeQueueUpsertRequest({
@@ -388,7 +214,7 @@ export class QueuePageComponent {
       status: draft.status,
       language: draft.language,
       tone: draft.tone,
-      platforms: this.ui.parsePlatforms(draft.platformsText)
+      platforms: [this.queuePlatform]
     });
 
     this.dashboardService.updateQueuePost(post.id, payload, this.queuePlatform).subscribe(() => {
@@ -418,7 +244,6 @@ export class QueuePageComponent {
     if (!window.confirm(`Delete this queued post?\n\n${preview}`)) {
       return;
     }
-
     this.dashboardService.deleteQueuePost(post.id, this.queuePlatform).subscribe((result) => {
       this.ui.pushActionResult(result);
       this.queueDrafts.delete(post.id);
@@ -442,25 +267,6 @@ export class QueuePageComponent {
     });
   }
 
-  protected switchAccount(accountId: string): void {
-    this.dashboardService.switchActiveAccount(accountId).subscribe(() => {
-      this.ui.pushActionResult({
-        success: true,
-        command: 'switch-account',
-        message: `Active queue account changed to ${accountId}.`
-      });
-      this.queueDrafts.clear();
-      this.expandedPostId = null;
-    });
-  }
-
-  protected switchQueuePlatform(platform: 'x' | 'threads'): void {
-    this.queuePlatform = platform === 'threads' ? 'threads' : 'x';
-    this.queueDrafts.clear();
-    this.expandedPostId = null;
-    this.ui.setQueuePlatform(this.queuePlatform);
-  }
-
   protected removePhoto(post: QueuePost): void {
     const payload: QueuePostUpsertRequest = this.ui.sanitizeQueueUpsertRequest({
       topic: post.topic,
@@ -473,7 +279,7 @@ export class QueuePageComponent {
       status: post.status,
       language: post.language ?? 'uk',
       tone: post.tone ?? '',
-      platforms: post.platforms ?? ['x', 'threads']
+      platforms: [this.queuePlatform]
     });
 
     this.dashboardService.updateQueuePost(post.id, payload, this.queuePlatform).subscribe(() => {
@@ -491,7 +297,6 @@ export class QueuePageComponent {
     if (existing) {
       return existing;
     }
-
     const created = {
       topic: post.topic ?? '',
       text: post.text ?? '',

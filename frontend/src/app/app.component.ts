@@ -6,22 +6,22 @@ import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
   standalone: true,
   imports: [RouterOutlet, RouterLink, RouterLinkActive],
   template: `
-    <main class="app-shell">
-      <header class="topbar">
-        <div class="brand">
-          <span class="eyebrow">Behind The Smile</span>
-          <strong>Admin</strong>
+    <main class="app-shell container-fluid">
+      <header class="topbar navbar navbar-expand-lg">
+        <div class="brand navbar-brand">
+          <strong>Behind The Smile</strong>
+          <span>Admin</span>
         </div>
-        <nav class="nav">
-          <a routerLink="/overview" routerLinkActive="active">Overview</a>
-          <a routerLink="/publish" routerLinkActive="active">Publish</a>
-          <a routerLink="/create" routerLinkActive="active">Create</a>
-          <a routerLink="/queue" routerLinkActive="active">Queue</a>
-          <a routerLink="/automation" routerLinkActive="active">Automation</a>
+        <nav class="nav nav-pills ms-lg-auto">
+          <a class="nav-link" routerLink="/overview" routerLinkActive="active">Overview</a>
+          <a class="nav-link" routerLink="/publish" routerLinkActive="active">Publish</a>
+          <a class="nav-link" routerLink="/create" routerLinkActive="active">Create</a>
+          <a class="nav-link" routerLink="/queue" routerLinkActive="active">Queue</a>
+          <a class="nav-link" routerLink="/automation" routerLinkActive="active">Automation</a>
         </nav>
       </header>
 
-      <section class="content">
+      <section class="content container-fluid px-0">
         <router-outlet />
       </section>
     </main>
@@ -30,65 +30,50 @@ import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
     :host {
       display: block;
       min-height: 100vh;
-      background:
-        radial-gradient(circle at 10% 10%, rgba(255, 208, 118, 0.18), transparent 22%),
-        radial-gradient(circle at 90% 20%, rgba(87, 178, 255, 0.16), transparent 20%),
-        linear-gradient(180deg, #f6f0e7 0%, #ebe7dd 100%);
-      color: #1f2933;
-      font-family: Georgia, "Times New Roman", serif;
+      background: #f4f6f8;
+      color: #17212b;
+      font-family: Inter, "Segoe UI", system-ui, sans-serif;
     }
     .app-shell {
-      max-width: 1280px;
+      max-width: 1440px;
       margin: 0 auto;
-      padding: 28px 24px 56px;
+      padding: 12px 16px 32px;
     }
     .topbar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 20px;
-      margin-bottom: 28px;
-      padding: 18px 20px;
-      background: rgba(255,255,255,0.72);
-      border: 1px solid rgba(31,41,51,0.08);
-      border-radius: 24px;
-      box-shadow: 0 24px 50px rgba(69,58,42,0.12);
+      gap: 16px;
+      margin-bottom: 14px;
+      padding: 10px 12px;
+      background: #ffffff;
+      border: 1px solid #dde3ea;
+      border-radius: 12px;
+      box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
     }
-    .brand { display: grid; gap: 4px; }
-    .eyebrow {
-      text-transform: uppercase;
-      letter-spacing: 0.14em;
-      font: 700 11px/1.2 "Segoe UI", sans-serif;
-      color: #8a5a24;
-    }
-    .brand strong { font-size: 24px; }
+    .brand { display: flex; align-items: baseline; gap: 8px; margin: 0; }
+    .brand strong { font-size: 18px; letter-spacing: 0; }
+    .brand span { color: #64748b; font-size: 13px; font-weight: 700; }
     .nav {
       display: flex;
       flex-wrap: wrap;
-      gap: 10px;
+      gap: 6px;
     }
     .nav a {
-      text-decoration: none;
-      color: #31465a;
-      padding: 10px 14px;
-      border-radius: 999px;
-      background: rgba(255,255,255,0.82);
-      border: 1px solid rgba(31,41,51,0.08);
-      font: 700 14px/1.2 "Segoe UI", sans-serif;
+      color: #334155;
+      padding: 7px 11px;
+      border-radius: 8px;
+      font: 700 13px/1.2 "Segoe UI", sans-serif;
     }
     .nav a.active {
-      background: linear-gradient(135deg, #1f6feb, #0f766e);
+      background: #0d6efd;
       color: white;
-      box-shadow: 0 16px 30px rgba(21, 48, 74, 0.2);
     }
     .content { display: block; }
     @media (max-width: 900px) {
-      .topbar { flex-direction: column; align-items: stretch; }
+      .topbar { align-items: stretch; }
       .nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 640px) {
       .nav { grid-template-columns: 1fr; }
-      .app-shell { padding: 18px 16px 40px; }
+      .app-shell { padding: 10px; }
     }
   `]
 })

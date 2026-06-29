@@ -10,6 +10,7 @@ public record GeneratePromptRequest(
         Integer count,
         List<String> platforms,
         List<String> accountIds,
+        List<String> targetProfiles,
         boolean saveToQueue
 ) {
 }

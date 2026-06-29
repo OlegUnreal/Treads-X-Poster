@@ -20,268 +20,219 @@ interface PromptTemplate {
   imports: [AsyncPipe, NgFor, NgIf, FormsModule],
   template: `
     <section class="page" *ngIf="ui.vm$ | async as vm">
-      <header class="page-head">
+      <header class="page-head d-flex flex-wrap justify-content-between align-items-end gap-2">
         <div>
-          <p class="eyebrow">Create Posts</p>
-          <h1>Create</h1>
-          <p>Generation and manual drafting live here, separate from publishing.</p>
+          <p class="eyebrow">Create</p>
+          <h1>Posts</h1>
         </div>
+        <p class="muted mb-1">Pick exact profiles, then generate or add posts.</p>
       </header>
 
-      <article class="panel target-panel">
-        <div class="panel-head">
-          <h2>Target Accounts</h2>
-          <p>Choose publishing profiles. Leave all unchecked to use the active profile only.</p>
+      <article class="panel">
+        <div class="section-head">
+          <h2>Profiles</h2>
+          <span class="badge text-bg-light">{{ selectedTargetProfileIds.length }} selected</span>
         </div>
-        <div class="account-targets">
+        <div class="profile-grid">
           <label
-            class="target-account"
-            *ngFor="let account of vm.summary.publisherAccounts.availableAccounts"
-            [class.active]="isTargetAccountSelected(account.id)"
+            class="profile-card"
+            *ngFor="let profile of ui.publishingProfiles(vm.summary.publisherAccounts)"
+            [class.active]="isTargetProfileSelected(profile.id)"
           >
             <input
               type="checkbox"
-              [checked]="isTargetAccountSelected(account.id)"
-              (change)="toggleTargetAccount(account.id, $event)"
+              [checked]="isTargetProfileSelected(profile.id)"
+              (change)="toggleTargetProfile(profile.id, $event)"
             />
-            <span>
-              <strong>{{ account.label }}</strong>
-              <small>Publishing profile</small>
+            <span class="avatar" [class.x]="profile.platform === 'x'" [class.threads]="profile.platform === 'threads'">
+              <img *ngIf="profile.avatarUrl" [src]="profile.avatarUrl" [alt]="profile.name" />
+              <span *ngIf="!profile.avatarUrl">{{ ui.profileInitial(profile) }}</span>
+            </span>
+            <span class="profile-copy">
+              <strong>{{ profile.name }}</strong>
+              <small>{{ profile.subtitle }}</small>
             </span>
           </label>
         </div>
+        <p class="validation" *ngIf="targetProfileError">{{ targetProfileError }}</p>
       </article>
 
-      <article class="panel target-panel">
-        <div class="panel-head">
-          <h2>Target Platforms</h2>
-          <p>Choose where new posts should be queued. X and Threads are separate queues.</p>
-        </div>
-        <div class="account-targets">
-          <label class="target-account" [class.active]="isTargetPlatformSelected('x')">
-            <input
-              type="checkbox"
-              [checked]="isTargetPlatformSelected('x')"
-              (change)="toggleTargetPlatform('x', $event)"
-            />
-            <span>
-              <strong>X</strong>
-              <small>Queue for X only</small>
-            </span>
-          </label>
-          <label class="target-account" [class.active]="isTargetPlatformSelected('threads')">
-            <input
-              type="checkbox"
-              [checked]="isTargetPlatformSelected('threads')"
-              (change)="toggleTargetPlatform('threads', $event)"
-            />
-            <span>
-              <strong>Threads</strong>
-              <small>Queue for Threads only</small>
-            </span>
-          </label>
-        </div>
-      </article>
-
-      <article class="panel photo-panel">
-        <div class="panel-head">
-          <h2>Photo Batch</h2>
-          <p>Upload photos, generate one caption per photo, then save or publish through selected profiles and platforms.</p>
-        </div>
-
-        <div class="photo-upload">
-          <label class="file-drop">
-            <span>Photos</span>
-            <input type="file" accept="image/*" multiple (change)="selectPhotoBatch($event)" />
-            <strong>{{ selectedPhotoFiles.length || 'No' }} photo(s) selected</strong>
-          </label>
-          <label class="stacked">
-            <span>Caption Prompt</span>
-            <textarea [(ngModel)]="photoBatchForm.prompt" rows="5"></textarea>
-          </label>
-        </div>
-
-        <div class="form-grid compact">
-          <label>
-            <span>Topic</span>
-            <input [(ngModel)]="photoBatchForm.topic" />
-          </label>
-          <label>
-            <span>Language</span>
-            <input [(ngModel)]="photoBatchForm.language" />
-          </label>
-          <label>
-            <span>Tone</span>
-            <input [(ngModel)]="photoBatchForm.tone" />
-          </label>
-          <label class="wide checkbox">
-            <input [(ngModel)]="photoBatchForm.publishNow" type="checkbox" />
-            <span>Publish immediately instead of only adding to queue</span>
-          </label>
-        </div>
-
-        <div class="actions split">
-          <button type="button" [disabled]="photoBatchBusy || selectedPhotoFiles.length === 0" (click)="createPhotoBatch()">
-            {{ photoBatchBusy ? 'Processing Photos...' : photoBatchForm.publishNow ? 'Generate And Publish' : 'Generate To Queue' }}
-          </button>
-        </div>
-
-        <p class="feedback" *ngIf="photoBatchMessage" [class.error]="photoBatchError">
-          {{ photoBatchMessage }}
-        </p>
-      </article>
-
-      <section class="grid">
-        <article class="panel">
-          <div class="panel-head">
-            <h2>Generate With Prompt</h2>
-            <p>Ask OpenAI for a few fresh post ideas in your current voice.</p>
+      <section class="create-grid">
+        <article class="panel photo-panel">
+          <div class="section-head">
+            <h2>Photo Batch</h2>
+            <label class="form-check form-switch m-0">
+              <input class="form-check-input" [(ngModel)]="photoBatchForm.publishNow" type="checkbox" />
+              <span class="form-check-label">Publish now</span>
+            </label>
           </div>
 
-          <div class="prompt-tools">
-            <button type="button" class="ghost" [disabled]="selectedPromptTemplateIds.length === 0" (click)="applySelectedPromptTemplates()">
-              Apply Selected
-            </button>
-            <button type="button" class="ghost" [disabled]="selectedPromptTemplateIds.length === 0" (click)="clearPromptSelection()">
-              Clear Selection
-            </button>
-          </div>
-          <p class="template-note">
-            {{ selectedPromptTemplateIds.length }} selected from {{ promptTemplates.length }} prompt templates.
-          </p>
-          <ul class="template-list">
-            <li *ngFor="let template of promptTemplates">
-              <label class="template-row" [class.active]="isPromptTemplateSelected(template.id)">
-                <input
-                  type="checkbox"
-                  [checked]="isPromptTemplateSelected(template.id)"
-                  (change)="togglePromptTemplate(template.id, $event)"
-                />
-                <span class="template-copy">
-                  <strong>{{ template.title }}</strong>
-                  <span>{{ template.topic }}</span>
-                </span>
+          <div class="row g-2">
+            <div class="col-md-4">
+              <label class="file-drop">
+                <span>Photos</span>
+                <input class="form-control form-control-sm" type="file" accept="image/*" multiple (change)="selectPhotoBatch($event)" />
+                <strong>{{ selectedPhotoFiles.length || 'No' }} selected</strong>
               </label>
-            </li>
-          </ul>
-          <div class="template-manager">
-            <label>
-              <span>New Template Name</span>
-              <input [(ngModel)]="newTemplateTitle" placeholder="Example: Morning note" />
-            </label>
-            <button type="button" class="ghost" (click)="saveCurrentPromptTemplate()">Add Current</button>
-            <button type="button" class="danger" [disabled]="selectedPromptTemplateIds.length === 0 || promptTemplates.length <= selectedPromptTemplateIds.length" (click)="deleteSelectedPromptTemplates()">
-              Delete Selected
-            </button>
-          </div>
-
-          <div class="focus-block">
-            <label class="stacked">
-              <span>Main Prompt</span>
-              <textarea [(ngModel)]="generatorForm.prompt" rows="8"></textarea>
-            </label>
-          </div>
-
-          <div class="form-grid compact">
-            <label>
-              <span>Topic</span>
-              <input [(ngModel)]="generatorForm.topic" />
-            </label>
-            <label>
-              <span>Count</span>
-              <input [(ngModel)]="generatorForm.count" type="number" min="1" max="12" />
-            </label>
-          </div>
-
-          <div class="actions split">
-            <button type="button" (click)="generateFromPrompt()">Generate With OpenAI</button>
-            <button type="button" class="ghost" (click)="showGeneratorDetails = !showGeneratorDetails">
-              {{ showGeneratorDetails ? 'Hide Advanced Options' : 'Show Advanced Options' }}
-            </button>
-          </div>
-
-          <div class="advanced" *ngIf="showGeneratorDetails">
-            <div class="form-grid">
-              <label>
-                <span>Tone</span>
-                <input [(ngModel)]="generatorForm.tone" />
+            </div>
+            <div class="col-md-8">
+              <label class="field">
+                <span>Caption prompt</span>
+                <textarea class="form-control" [(ngModel)]="photoBatchForm.prompt" rows="4"></textarea>
               </label>
-              <label>
+            </div>
+            <div class="col-md-5">
+              <label class="field">
+                <span>Topic</span>
+                <input class="form-control form-control-sm" [(ngModel)]="photoBatchForm.topic" />
+              </label>
+            </div>
+            <div class="col-md-3">
+              <label class="field">
                 <span>Language</span>
-                <input [(ngModel)]="generatorForm.language" />
+                <input class="form-control form-control-sm" [(ngModel)]="photoBatchForm.language" />
               </label>
-              <label class="wide checkbox">
-                <input [(ngModel)]="generatorForm.saveToQueue" type="checkbox" />
-                <span>Save generated posts directly to queue</span>
+            </div>
+            <div class="col-md-4">
+              <label class="field">
+                <span>Tone</span>
+                <input class="form-control form-control-sm" [(ngModel)]="photoBatchForm.tone" />
               </label>
             </div>
           </div>
 
-          <p class="feedback" *ngIf="generationResultMessage">{{ generationResultMessage }}</p>
-          <div class="generated-results" *ngIf="generatedPosts.length > 0">
-            <h3>Generated Variants</h3>
-            <ol>
-              <li *ngFor="let post of generatedPosts">{{ post }}</li>
-            </ol>
+          <div class="actions">
+            <button class="btn btn-primary btn-sm" type="button" [disabled]="photoBatchBusy || selectedPhotoFiles.length === 0" (click)="createPhotoBatch()">
+              {{ photoBatchBusy ? 'Processing...' : photoBatchForm.publishNow ? 'Generate and publish' : 'Generate to queue' }}
+            </button>
           </div>
+          <p class="feedback" *ngIf="photoBatchMessage" [class.error]="photoBatchError">{{ photoBatchMessage }}</p>
         </article>
 
         <article class="panel">
-          <div class="panel-head">
-            <h2>Add Manual Post</h2>
-            <p>Use this only when you already know exactly what you want to add.</p>
-          </div>
-
-          <div class="focus-block">
-            <label class="stacked">
-              <span>Text</span>
-              <textarea [(ngModel)]="newPostForm.text" rows="7"></textarea>
-            </label>
-          </div>
-
-          <div class="form-grid compact">
-            <label>
-              <span>Topic</span>
-              <input [(ngModel)]="newPostForm.topic" />
-            </label>
-          </div>
-
-          <div class="actions split">
-            <button type="button" (click)="createManualPost()">Add To Queue</button>
-            <button type="button" class="ghost" (click)="showManualDetails = !showManualDetails">
-              {{ showManualDetails ? 'Hide Advanced Options' : 'Show Advanced Options' }}
+          <div class="section-head">
+            <h2>Generate</h2>
+            <button type="button" class="btn btn-outline-secondary btn-sm" (click)="showGeneratorDetails = !showGeneratorDetails">
+              {{ showGeneratorDetails ? 'Less' : 'More' }}
             </button>
           </div>
 
-          <div class="advanced" *ngIf="showManualDetails">
-            <div class="form-grid">
-              <label>
-                <span>Status</span>
-                <input [(ngModel)]="newPostForm.status" />
+          <div class="template-strip">
+            <label
+              class="template-chip"
+              *ngFor="let template of promptTemplates"
+              [class.active]="isPromptTemplateSelected(template.id)"
+            >
+              <input
+                type="checkbox"
+                [checked]="isPromptTemplateSelected(template.id)"
+                (change)="togglePromptTemplate(template.id, $event)"
+              />
+              <span>{{ template.title }}</span>
+            </label>
+          </div>
+          <div class="d-flex gap-2 flex-wrap mt-2">
+            <button type="button" class="btn btn-outline-primary btn-sm" [disabled]="selectedPromptTemplateIds.length === 0" (click)="applySelectedPromptTemplates()">Apply</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" [disabled]="selectedPromptTemplateIds.length === 0" (click)="clearPromptSelection()">Clear</button>
+          </div>
+
+          <label class="field mt-3">
+            <span>Main prompt</span>
+            <textarea class="form-control" [(ngModel)]="generatorForm.prompt" rows="5"></textarea>
+          </label>
+
+          <div class="row g-2 mt-1">
+            <div class="col-md-7">
+              <label class="field">
+                <span>Topic</span>
+                <input class="form-control form-control-sm" [(ngModel)]="generatorForm.topic" />
               </label>
-              <label>
-                <span>Language</span>
-                <input [(ngModel)]="newPostForm.language" />
+            </div>
+            <div class="col-md-2">
+              <label class="field">
+                <span>Count</span>
+                <input class="form-control form-control-sm" [(ngModel)]="generatorForm.count" type="number" min="1" max="12" />
               </label>
-              <label>
-                <span>Tone</span>
-                <input [(ngModel)]="newPostForm.tone" />
-              </label>
-              <label>
-                <span>Real Photo Idea</span>
-                <input [(ngModel)]="newPostForm.visualHint" />
-              </label>
-              <label class="wide">
-                <span>Image URL</span>
-                <input [(ngModel)]="newPostForm.imageUrl" />
-              </label>
-              <label class="wide">
-                <span>Source Page</span>
-                <input [(ngModel)]="newPostForm.imageSourcePage" />
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+              <label class="form-check mb-2">
+                <input class="form-check-input" [(ngModel)]="generatorForm.saveToQueue" type="checkbox" />
+                <span class="form-check-label">Save</span>
               </label>
             </div>
           </div>
 
+          <div class="advanced row g-2" *ngIf="showGeneratorDetails">
+            <div class="col-md-5">
+              <label class="field">
+                <span>Language</span>
+                <input class="form-control form-control-sm" [(ngModel)]="generatorForm.language" />
+              </label>
+            </div>
+            <div class="col-md-7">
+              <label class="field">
+                <span>Tone</span>
+                <input class="form-control form-control-sm" [(ngModel)]="generatorForm.tone" />
+              </label>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button type="button" class="btn btn-primary btn-sm" (click)="generateFromPrompt()">Generate</button>
+          </div>
+          <p class="feedback" *ngIf="generationResultMessage">{{ generationResultMessage }}</p>
+          <ol class="generated-results" *ngIf="generatedPosts.length > 0">
+            <li *ngFor="let post of generatedPosts">{{ post }}</li>
+          </ol>
+        </article>
+
+        <article class="panel">
+          <div class="section-head">
+            <h2>Manual</h2>
+            <button type="button" class="btn btn-outline-secondary btn-sm" (click)="showManualDetails = !showManualDetails">
+              {{ showManualDetails ? 'Less' : 'More' }}
+            </button>
+          </div>
+
+          <label class="field">
+            <span>Text</span>
+            <textarea class="form-control" [(ngModel)]="newPostForm.text" rows="5"></textarea>
+          </label>
+          <label class="field mt-2">
+            <span>Topic</span>
+            <input class="form-control form-control-sm" [(ngModel)]="newPostForm.topic" />
+          </label>
+
+          <div class="advanced row g-2" *ngIf="showManualDetails">
+            <div class="col-md-4">
+              <label class="field">
+                <span>Status</span>
+                <input class="form-control form-control-sm" [(ngModel)]="newPostForm.status" />
+              </label>
+            </div>
+            <div class="col-md-4">
+              <label class="field">
+                <span>Language</span>
+                <input class="form-control form-control-sm" [(ngModel)]="newPostForm.language" />
+              </label>
+            </div>
+            <div class="col-md-4">
+              <label class="field">
+                <span>Tone</span>
+                <input class="form-control form-control-sm" [(ngModel)]="newPostForm.tone" />
+              </label>
+            </div>
+            <div class="col-12">
+              <label class="field">
+                <span>Image URL</span>
+                <input class="form-control form-control-sm" [(ngModel)]="newPostForm.imageUrl" />
+              </label>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button type="button" class="btn btn-primary btn-sm" (click)="createManualPost()">Add to queue</button>
+          </div>
           <p class="feedback" *ngIf="ui.actionResult$ | async as result" [class.error]="!result.success">
             <strong>{{ result.command }}</strong>
             <span>{{ result.message }}</span>
@@ -292,277 +243,103 @@ interface PromptTemplate {
   `,
   styles: [`
     :host { display: block; }
-    .page { display: grid; gap: 24px; }
-    .page-head p, .panel-head p { color: #52606d; font: 500 16px/1.6 "Segoe UI", sans-serif; margin: 10px 0 0; }
-    .eyebrow { margin: 0 0 10px; text-transform: uppercase; letter-spacing: 0.14em; font: 700 12px/1.2 "Segoe UI", sans-serif; color: #8a5a24; }
-    h1 { margin: 0; font-size: clamp(2.1rem, 4vw, 3.4rem); }
-    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+    .page { display: grid; gap: 12px; }
+    .page-head h1 { margin: 0; font-size: 28px; line-height: 1.05; }
+    .eyebrow, .field span, .file-drop span {
+      margin: 0 0 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #64748b;
+      font: 700 11px/1.2 "Segoe UI", sans-serif;
+    }
+    .muted { color: #64748b; font: 500 13px/1.4 "Segoe UI", sans-serif; }
     .panel {
-      padding: 24px;
-      background: rgba(255,255,255,0.78);
-      border: 1px solid rgba(31,41,51,0.08);
-      border-radius: 24px;
-      box-shadow: 0 24px 50px rgba(69,58,42,0.12);
-    }
-    .panel-head h2 { margin: 0; font-size: 28px; }
-    .target-panel { display: grid; gap: 16px; }
-    .account-targets {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 10px;
-      font-family: "Segoe UI", sans-serif;
-    }
-    .target-account {
-      display: flex;
-      gap: 10px;
-      align-items: flex-start;
-      padding: 12px 14px;
-      border: 1px solid rgba(31,41,51,0.10);
-      border-radius: 14px;
-      background: rgba(255,255,255,0.70);
-    }
-    .target-account.active {
-      border-color: rgba(31,111,235,0.42);
-      background: rgba(31,111,235,0.08);
-    }
-    .target-account input {
-      width: 18px;
-      height: 18px;
-      margin-top: 2px;
-      accent-color: #1f6feb;
-      flex: 0 0 auto;
-    }
-    .target-account span {
-      display: grid;
-      gap: 4px;
-      min-width: 0;
-    }
-    .target-account strong {
-      color: #243b53;
-      font: 800 14px/1.3 "Segoe UI", sans-serif;
-    }
-    .target-account small {
-      color: #52606d;
-      font: 500 12px/1.45 "Segoe UI", sans-serif;
-      overflow-wrap: anywhere;
-    }
-    .photo-panel { display: grid; gap: 18px; }
-    .account-strip {
-      display: grid;
-      grid-template-columns: minmax(220px, 320px) minmax(0, 1fr);
-      gap: 14px;
       padding: 14px;
-      border: 1px solid rgba(31,41,51,0.10);
-      border-radius: 16px;
-      background: rgba(255,255,255,0.64);
-      font-family: "Segoe UI", sans-serif;
-    }
-    .account-strip label { display: grid; gap: 8px; }
-    .account-strip span, .account-strip dt {
-      color: #52606d;
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-    .account-strip select {
-      width: 100%;
-      border: 1px solid rgba(31,41,51,0.12);
+      background: #fff;
+      border: 1px solid #dde3ea;
       border-radius: 12px;
-      padding: 11px 12px;
-      background: white;
-      color: #243b53;
-      font: 700 14px/1.4 "Segoe UI", sans-serif;
+      box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
     }
-    .account-strip dl { margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .account-strip dd {
-      margin: 4px 0 0;
-      color: #243b53;
-      font: 700 14px/1.4 "Segoe UI", sans-serif;
-      overflow-wrap: anywhere;
-    }
-    .photo-upload {
+    .section-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .section-head h2 { margin: 0; font-size: 17px; font-weight: 800; }
+    .create-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+    .photo-panel { grid-column: 1 / -1; }
+    .profile-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
+    .profile-card {
       display: grid;
-      grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
-      gap: 14px;
-      align-items: stretch;
-    }
-    .file-drop {
-      display: grid;
-      gap: 10px;
-      align-content: center;
-      min-height: 150px;
-      padding: 18px;
-      border: 1px dashed rgba(31,41,51,0.24);
-      border-radius: 18px;
-      background: rgba(255,255,255,0.68);
-      font-family: "Segoe UI", sans-serif;
-    }
-    .file-drop input { width: 100%; }
-    .file-drop strong { color: #243b53; font: 800 18px/1.3 "Segoe UI", sans-serif; }
-    .prompt-tools {
-      margin-top: 18px;
-      display: grid;
-      grid-template-columns: max-content max-content;
-      gap: 12px;
-      align-items: end;
-      font-family: "Segoe UI", sans-serif;
-    }
-    .prompt-tools label, .template-manager label { display: grid; gap: 8px; }
-    .prompt-tools span, .template-manager span {
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: #52606d;
-      font-family: "Segoe UI", sans-serif;
-    }
-    .prompt-tools select, .template-manager input {
-      width: 100%;
-      border: 1px solid rgba(31,41,51,0.12);
-      border-radius: 14px;
-      padding: 12px 14px;
-      background: rgba(255,255,255,0.92);
-      color: #243b53;
-      font: 700 14px/1.5 "Segoe UI", sans-serif;
-    }
-    .template-list {
-      list-style: none;
-      margin: 14px 0 0;
-      padding: 0;
-      display: grid;
-      gap: 8px;
-    }
-    .template-row {
-      width: 100%;
-      display: flex;
-      align-items: flex-start;
-      gap: 4px;
-      text-align: left;
-      border: 1px solid rgba(31,41,51,0.10);
-      border-radius: 14px;
-      padding: 12px 14px;
-      background: rgba(255,255,255,0.72);
-      color: #243b53;
-      box-shadow: none;
-    }
-    .template-row input {
-      width: 18px;
-      height: 18px;
-      margin: 2px 10px 0 0;
-      accent-color: #1f6feb;
-      flex: 0 0 auto;
-    }
-    .template-row.active {
-      border-color: rgba(31,111,235,0.42);
-      background: rgba(31,111,235,0.08);
-    }
-    .template-copy {
-      min-width: 0;
-      display: grid;
-      gap: 4px;
-    }
-    .template-row strong {
-      font: 800 14px/1.3 "Segoe UI", sans-serif;
-    }
-    .template-copy > span {
-      color: #52606d;
-      font: 500 13px/1.5 "Segoe UI", sans-serif;
-      overflow-wrap: anywhere;
-    }
-    .template-manager {
-      margin-top: 14px;
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) max-content max-content;
-      gap: 12px;
-      align-items: end;
-      font-family: "Segoe UI", sans-serif;
-    }
-    .template-note {
-      margin: 10px 0 0;
-      color: #52606d;
-      font: 500 14px/1.6 "Segoe UI", sans-serif;
-    }
-    .focus-block {
-      margin-top: 18px;
-      padding: 18px;
-      border-radius: 20px;
-      background: rgba(255,255,255,0.62);
-      border: 1px solid rgba(31,41,51,0.08);
-    }
-    .stacked { display: grid; gap: 8px; }
-    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
-    .form-grid.compact { margin-top: 16px; }
-    .wide { grid-column: 1 / -1; }
-    .form-grid label { display: grid; gap: 8px; }
-    .form-grid span, .stacked span { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: #52606d; font-family: "Segoe UI", sans-serif; }
-    .form-grid input, .form-grid textarea {
-      width: 100%;
-      border: 1px solid rgba(31,41,51,0.12);
-      border-radius: 14px;
-      padding: 12px 14px;
-      background: rgba(255,255,255,0.92);
-      color: #243b53;
-      font: 500 14px/1.5 "Segoe UI", sans-serif;
-      resize: vertical;
-    }
-    .stacked textarea {
-      width: 100%;
-      border: 1px solid rgba(31,41,51,0.12);
-      border-radius: 14px;
-      padding: 14px 16px;
-      background: rgba(255,255,255,0.96);
-      color: #243b53;
-      font: 500 15px/1.6 "Segoe UI", sans-serif;
-      resize: vertical;
-    }
-    .checkbox { display: flex !important; align-items: center; gap: 10px; }
-    .checkbox input { width: auto; }
-    .actions.split { display: grid; grid-template-columns: repeat(2, minmax(0, max-content)); gap: 12px; margin-top: 18px; }
-    button {
-      border: 0;
-      border-radius: 18px;
-      padding: 14px 16px;
-      font: 700 14px/1.2 "Segoe UI", sans-serif;
-      background: linear-gradient(135deg, #1f6feb, #0f766e);
-      color: white;
+      grid-template-columns: auto 34px minmax(0, 1fr);
+      align-items: center;
+      gap: 9px;
+      margin: 0;
+      padding: 9px 10px;
+      border: 1px solid #dde3ea;
+      border-radius: 10px;
+      background: #f8fafc;
       cursor: pointer;
-      box-shadow: 0 16px 30px rgba(21, 48, 74, 0.2);
     }
-    button.ghost {
-      background: rgba(255,255,255,0.92);
-      color: #243b53;
-      border: 1px solid rgba(31,41,51,0.12);
-      box-shadow: none;
+    .profile-card.active { border-color: #0d6efd; background: #edf5ff; }
+    .profile-card input { width: 16px; height: 16px; }
+    .avatar {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      border-radius: 50%;
+      color: #fff;
+      font: 800 13px/1 "Segoe UI", sans-serif;
+      background: #111827;
     }
-    button.danger {
-      background: rgba(154,52,18,0.10);
-      color: #7c2d12;
-      border: 1px solid rgba(154,52,18,0.18);
-      box-shadow: none;
+    .avatar.threads { background: #5b21b6; }
+    .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .profile-copy { min-width: 0; display: grid; gap: 1px; }
+    .profile-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 800 13px/1.25 "Segoe UI", sans-serif; }
+    .profile-copy small { color: #64748b; font: 600 12px/1.25 "Segoe UI", sans-serif; }
+    .field { display: grid; gap: 4px; }
+    .form-control, .form-select { border-radius: 8px; }
+    textarea.form-control { resize: vertical; line-height: 1.45; }
+    .file-drop {
+      min-height: 100%;
+      display: grid;
+      align-content: center;
+      gap: 8px;
+      padding: 12px;
+      border: 1px dashed #b7c1cc;
+      border-radius: 10px;
+      background: #f8fafc;
     }
-    button:disabled {
-      cursor: not-allowed;
-      opacity: 0.54;
-      box-shadow: none;
+    .file-drop strong { color: #17212b; font: 800 14px/1.2 "Segoe UI", sans-serif; }
+    .template-strip { display: flex; gap: 6px; flex-wrap: wrap; }
+    .template-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 9px;
+      border: 1px solid #dde3ea;
+      border-radius: 999px;
+      background: #f8fafc;
+      color: #334155;
+      font: 700 12px/1 "Segoe UI", sans-serif;
+      cursor: pointer;
     }
-    .advanced {
-      margin-top: 18px;
-      padding-top: 18px;
-      border-top: 1px dashed rgba(31,41,51,0.12);
-    }
+    .template-chip.active { border-color: #0d6efd; background: #edf5ff; color: #0b5ed7; }
+    .template-chip input { width: 14px; height: 14px; }
+    .advanced { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #dde3ea; }
+    .actions { margin-top: 10px; display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
     .feedback {
-      margin: 18px 0 0;
-      padding: 12px 14px;
-      border-radius: 14px;
-      background: rgba(15,118,110,0.09);
-      color: #0f5132;
-      font: 600 14px/1.5 "Segoe UI", sans-serif;
-      display: grid; gap: 4px;
+      margin: 10px 0 0;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: #e9f7ef;
+      color: #146c43;
+      font: 600 13px/1.35 "Segoe UI", sans-serif;
+      display: grid;
+      gap: 2px;
     }
-    .feedback.error { background: rgba(154,52,18,0.09); color: #7c2d12; }
-    .generated-results { margin-top: 18px; font-family: "Segoe UI", sans-serif; }
-    .generated-results h3 { margin: 0 0 12px; font-size: 18px; }
-    .generated-results ol { margin: 0; padding-left: 18px; display: grid; gap: 10px; }
-    @media (max-width: 900px) { .grid, .form-grid, .prompt-tools, .template-manager, .account-strip, .photo-upload { grid-template-columns: 1fr; } }
+    .feedback.error, .validation { background: #fff1f2; color: #be123c; }
+    .validation { margin: 10px 0 0; padding: 8px 10px; border-radius: 8px; font: 700 13px/1.35 "Segoe UI", sans-serif; }
+    .generated-results { margin: 10px 0 0; padding-left: 18px; color: #334155; font: 500 13px/1.5 "Segoe UI", sans-serif; }
+    @media (max-width: 1000px) { .create-grid { grid-template-columns: 1fr; } }
   `]
 })
 export class CreatePageComponent {
@@ -578,57 +355,41 @@ export class CreatePageComponent {
   protected generatedPosts: string[] = [];
   protected generationResultMessage = '';
   protected selectedPhotoFiles: File[] = [];
-  protected selectedTargetAccountIds: string[] = [];
-  protected selectedTargetPlatforms: Array<'x' | 'threads'> = ['x'];
+  protected selectedTargetProfileIds: string[] = [];
+  protected targetProfileError = '';
   protected selectedPromptTemplateIds: string[] = ['quiet-vlog'];
   protected newTemplateTitle = '';
   protected promptTemplates: PromptTemplate[] = [];
   private readonly defaultPromptTemplates: PromptTemplate[] = [
     {
       id: 'quiet-vlog',
-      title: 'Quiet personal vlog',
-      description: 'Soft, diary-like posts about real days, small details, and returning to yourself.',
-      prompt: 'Write in Ukrainian. Make the posts feel like a quiet voice-over from a personal vlog: short sentences, small everyday details, honest emotion, and a little silence between thoughts. Themes can include therapy, difficult days, music, lyrics, and slowly returning to yourself. Avoid slogans, generic awareness language, and unnecessary brand mentions.',
+      title: 'Quiet vlog',
+      description: 'Soft diary-like posts.',
+      prompt: 'Write in Ukrainian. Make the posts feel like a quiet voice-over from a personal vlog: short sentences, small everyday details, honest emotion, and a little silence between thoughts. Avoid slogans, generic awareness language, and unnecessary brand mentions.',
       topic: 'Personal vlog reflections on therapy, lyrics, and difficult days',
       tone: 'warm, honest, cinematic, diary-like, human'
     },
     {
       id: 'therapy-reflection',
-      title: 'Therapy reflection',
-      description: 'Grounded posts about healing, boundaries, emotions, and gentle self-awareness.',
-      prompt: 'Write in Ukrainian. Create posts that sound like a calm therapy reflection after a difficult but important day. Keep the language simple and human. Focus on noticing feelings, setting boundaries, recovering slowly, and allowing yourself not to be perfect. Avoid clinical advice, motivational cliches, and dramatic wording.',
+      title: 'Therapy',
+      description: 'Grounded healing reflections.',
+      prompt: 'Write in Ukrainian. Create posts that sound like a calm therapy reflection after a difficult but important day. Keep the language simple and human. Avoid clinical advice, motivational cliches, and dramatic wording.',
       topic: 'Therapy reflections, boundaries, and emotional recovery',
       tone: 'calm, caring, honest, grounded'
     },
     {
       id: 'music-lyrics',
-      title: 'Music and lyrics',
-      description: 'Posts built around the feeling of a song without quoting lyrics directly.',
-      prompt: 'Write in Ukrainian. Make each post feel inspired by music and lyrics, but do not quote any real lyrics. Focus on the emotional aftertaste of a song: night walks, headphones, memories, quiet sadness, hope, and the moment when one line seems to understand you. Keep it short, visual, and personal.',
+      title: 'Music',
+      description: 'Song-feeling posts without quotes.',
+      prompt: 'Write in Ukrainian. Make each post feel inspired by music and lyrics, but do not quote any real lyrics. Keep it short, visual, and personal.',
       topic: 'Music, lyric-like feelings, and late-night reflections',
-      tone: 'cinematic, intimate, reflective, poetic but simple'
-    },
-    {
-      id: 'hard-day',
-      title: 'Difficult day',
-      description: 'Gentle posts for days when everything feels heavy but still survivable.',
-      prompt: 'Write in Ukrainian. Create posts for a difficult day. The voice should be honest, not polished: tired, quiet, but still trying. Include small real-world details like tea, weather, a room, a song, or a message left unanswered. Do not force optimism. End with a small sense of breathing room.',
-      topic: 'Difficult days, tiredness, and small ways to keep going',
-      tone: 'honest, gentle, minimal, human'
-    },
-    {
-      id: 'behind-the-smile',
-      title: 'Behind The Smile',
-      description: 'Brand-aligned posts for the project voice without sounding promotional.',
-      prompt: 'Write in Ukrainian for Behind The Smile. The posts should feel like a quiet note from someone who smiles in public but is learning to be honest in private. Keep it personal, warm, and restrained. Mention the idea behind the smile only naturally, not as a slogan. Avoid sales language and generic mental health phrases.',
-      topic: 'Behind The Smile: what people carry quietly',
-      tone: 'warm, sincere, reflective, restrained'
+      tone: 'cinematic, intimate, reflective, simple'
     }
   ];
   protected generatorForm = {
-    prompt: 'Write in Ukrainian. Make the posts feel like a quiet voice-over from a personal vlog: short sentences, small everyday details, honest emotion, and a little silence between thoughts. Themes can include therapy, difficult days, music, lyrics, and slowly returning to yourself. Avoid slogans, generic awareness language, and unnecessary brand mentions.',
-    topic: 'Personal vlog reflections on therapy, lyrics, and difficult days',
-    tone: 'warm, honest, cinematic, diary-like, human',
+    prompt: this.defaultPromptTemplates[0].prompt,
+    topic: this.defaultPromptTemplates[0].topic,
+    tone: this.defaultPromptTemplates[0].tone,
     language: 'uk',
     count: 3,
     saveToQueue: true
@@ -666,7 +427,6 @@ export class CreatePageComponent {
       this.selectedPromptTemplateIds = [...this.selectedPromptTemplateIds, templateId];
       return;
     }
-
     if (!checked) {
       this.selectedPromptTemplateIds = this.selectedPromptTemplateIds.filter((id) => id !== templateId);
     }
@@ -682,7 +442,6 @@ export class CreatePageComponent {
       this.generationResultMessage = 'Select at least one prompt template first.';
       return;
     }
-
     this.generatorForm = {
       ...this.generatorForm,
       prompt: templates.map((template) => `${template.title}:\n${template.prompt}`).join('\n\n'),
@@ -692,115 +451,62 @@ export class CreatePageComponent {
     this.generationResultMessage = `${templates.length} prompt template(s) applied.`;
   }
 
-  protected saveCurrentPromptTemplate(): void {
-    const title = this.newTemplateTitle.trim();
-    if (!title) {
-      this.generationResultMessage = 'Add a name before saving a new template.';
-      return;
-    }
-
-    const template: PromptTemplate = {
-      id: `custom-${Date.now()}`,
-      title,
-      description: 'Saved from your current prompt.',
-      prompt: this.generatorForm.prompt,
-      topic: this.generatorForm.topic,
-      tone: this.generatorForm.tone
-    };
-
-    this.promptTemplates = [...this.promptTemplates, template];
-    this.selectedPromptTemplateIds = [template.id];
-    this.newTemplateTitle = '';
-    this.savePromptTemplates();
-    this.generationResultMessage = `${template.title} saved to the prompt list.`;
+  protected isTargetProfileSelected(profileId: string): boolean {
+    return this.selectedTargetProfileIds.includes(profileId);
   }
 
-  protected deleteSelectedPromptTemplates(): void {
-    if (this.selectedPromptTemplateIds.length === 0) {
-      this.generationResultMessage = 'Select one or more templates to delete.';
+  protected toggleTargetProfile(profileId: string, event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    if (checked && !this.selectedTargetProfileIds.includes(profileId)) {
+      this.selectedTargetProfileIds = [...this.selectedTargetProfileIds, profileId];
+      this.targetProfileError = '';
       return;
     }
-
-    if (this.promptTemplates.length <= this.selectedPromptTemplateIds.length) {
-      this.generationResultMessage = 'Keep at least one prompt template in the list.';
-      return;
+    if (!checked) {
+      this.selectedTargetProfileIds = this.selectedTargetProfileIds.filter((id) => id !== profileId);
     }
-
-    const deletedCount = this.selectedPromptTemplateIds.length;
-    this.promptTemplates = this.promptTemplates.filter((template) => !this.selectedPromptTemplateIds.includes(template.id));
-    this.selectedPromptTemplateIds = this.promptTemplates[0]?.id ? [this.promptTemplates[0].id] : [];
-    this.savePromptTemplates();
-    this.generationResultMessage = `${deletedCount} prompt template(s) removed from the list.`;
   }
 
   protected generateFromPrompt(): void {
+    if (!this.ensureTargetProfiles()) {
+      return;
+    }
     this.dashboardService.generatePrompt({
       ...this.generatorForm,
-      platforms: this.selectedTargetPlatforms,
-      accountIds: this.selectedTargetAccountIds
+      platforms: [],
+      accountIds: [],
+      targetProfiles: this.selectedTargetProfileIds
     }).subscribe((result) => this.handleGenerationResult(result));
-  }
-
-  protected isTargetAccountSelected(accountId: string): boolean {
-    return this.selectedTargetAccountIds.includes(accountId);
-  }
-
-  protected toggleTargetAccount(accountId: string, event: Event): void {
-    const checked = (event.target as HTMLInputElement).checked;
-    if (checked && !this.selectedTargetAccountIds.includes(accountId)) {
-      this.selectedTargetAccountIds = [...this.selectedTargetAccountIds, accountId];
-      return;
-    }
-
-    if (!checked) {
-      this.selectedTargetAccountIds = this.selectedTargetAccountIds.filter((id) => id !== accountId);
-    }
-  }
-
-  protected isTargetPlatformSelected(platform: 'x' | 'threads'): boolean {
-    return this.selectedTargetPlatforms.includes(platform);
-  }
-
-  protected toggleTargetPlatform(platform: 'x' | 'threads', event: Event): void {
-    const checked = (event.target as HTMLInputElement).checked;
-    if (checked && !this.selectedTargetPlatforms.includes(platform)) {
-      this.selectedTargetPlatforms = [...this.selectedTargetPlatforms, platform];
-      return;
-    }
-
-    if (!checked) {
-      const next = this.selectedTargetPlatforms.filter((item) => item !== platform);
-      this.selectedTargetPlatforms = next.length > 0 ? next : ['x'];
-    }
   }
 
   protected selectPhotoBatch(event: Event): void {
     const input = event.target as HTMLInputElement;
     this.selectedPhotoFiles = Array.from(input.files ?? []);
-    this.photoBatchMessage = this.selectedPhotoFiles.length
-      ? `${this.selectedPhotoFiles.length} photo(s) ready for caption generation.`
-      : '';
+    this.photoBatchMessage = this.selectedPhotoFiles.length ? `${this.selectedPhotoFiles.length} photo(s) ready.` : '';
     this.photoBatchError = false;
   }
 
   protected createPhotoBatch(): void {
+    if (!this.ensureTargetProfiles()) {
+      return;
+    }
     if (this.selectedPhotoFiles.length === 0) {
       this.photoBatchMessage = 'Choose one or more photos first.';
       this.photoBatchError = true;
       return;
     }
-
     this.photoBatchBusy = true;
     this.photoBatchError = false;
-    this.photoBatchMessage = 'Generating captions from uploaded photos...';
+    this.photoBatchMessage = 'Generating captions...';
     this.dashboardService.createPhotoBatch({
       photos: this.selectedPhotoFiles,
       prompt: this.photoBatchForm.prompt,
       topic: this.photoBatchForm.topic,
       tone: this.photoBatchForm.tone,
       language: this.photoBatchForm.language,
-      platforms: this.selectedTargetPlatforms,
-      accountIds: this.selectedTargetAccountIds,
+      platforms: [],
+      accountIds: [],
+      targetProfiles: this.selectedTargetProfileIds,
       publishNow: this.photoBatchForm.publishNow
     }).subscribe({
       next: (result) => {
@@ -820,21 +526,15 @@ export class CreatePageComponent {
     });
   }
 
-  protected switchAccount(accountId: string): void {
-    this.dashboardService.switchActiveAccount(accountId).subscribe(() => {
-      this.ui.pushActionResult({
-        success: true,
-        command: 'switch-account',
-        message: `Active publishing account changed to ${accountId}.`
-      });
-    });
-  }
-
   protected createManualPost(): void {
+    if (!this.ensureTargetProfiles()) {
+      return;
+    }
     this.dashboardService.createQueuePost({
       ...this.ui.sanitizeStringFields(this.newPostForm),
-      platforms: this.selectedTargetPlatforms,
-      accountIds: this.selectedTargetAccountIds
+      platforms: [],
+      accountIds: [],
+      targetProfiles: this.selectedTargetProfileIds
     }).subscribe(() => {
       this.ui.pushActionResult({
         success: true,
@@ -854,6 +554,15 @@ export class CreatePageComponent {
     });
   }
 
+  private ensureTargetProfiles(): boolean {
+    if (this.selectedTargetProfileIds.length > 0) {
+      this.targetProfileError = '';
+      return true;
+    }
+    this.targetProfileError = 'Choose at least one profile: X or Threads.';
+    return false;
+  }
+
   private handleGenerationResult(result: GeneratePromptResponse): void {
     this.generatedPosts = result.posts;
     this.generationResultMessage = result.message;
@@ -869,12 +578,7 @@ export class CreatePageComponent {
   }
 
   private uniqueJoined(values: string[]): string {
-    return Array.from(new Set(
-      values
-        .flatMap((value) => value.split(','))
-        .map((value) => value.trim())
-        .filter(Boolean)
-    )).join(', ');
+    return Array.from(new Set(values.flatMap((value) => value.split(',')).map((value) => value.trim()).filter(Boolean))).join(', ');
   }
 
   private loadPromptTemplates(): PromptTemplate[] {
@@ -883,12 +587,10 @@ export class CreatePageComponent {
       if (!stored) {
         return this.defaultPromptTemplates;
       }
-
       const parsed = JSON.parse(stored);
       if (!Array.isArray(parsed)) {
         return this.defaultPromptTemplates;
       }
-
       const templates = parsed.filter((template): template is PromptTemplate =>
         typeof template?.id === 'string'
         && typeof template?.title === 'string'
@@ -901,9 +603,5 @@ export class CreatePageComponent {
     } catch {
       return this.defaultPromptTemplates;
     }
-  }
-
-  private savePromptTemplates(): void {
-    window.localStorage.setItem(this.promptTemplateStorageKey, JSON.stringify(this.promptTemplates));
   }
 }
