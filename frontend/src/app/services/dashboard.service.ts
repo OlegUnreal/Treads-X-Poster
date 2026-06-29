@@ -11,7 +11,9 @@ import {
   PostingJobStatus,
   QueuePost,
   QueuePostUpsertRequest,
-  RunSummary
+  RunSummary,
+  YoutubePlaybackRequest,
+  YoutubePlaybackStatus
 } from '../models/dashboard.models';
 import { API_BASE_URL } from '../config/api.config';
 
@@ -135,5 +137,17 @@ export class DashboardService {
 
   openXLoginBrowser(): Observable<ActionResult> {
     return this.http.post<ActionResult>(`${API_BASE_URL}/actions/open-x-login-browser`, {});
+  }
+
+  playYoutube(request: YoutubePlaybackRequest): Observable<YoutubePlaybackStatus> {
+    return this.http.post<YoutubePlaybackStatus>(`${API_BASE_URL}/actions/youtube/play`, request);
+  }
+
+  stopYoutube(): Observable<YoutubePlaybackStatus> {
+    return this.http.post<YoutubePlaybackStatus>(`${API_BASE_URL}/actions/youtube/stop`, {});
+  }
+
+  getYoutubeStatus(): Observable<YoutubePlaybackStatus> {
+    return this.http.get<YoutubePlaybackStatus>(`${API_BASE_URL}/actions/youtube/status`);
   }
 }

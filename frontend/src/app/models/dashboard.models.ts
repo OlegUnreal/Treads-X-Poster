@@ -119,6 +119,20 @@ export interface BrowserXPublishRequest {
   markPublished: boolean;
 }
 
+export interface YoutubePlaybackRequest {
+  url: string;
+  percent: number;
+}
+
+export interface YoutubePlaybackStatus {
+  status: string;
+  url?: string;
+  percent?: number;
+  durationSeconds?: number;
+  browser?: string;
+  accountId?: string;
+}
+
 export interface PostingJobStatus {
   running: boolean;
   intervalHours: number | null;

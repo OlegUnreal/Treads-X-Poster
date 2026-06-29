@@ -3,6 +3,7 @@ package com.behindthesmile.posting.api;
 import com.behindthesmile.posting.model.QueuedPost;
 import com.behindthesmile.posting.service.AppPathService;
 import com.behindthesmile.posting.service.SocialPostingService;
+import com.behindthesmile.posting.service.YoutubePlaybackService;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -29,15 +30,18 @@ public class DashboardController {
     private final SocialPostingService socialPostingService;
     private final com.behindthesmile.posting.service.PostingJobService postingJobService;
     private final AppPathService appPathService;
+    private final YoutubePlaybackService youtubePlaybackService;
 
     public DashboardController(
             SocialPostingService socialPostingService,
             com.behindthesmile.posting.service.PostingJobService postingJobService,
-            AppPathService appPathService
+            AppPathService appPathService,
+            YoutubePlaybackService youtubePlaybackService
     ) {
         this.socialPostingService = socialPostingService;
         this.postingJobService = postingJobService;
         this.appPathService = appPathService;
+        this.youtubePlaybackService = youtubePlaybackService;
     }
 
     @GetMapping("/health")
@@ -179,6 +183,21 @@ public class DashboardController {
     @PostMapping("/actions/open-x-login-browser")
     public ActionResult openXLoginBrowser() {
         return socialPostingService.openXLoginBrowser();
+    }
+
+    @PostMapping("/actions/youtube/play")
+    public Map<String, Object> playYoutube(@RequestBody YoutubePlaybackRequest request) throws Exception {
+        return youtubePlaybackService.play(request);
+    }
+
+    @PostMapping("/actions/youtube/stop")
+    public Map<String, Object> stopYoutube() {
+        return youtubePlaybackService.stop();
+    }
+
+    @GetMapping("/actions/youtube/status")
+    public Map<String, Object> youtubeStatus() {
+        return youtubePlaybackService.status();
     }
 
     @PostMapping("/actions/attach-open-images")

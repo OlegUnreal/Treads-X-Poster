@@ -5,6 +5,7 @@ import { CreatePageComponent } from './pages/create-page.component';
 import { QueuePageComponent } from './pages/queue-page.component';
 import { AutomationPageComponent } from './pages/automation-page.component';
 import { SettingsPageComponent } from './pages/settings-page.component';
+import { PlaybackPageComponent } from './pages/playback-page.component';
 
 export const routes: Routes = [
   {
@@ -31,6 +32,10 @@ export const routes: Routes = [
   {
     path: 'automation',
     component: AutomationPageComponent
+  },
+  {
+    path: 'playback',
+    component: PlaybackPageComponent
   },
   {
     path: 'settings',

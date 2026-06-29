@@ -17,6 +17,7 @@ import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
           <a class="nav-link" routerLink="/publish" routerLinkActive="active">Publish</a>
           <a class="nav-link" routerLink="/create" routerLinkActive="active">Create</a>
           <a class="nav-link" routerLink="/queue" routerLinkActive="active">Queue</a>
+          <a class="nav-link" routerLink="/playback" routerLinkActive="active">Playback</a>
           <a class="nav-link" routerLink="/automation" routerLinkActive="active">Automation</a>
           <a class="nav-link" routerLink="/settings" routerLinkActive="active">Settings</a>
         </nav>
