@@ -1,7 +1,12 @@
 package com.behindthesmile.posting.api;
 
+import java.util.List;
+
 public record ChromeProfilesLaunchRequest(
         Integer minDelaySeconds,
-        Integer maxDelaySeconds
+        Integer maxDelaySeconds,
+        Integer profileCount,
+        String url,
+        List<String> profileNames
 ) {
 }

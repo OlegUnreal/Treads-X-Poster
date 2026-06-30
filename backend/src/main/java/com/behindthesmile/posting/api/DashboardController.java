@@ -223,6 +223,11 @@ public class DashboardController {
         return chromeProfileLauncherService.status();
     }
 
+    @PostMapping("/actions/chrome-profiles/check-url")
+    public Map<String, Object> checkChromeProfilesUrl(@RequestBody(required = false) ChromeProfilesUrlCheckRequest request) throws Exception {
+        return chromeProfileLauncherService.checkUrl(request);
+    }
+
     @PostMapping("/actions/attach-open-images")
     public ActionResult attachOpenImages() {
         return socialPostingService.attachImagesToReadyQueue();

@@ -1,6 +1,7 @@
 package com.behindthesmile.posting.service;
 
 import com.behindthesmile.posting.api.ChromeProfilesLaunchRequest;
+import com.behindthesmile.posting.api.ChromeProfilesUrlCheckRequest;
 import org.springframework.stereotype.Service;
 
 import java.io.BufferedReader;
@@ -38,6 +39,14 @@ public class ChromeProfileLauncherService {
 
         int minDelay = clampDelay(request == null ? null : request.minDelaySeconds(), 0, 3600);
         int maxDelay = clampDelay(request == null ? null : request.maxDelaySeconds(), minDelay, 3600);
+        List<Map<String, String>> allProfiles = readProfiles();
+        List<String> selectedProfiles = selectedProfiles(request == null ? null : request.profileNames(), allProfiles);
+        int maxProfiles = selectedProfiles.isEmpty() ? allProfiles.stream()
+                .filter(profile -> !profile.getOrDefault("proxy", "").isBlank() || !profile.getOrDefault("upstreamProxy", "").isBlank())
+                .toList()
+                .size() : selectedProfiles.size();
+        int profileCount = clampProfileCount(request == null ? null : request.profileCount(), maxProfiles);
+        String launchUrl = normalizeLaunchUrl(request == null ? null : request.url());
 
         ProcessBuilder processBuilder = new ProcessBuilder(
                 "bash",
@@ -48,12 +57,26 @@ public class ChromeProfileLauncherService {
                 .redirectErrorStream(true);
         processBuilder.environment().put("STAGGER_MIN_SECONDS", String.valueOf(minDelay));
         processBuilder.environment().put("STAGGER_MAX_SECONDS", String.valueOf(maxDelay));
+        processBuilder.environment().put("PROFILE_LIMIT", String.valueOf(profileCount));
+        if (!selectedProfiles.isEmpty()) {
+            processBuilder.environment().put("LAUNCH_PROFILE_NAMES", String.join(" ", selectedProfiles));
+        }
+        if (!launchUrl.isBlank()) {
+            processBuilder.environment().put("LAUNCH_URL", launchUrl);
+        }
 
         Process process = processBuilder.start();
-        return waitForStart(process, minDelay, maxDelay);
+        return waitForStart(process, minDelay, maxDelay, profileCount, launchUrl, selectedProfiles);
     }
 
-    private Map<String, Object> waitForStart(Process process, int minDelay, int maxDelay) throws Exception {
+    private Map<String, Object> waitForStart(
+            Process process,
+            int minDelay,
+            int maxDelay,
+            int profileCount,
+            String launchUrl,
+            List<String> selectedProfiles
+    ) throws Exception {
         boolean finished = process.waitFor(10, TimeUnit.SECONDS);
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
         if (!finished) {
@@ -69,6 +92,9 @@ public class ChromeProfileLauncherService {
         result.put("message", output.isBlank() ? "started" : output);
         result.put("minDelaySeconds", minDelay);
         result.put("maxDelaySeconds", maxDelay);
+        result.put("profileCount", profileCount);
+        result.put("url", launchUrl);
+        result.put("profileNames", selectedProfiles);
         return result;
     }
 
@@ -89,11 +115,179 @@ public class ChromeProfileLauncherService {
         return status;
     }
 
+    public Map<String, Object> checkUrl(ChromeProfilesUrlCheckRequest request) throws Exception {
+        String url = normalizeLaunchUrl(request == null ? null : request.url());
+        if (url.isBlank()) {
+            throw new IllegalArgumentException("URL is required.");
+        }
+
+        Map<String, String> env = readEnvFile();
+        List<Map<String, String>> profiles = readProfiles();
+        List<Map<String, Object>> results = new ArrayList<>();
+        int okCount = 0;
+
+        for (Map<String, String> profile : profiles) {
+            String profileName = profile.getOrDefault("name", "");
+            String upstreamProxy = env.getOrDefault("UPSTREAM_PROXY_" + profileName, "");
+            String proxy = upstreamProxy.isBlank() ? env.getOrDefault("PROXY_" + profileName, "") : upstreamProxy;
+            Map<String, Object> result = checkUrlWithProxy(profileName, proxy, url);
+            if (Boolean.TRUE.equals(result.get("ok"))) {
+                okCount++;
+            }
+            results.add(result);
+        }
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("url", url);
+        response.put("okCount", okCount);
+        response.put("totalCount", results.size());
+        response.put("results", results);
+        return response;
+    }
+
+    private int clampProfileCount(Integer value, int maxProfiles) {
+        if (maxProfiles <= 0) {
+            return 0;
+        }
+        if (value == null) {
+            return maxProfiles;
+        }
+        return Math.max(1, Math.min(maxProfiles, value));
+    }
+
+    private List<String> selectedProfiles(List<String> requestedProfiles, List<Map<String, String>> allProfiles) {
+        if (requestedProfiles == null || requestedProfiles.isEmpty()) {
+            return List.of();
+        }
+        List<String> allowed = allProfiles.stream()
+                .map(profile -> profile.getOrDefault("name", ""))
+                .filter(name -> !name.isBlank())
+                .toList();
+        List<String> selected = new ArrayList<>();
+        for (String requestedProfile : requestedProfiles) {
+            if (requestedProfile == null) {
+                continue;
+            }
+            String profileName = requestedProfile.trim();
+            if (allowed.contains(profileName) && !selected.contains(profileName)) {
+                selected.add(profileName);
+            }
+        }
+        return selected;
+    }
+
+    private String normalizeLaunchUrl(String url) {
+        if (url == null) {
+            return "";
+        }
+        String trimmed = url.trim();
+        if (trimmed.isBlank()) {
+            return "";
+        }
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+            return trimmed;
+        }
+        throw new IllegalArgumentException("Launch URL must start with http:// or https://");
+    }
+
     private int clampDelay(Integer value, int min, int max) {
         if (value == null) {
             return min;
         }
         return Math.max(min, Math.min(max, value));
+    }
+
+    private Map<String, Object> checkUrlWithProxy(String profileName, String proxy, String url) throws Exception {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("name", profileName);
+        result.put("proxy", maskProxy(proxy));
+
+        if (proxy == null || proxy.isBlank()) {
+            result.put("ok", false);
+            result.put("status", "");
+            result.put("location", "");
+            result.put("reason", "Proxy not set");
+            return result;
+        }
+
+        ProcessBuilder builder = new ProcessBuilder(
+                "curl",
+                "-sS",
+                "-I",
+                "--max-time",
+                "15",
+                "-x",
+                proxy,
+                url
+        ).redirectErrorStream(true);
+        Process process = builder.start();
+        boolean finished = process.waitFor(20, TimeUnit.SECONDS);
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        if (!finished) {
+            process.destroyForcibly();
+            result.put("ok", false);
+            result.put("status", "");
+            result.put("location", "");
+            result.put("reason", "Timeout");
+            return result;
+        }
+
+        String status = "";
+        String location = "";
+        String redirectMarker = "";
+        for (String rawLine : output.split("\\R")) {
+            String line = rawLine.trim();
+            String lower = line.toLowerCase();
+            if (line.startsWith("HTTP/")) {
+                status = line;
+            } else if (lower.startsWith("location:")) {
+                location = line.substring("location:".length()).trim();
+            } else if (lower.startsWith("ph-redirect:")) {
+                redirectMarker = line.substring("ph-redirect:".length()).trim();
+            }
+        }
+
+        int statusCode = parseStatusCode(status);
+        boolean redirected = statusCode >= 300 && statusCode < 400;
+        boolean homepageRedirect = redirected && (location.equals("/") || location.equalsIgnoreCase("https://www.pornhub.com/"));
+        boolean ok = statusCode >= 200 && statusCode < 300;
+
+        result.put("ok", ok);
+        result.put("status", status);
+        result.put("statusCode", statusCode);
+        result.put("location", location);
+        result.put("redirectMarker", redirectMarker);
+        result.put("reason", ok ? "OK" : reasonFor(statusCode, location, redirectMarker, homepageRedirect, output));
+        return result;
+    }
+
+    private int parseStatusCode(String status) {
+        if (status == null || status.isBlank()) {
+            return 0;
+        }
+        String[] parts = status.split("\\s+");
+        if (parts.length < 2) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(parts[1]);
+        } catch (NumberFormatException ex) {
+            return 0;
+        }
+    }
+
+    private String reasonFor(int statusCode, String location, String redirectMarker, boolean homepageRedirect, String output) {
+        if (homepageRedirect) {
+            return redirectMarker.isBlank() ? "Redirected to homepage" : "Redirected to homepage, marker " + redirectMarker;
+        }
+        if (statusCode >= 300 && statusCode < 400) {
+            return location.isBlank() ? "Redirect" : "Redirect to " + location;
+        }
+        if (statusCode > 0) {
+            return "HTTP " + statusCode;
+        }
+        String trimmed = output == null ? "" : output.trim();
+        return trimmed.isBlank() ? "No response" : trimmed.substring(0, Math.min(160, trimmed.length()));
     }
 
     private List<Map<String, String>> readProfiles() throws Exception {

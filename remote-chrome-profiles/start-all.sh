@@ -14,9 +14,11 @@ source "$ENV_FILE"
 
 STAGGER_MIN_SECONDS="${STAGGER_MIN_SECONDS:-1}"
 STAGGER_MAX_SECONDS="${STAGGER_MAX_SECONDS:-${STAGGER_MIN_SECONDS}}"
+PROFILE_LIMIT="${PROFILE_LIMIT:-0}"
+PROFILE_SOURCE="${LAUNCH_PROFILE_NAMES:-${PROFILE_NAMES:-}}"
 
-if ! [[ "$STAGGER_MIN_SECONDS" =~ ^[0-9]+$ ]] || ! [[ "$STAGGER_MAX_SECONDS" =~ ^[0-9]+$ ]]; then
-  echo "STAGGER_MIN_SECONDS and STAGGER_MAX_SECONDS must be whole seconds." >&2
+if ! [[ "$STAGGER_MIN_SECONDS" =~ ^[0-9]+$ ]] || ! [[ "$STAGGER_MAX_SECONDS" =~ ^[0-9]+$ ]] || ! [[ "$PROFILE_LIMIT" =~ ^[0-9]+$ ]]; then
+  echo "STAGGER_MIN_SECONDS, STAGGER_MAX_SECONDS, and PROFILE_LIMIT must be whole numbers." >&2
   exit 2
 fi
 
@@ -24,8 +26,16 @@ if (( STAGGER_MAX_SECONDS < STAGGER_MIN_SECONDS )); then
   STAGGER_MAX_SECONDS="$STAGGER_MIN_SECONDS"
 fi
 
-for profile in ${PROFILE_NAMES:-}; do
+started=0
+for profile in ${PROFILE_SOURCE}; do
+  if (( PROFILE_LIMIT > 0 && started >= PROFILE_LIMIT )); then
+    break
+  fi
   "$BASE_DIR/start-profile.sh" "$profile"
+  started=$((started + 1))
+  if (( PROFILE_LIMIT > 0 && started >= PROFILE_LIMIT )); then
+    break
+  fi
   if (( STAGGER_MAX_SECONDS > 0 )); then
     delay="$STAGGER_MIN_SECONDS"
     if (( STAGGER_MAX_SECONDS > STAGGER_MIN_SECONDS )); then
@@ -36,3 +46,5 @@ for profile in ${PROFILE_NAMES:-}; do
     sleep "$delay"
   fi
 done
+
+echo "Started ${started} profile(s)."

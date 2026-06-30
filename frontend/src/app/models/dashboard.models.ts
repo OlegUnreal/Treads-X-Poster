@@ -159,6 +159,9 @@ export interface ChromeProfilesStatus {
   logTail: string;
   minDelaySeconds?: number;
   maxDelaySeconds?: number;
+  profileCount?: number;
+  profileNames?: string[];
+  url?: string;
   message?: string;
 }
 
@@ -171,6 +174,31 @@ export interface ChromeProfileSummary {
 export interface ChromeProfilesLaunchRequest {
   minDelaySeconds: number;
   maxDelaySeconds: number;
+  profileCount?: number;
+  url?: string;
+  profileNames?: string[];
+}
+
+export interface ChromeProfilesUrlCheckRequest {
+  url: string;
+}
+
+export interface ChromeProfilesUrlCheckStatus {
+  url: string;
+  okCount: number;
+  totalCount: number;
+  results: ChromeProfilesUrlCheckResult[];
+}
+
+export interface ChromeProfilesUrlCheckResult {
+  name: string;
+  proxy: string;
+  ok: boolean;
+  status: string;
+  statusCode: number;
+  location: string;
+  redirectMarker: string;
+  reason: string;
 }
 
 export interface PostingJobStatus {

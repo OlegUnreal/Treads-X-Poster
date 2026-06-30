@@ -1,7 +1,7 @@
 import { DecimalPipe, NgFor, NgIf } from '@angular/common';
-import { Component, inject } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ChromeProfilesStatus, YoutubePlaybackStatus } from '../models/dashboard.models';
+import { ChromeProfilesStatus, ChromeProfilesUrlCheckStatus, YoutubePlaybackStatus } from '../models/dashboard.models';
 import { DashboardService } from '../services/dashboard.service';
 
 @Component({
@@ -13,18 +13,18 @@ import { DashboardService } from '../services/dashboard.service';
       <header class="page-head">
         <div>
           <p class="eyebrow">Playback</p>
-          <h1>YouTube Remote</h1>
+          <h1>Remote Playback</h1>
         </div>
-        <span class="mode-pill">{{ percent }}%</span>
+        <span class="mode-pill">{{ isYoutubeUrl() ? 'YouTube' : 'Website' }}</span>
       </header>
 
       <article class="panel">
         <label class="field">
-          <span>YouTube URL</span>
-          <input class="form-control" [(ngModel)]="url" placeholder="https://www.youtube.com/watch?v=..." />
+          <span>Video or website URL</span>
+          <input class="form-control" [(ngModel)]="url" placeholder="https://example.com/video-page" />
         </label>
 
-        <div class="slider-row">
+        <div class="slider-row" *ngIf="isYoutubeUrl()">
           <label class="field">
             <span>Play percent</span>
             <input class="form-range" [(ngModel)]="percent" type="range" min="0" max="100" step="1" />
@@ -36,13 +36,40 @@ import { DashboardService } from '../services/dashboard.service';
           <button class="btn btn-primary btn-sm" type="button" [disabled]="busy" (click)="play()">
             {{ busy ? 'Opening...' : 'Open and play' }}
           </button>
+          <button class="btn btn-outline-primary btn-sm" type="button" [disabled]="checkBusy" (click)="checkUrl()">
+            {{ checkBusy ? 'Checking...' : 'Check URL' }}
+          </button>
+          <button class="btn btn-outline-success btn-sm" type="button" [disabled]="busy || !checkedProfileNames().length" (click)="openCheckedProfiles()">
+            Open checked
+          </button>
           <button class="btn btn-outline-secondary btn-sm" type="button" [disabled]="busy" (click)="stop()">Stop</button>
           <button class="btn btn-outline-secondary btn-sm" type="button" [disabled]="busy" (click)="refreshStatus()">Refresh</button>
           <a class="btn btn-outline-secondary btn-sm" href="/api/actions/youtube/screenshot" target="_blank" rel="noopener">Screenshot</a>
         </div>
 
         <div class="profile-launcher">
-          <div class="delay-grid">
+          <div class="profile-controls">
+            <label class="field profile-count">
+              <span>Profiles to open</span>
+              <div class="profile-count-row">
+                <input
+                  class="form-range"
+                  [(ngModel)]="profileCount"
+                  type="range"
+                  min="1"
+                  [max]="maxProfileCount()"
+                  step="1"
+                />
+                <input
+                  class="form-control form-control-sm count-input"
+                  [(ngModel)]="profileCount"
+                  type="number"
+                  min="1"
+                  [max]="maxProfileCount()"
+                />
+              </div>
+            </label>
+            <div class="delay-grid">
             <label class="field">
               <span>Delay from</span>
               <input class="form-control form-control-sm" [(ngModel)]="profilesMinDelay" type="number" min="0" max="3600" />
@@ -51,6 +78,7 @@ import { DashboardService } from '../services/dashboard.service';
               <span>Delay to</span>
               <input class="form-control form-control-sm" [(ngModel)]="profilesMaxDelay" type="number" min="0" max="3600" />
             </label>
+            </div>
           </div>
           <div class="profiles-actions">
             <button class="btn btn-outline-primary btn-sm" type="button" [disabled]="profilesBusy" (click)="startProfiles()">
@@ -61,7 +89,16 @@ import { DashboardService } from '../services/dashboard.service';
         </div>
 
         <p class="feedback" *ngIf="message" [class.error]="error">{{ message }}</p>
+        <p class="feedback" *ngIf="checkMessage" [class.error]="checkError">{{ checkMessage }}</p>
         <p class="feedback" *ngIf="profilesMessage" [class.error]="profilesError">{{ profilesMessage }}</p>
+
+        <div class="check-list" *ngIf="urlCheckStatus?.results?.length">
+          <div class="check-row" *ngFor="let result of urlCheckStatus?.results" [class.ok]="result.ok" [class.bad]="!result.ok">
+            <strong>{{ result.name }}</strong>
+            <span>{{ result.ok ? 'OK' : result.reason }}</span>
+            <small>{{ result.status || 'No status' }}{{ result.location ? ' -> ' + result.location : '' }}</small>
+          </div>
+        </div>
 
         <dl class="status" *ngIf="status">
           <div>
@@ -135,6 +172,9 @@ import { DashboardService } from '../services/dashboard.service';
     .percent-input { text-align: center; }
     .actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
     .profile-launcher { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #dde3ea; }
+    .profile-controls { display: grid; gap: 8px; min-width: min(100%, 420px); }
+    .profile-count-row { display: grid; grid-template-columns: minmax(0, 1fr) 76px; gap: 10px; align-items: end; }
+    .count-input { text-align: center; }
     .delay-grid { display: grid; grid-template-columns: repeat(2, 96px); gap: 8px; }
     .profiles-actions { display: flex; align-items: end; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
     .feedback {
@@ -146,6 +186,12 @@ import { DashboardService } from '../services/dashboard.service';
       font: 700 13px/1.35 "Segoe UI", sans-serif;
     }
     .feedback.error { background: #fff1f2; color: #be123c; }
+    .check-list { display: grid; gap: 6px; margin: 12px 0 0; }
+    .check-row { display: grid; grid-template-columns: 70px minmax(0, 1fr) minmax(180px, 1.2fr); gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid #dde3ea; border-radius: 10px; background: #f8fafc; color: #17212b; font: 700 12px/1.3 "Segoe UI", sans-serif; }
+    .check-row.ok { border-color: #bbf7d0; background: #f0fdf4; }
+    .check-row.bad { border-color: #fecdd3; background: #fff1f2; }
+    .check-row span, .check-row small { overflow-wrap: anywhere; }
+    .check-row small { color: #64748b; font-weight: 600; }
     .status { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 12px 0 0; }
     .status div { padding: 10px; border: 1px solid #dde3ea; border-radius: 10px; background: #f8fafc; }
     .status dd { margin: 0; color: #17212b; font: 800 14px/1.3 "Segoe UI", sans-serif; overflow-wrap: anywhere; }
@@ -156,7 +202,7 @@ import { DashboardService } from '../services/dashboard.service';
     @media (max-width: 760px) { .page-head, .slider-row, .status, .profile-row { grid-template-columns: 1fr; display: grid; } .actions button, .profiles-actions button { width: 100%; } }
   `]
 })
-export class PlaybackPageComponent {
+export class PlaybackPageComponent implements OnInit {
   private readonly dashboardService = inject(DashboardService);
 
   protected url = '';
@@ -171,31 +217,41 @@ export class PlaybackPageComponent {
   protected profilesStatus: ChromeProfilesStatus | null = null;
   protected profilesMinDelay = 5;
   protected profilesMaxDelay = 45;
+  protected profileCount = 1;
+  protected checkBusy = false;
+  protected checkMessage = '';
+  protected checkError = false;
+  protected urlCheckStatus: ChromeProfilesUrlCheckStatus | null = null;
+
+  ngOnInit(): void {
+    this.refreshProfilesStatus(false);
+  }
 
   protected play(): void {
     const cleanUrl = this.url.trim();
     if (!cleanUrl) {
-      this.message = 'Add a YouTube URL first.';
+      this.message = 'Add a video or website URL first.';
       this.error = true;
       return;
     }
     this.busy = true;
     this.error = false;
-    this.message = 'Opening YouTube on the server...';
-    this.dashboardService.playYoutube({ url: cleanUrl, percent: this.normalizedPercent() }).subscribe({
+    this.message = `Opening ${this.normalizedProfileCount()} profile(s)...`;
+    this.dashboardService.startAllChromeProfiles({
+      minDelaySeconds: this.normalizedDelay(this.profilesMinDelay, 0),
+      maxDelaySeconds: this.normalizedDelay(this.profilesMaxDelay, this.normalizedDelay(this.profilesMinDelay, 0)),
+      profileCount: this.normalizedProfileCount(),
+      url: cleanUrl
+    }).subscribe({
       next: (status) => {
-        this.status = status;
-        if (status.status === 'error') {
-          this.message = status.lastError || 'Could not start playback.';
-          this.error = true;
-        } else {
-          this.message = `Playback started. Target: ${status.percent ?? this.percent}%.`;
-          this.error = false;
-        }
+        this.profilesStatus = status;
+        this.clampProfileCount();
+        this.message = status.message || `Opened ${status.profileCount ?? this.normalizedProfileCount()} profile(s).`;
+        this.error = false;
         this.busy = false;
       },
       error: (error) => {
-        this.message = error?.error?.message || error?.message || 'Could not start YouTube playback.';
+        this.message = error?.error?.message || error?.message || 'Could not open Chrome profiles.';
         this.error = true;
         this.busy = false;
       }
@@ -233,10 +289,12 @@ export class PlaybackPageComponent {
     this.profilesMessage = 'Starting Chrome profiles...';
     this.dashboardService.startAllChromeProfiles({
       minDelaySeconds: this.normalizedDelay(this.profilesMinDelay, 0),
-      maxDelaySeconds: this.normalizedDelay(this.profilesMaxDelay, this.normalizedDelay(this.profilesMinDelay, 0))
+      maxDelaySeconds: this.normalizedDelay(this.profilesMaxDelay, this.normalizedDelay(this.profilesMinDelay, 0)),
+      profileCount: this.normalizedProfileCount()
     }).subscribe({
       next: (status) => {
         this.profilesStatus = status;
+        this.clampProfileCount();
         this.profilesMessage = status.message || 'Chrome profiles started.';
         this.profilesError = false;
         this.profilesBusy = false;
@@ -249,17 +307,86 @@ export class PlaybackPageComponent {
     });
   }
 
-  protected refreshProfilesStatus(): void {
+  protected checkUrl(): void {
+    const cleanUrl = this.url.trim();
+    if (!cleanUrl) {
+      this.checkMessage = 'Add a URL first.';
+      this.checkError = true;
+      return;
+    }
+    this.checkBusy = true;
+    this.checkError = false;
+    this.checkMessage = 'Checking URL through proxy profiles...';
+    this.dashboardService.checkChromeProfilesUrl({ url: cleanUrl }).subscribe({
+      next: (status) => {
+        this.urlCheckStatus = status;
+        this.checkMessage = `URL check: ${status.okCount}/${status.totalCount} profile(s) OK.`;
+        this.checkError = status.okCount === 0;
+        this.checkBusy = false;
+      },
+      error: (error) => {
+        this.checkMessage = error?.error?.message || error?.message || 'Could not check URL.';
+        this.checkError = true;
+        this.checkBusy = false;
+      }
+    });
+  }
+
+  protected openCheckedProfiles(): void {
+    const cleanUrl = this.url.trim();
+    const profileNames = this.checkedProfileNames().slice(0, this.normalizedProfileCount());
+    if (!cleanUrl) {
+      this.message = 'Add a video or website URL first.';
+      this.error = true;
+      return;
+    }
+    if (!profileNames.length) {
+      this.message = 'Run Check URL first and use at least one OK profile.';
+      this.error = true;
+      return;
+    }
+
+    this.busy = true;
+    this.error = false;
+    this.message = `Opening ${profileNames.length} checked profile(s)...`;
+    this.dashboardService.startAllChromeProfiles({
+      minDelaySeconds: this.normalizedDelay(this.profilesMinDelay, 0),
+      maxDelaySeconds: this.normalizedDelay(this.profilesMaxDelay, this.normalizedDelay(this.profilesMinDelay, 0)),
+      profileCount: this.normalizedProfileCount(),
+      profileNames,
+      url: cleanUrl
+    }).subscribe({
+      next: (status) => {
+        this.profilesStatus = status;
+        this.profileCount = profileNames.length;
+        this.message = status.message || `Opened ${profileNames.length} checked profile(s).`;
+        this.error = false;
+        this.busy = false;
+      },
+      error: (error) => {
+        this.message = error?.error?.message || error?.message || 'Could not open checked profiles.';
+        this.error = true;
+        this.busy = false;
+      }
+    });
+  }
+
+  protected refreshProfilesStatus(showMessage = true): void {
     this.profilesBusy = true;
     this.dashboardService.getChromeProfilesStatus().subscribe({
       next: (status) => {
         this.profilesStatus = status;
-        this.profilesMessage = status.envFileExists ? `Found ${status.profiles?.length ?? 0} profile(s).` : 'profiles.env is missing on the server.';
+        this.clampProfileCount();
+        if (showMessage) {
+          this.profilesMessage = status.envFileExists ? `Found ${status.profiles?.length ?? 0} profile(s).` : 'profiles.env is missing on the server.';
+        }
         this.profilesError = !status.scriptExists || !status.envFileExists;
         this.profilesBusy = false;
       },
       error: (error) => {
-        this.profilesMessage = error?.error?.message || error?.message || 'Could not read profile launcher status.';
+        if (showMessage) {
+          this.profilesMessage = error?.error?.message || error?.message || 'Could not read profile launcher status.';
+        }
         this.profilesError = true;
         this.profilesBusy = false;
       }
@@ -286,6 +413,26 @@ export class PlaybackPageComponent {
     return status.videoPresent ? 'Detected' : 'Not found';
   }
 
+  protected isYoutubeUrl(): boolean {
+    const value = this.url.trim();
+    if (!value) {
+      return false;
+    }
+    try {
+      const host = new URL(value).hostname.toLowerCase();
+      return host === 'youtube.com' || host.endsWith('.youtube.com') || host === 'youtu.be' || host.endsWith('.youtu.be');
+    } catch {
+      return false;
+    }
+  }
+
+  protected checkedProfileNames(): string[] {
+    if (!this.urlCheckStatus || this.urlCheckStatus.url !== this.url.trim()) {
+      return [];
+    }
+    return this.urlCheckStatus.results.filter((result) => result.ok).map((result) => result.name);
+  }
+
   private normalizedPercent(): number {
     const numeric = Number(this.percent);
     if (!Number.isFinite(numeric)) {
@@ -300,5 +447,21 @@ export class PlaybackPageComponent {
       return fallback;
     }
     return Math.max(0, Math.min(3600, Math.round(numeric)));
+  }
+
+  protected maxProfileCount(): number {
+    return Math.max(1, this.profilesStatus?.profiles?.length ?? 1);
+  }
+
+  protected normalizedProfileCount(): number {
+    const numeric = Number(this.profileCount);
+    if (!Number.isFinite(numeric)) {
+      return 1;
+    }
+    return Math.max(1, Math.min(this.maxProfileCount(), Math.round(numeric)));
+  }
+
+  private clampProfileCount(): void {
+    this.profileCount = this.normalizedProfileCount();
   }
 }

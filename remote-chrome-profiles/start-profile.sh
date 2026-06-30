@@ -30,6 +30,10 @@ PROXY_VAR="PROXY_${PROFILE_NAME}"
 PROXY="${!PROXY_VAR:-}"
 UPSTREAM_PROXY_VAR="UPSTREAM_PROXY_${PROFILE_NAME}"
 UPSTREAM_PROXY="${!UPSTREAM_PROXY_VAR:-}"
+PROFILE_LABEL_VAR="PROFILE_LABEL_${PROFILE_NAME}"
+PROFILE_LABEL="${!PROFILE_LABEL_VAR:-$PROFILE_NAME}"
+WINDOW_POSITION_VAR="WINDOW_POSITION_${PROFILE_NAME}"
+WINDOW_POSITION="${!WINDOW_POSITION_VAR:-}"
 
 if [[ -z "$PROXY" ]]; then
   echo "Missing proxy variable $PROXY_VAR in $ENV_FILE" >&2
@@ -50,7 +54,39 @@ fi
 PROFILE_DIR="$BASE_DIR/data/$PROFILE_NAME"
 mkdir -p "$PROFILE_DIR"
 
-URL="${START_URL:-about:blank}"
+URL="${LAUNCH_URL:-${START_URL:-about:blank}}"
+if [[ "$URL" == "profile-home" ]]; then
+  HOME_FILE="$BASE_DIR/${PROFILE_NAME}-home.html"
+  SAFE_UPSTREAM="$(echo "${UPSTREAM_PROXY:-$PROXY}" | sed -E 's#(https?://)[^:@/]+:[^@/]+@#\1***:***@#')"
+  cat > "$HOME_FILE" <<EOF
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${PROFILE_LABEL}</title>
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; background: #111827; color: #f9fafb; }
+    main { padding: 44px; }
+    h1 { font-size: 72px; margin: 0 0 16px; }
+    .line { font-size: 28px; margin: 14px 0; }
+    .muted { color: #cbd5e1; }
+    a { color: #67e8f9; font-size: 24px; display: inline-block; margin-top: 24px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>${PROFILE_LABEL}</h1>
+    <div class="line">Profile: <strong>${PROFILE_NAME}</strong></div>
+    <div class="line">Chrome proxy: <strong>${PROXY}</strong></div>
+    <div class="line muted">Upstream: ${SAFE_UPSTREAM}</div>
+    <div class="line muted">Started: $(date -Iseconds)</div>
+    <a href="https://browserleaks.com/ip">Open IP leak check</a>
+  </main>
+</body>
+</html>
+EOF
+  URL="file://$HOME_FILE"
+fi
 
 if [[ "$PROXY" == http://127.0.0.1:* && -n "$UPSTREAM_PROXY" ]]; then
   LISTEN="${PROXY#http://}"
@@ -65,15 +101,98 @@ fi
 
 echo "Starting $PROFILE_NAME through $PROXY"
 
+should_use_incognito() {
+  local value="$1"
+  if [[ "${INCOGNITO_MODE:-true}" == "true" ]]; then
+    return 0
+  fi
+  for domain in ${INCOGNITO_DOMAINS:-}; do
+    if [[ "$value" == *"$domain"* ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+WINDOW_ARGS=()
+if [[ -n "${WINDOW_SIZE:-}" ]]; then
+  WINDOW_ARGS+=(--window-size="$WINDOW_SIZE")
+fi
+if [[ -n "$WINDOW_POSITION" ]]; then
+  WINDOW_ARGS+=(--window-position="$WINDOW_POSITION")
+fi
+if should_use_incognito "$URL"; then
+  WINDOW_ARGS+=(--incognito)
+fi
+
+should_auto_click() {
+  local value="$1"
+  for domain in ${AUTO_CLICK_DOMAINS:-}; do
+    if [[ "$value" == *"$domain"* ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+schedule_auto_click() {
+  local chrome_pid="$1"
+  local delay="${AUTO_CLICK_DELAY_SECONDS:-8}"
+  if ! [[ "$delay" =~ ^[0-9]+$ ]]; then
+    delay=8
+  fi
+  if ! command -v xdotool >/dev/null 2>&1; then
+    echo "xdotool is missing; auto-click skipped."
+    return 0
+  fi
+
+  (
+    export DISPLAY="${DISPLAY:-${VNC_DISPLAY:-:1}}"
+    export XAUTHORITY="${XAUTHORITY:-/root/.Xauthority}"
+    sleep "$delay"
+    for _ in 1 2 3 4 5; do
+      window="$(xdotool search --onlyvisible --pid "$chrome_pid" 2>/dev/null | head -n 1 || true)"
+      if [[ -z "$window" ]]; then
+        window="$(xdotool search --onlyvisible --class 'google-chrome|chromium|Chromium' 2>/dev/null | tail -n 1 || true)"
+      fi
+      if [[ -n "$window" ]]; then
+        eval "$(xdotool getwindowgeometry --shell "$window" 2>/dev/null || true)"
+        if [[ -n "${WIDTH:-}" && -n "${HEIGHT:-}" ]]; then
+          xdotool windowactivate --sync "$window" >/dev/null 2>&1 || true
+          xdotool mousemove "$((X + WIDTH / 2))" "$((Y + HEIGHT / 2))" click 1 >/dev/null 2>&1 || true
+          echo "Auto-clicked $PROFILE_NAME window for $URL"
+          exit 0
+        fi
+      fi
+      sleep 2
+    done
+    echo "Auto-click could not find a visible $PROFILE_NAME window."
+  ) >>"$BASE_DIR/${PROFILE_NAME}.log" 2>&1 &
+}
+
 nohup "$CHROME_BIN" \
   --user-data-dir="$PROFILE_DIR" \
   --proxy-server="$PROXY" \
   --no-sandbox \
+  --disable-dev-shm-usage \
+  --disable-background-networking \
+  --disable-background-timer-throttling \
+  --disable-renderer-backgrounding \
+  --disable-extensions \
+  --disable-sync \
+  --no-first-run \
+  --no-default-browser-check \
+  --disable-features=Translate,OptimizationHints,MediaRouter,WebRtcHideLocalIpsWithMdns \
+  --autoplay-policy=no-user-gesture-required \
   --force-webrtc-ip-handling-policy=disable_non_proxied_udp \
-  --disable-features=WebRtcHideLocalIpsWithMdns \
-  --incognito \
+  "${WINDOW_ARGS[@]}" \
   --new-window "$URL" \
   >"$BASE_DIR/${PROFILE_NAME}.log" 2>&1 &
 
-echo "PID: $!"
+CHROME_PID="$!"
+echo "PID: $CHROME_PID"
 echo "Log: $BASE_DIR/${PROFILE_NAME}.log"
+
+if should_auto_click "$URL"; then
+  schedule_auto_click "$CHROME_PID"
+fi

@@ -7,6 +7,8 @@ import {
   BrowserXPublishRequest,
   ChromeProfilesLaunchRequest,
   ChromeProfilesStatus,
+  ChromeProfilesUrlCheckRequest,
+  ChromeProfilesUrlCheckStatus,
   GeneratePromptRequest,
   GeneratePromptResponse,
   PostingJobRequest,
@@ -159,5 +161,9 @@ export class DashboardService {
 
   getChromeProfilesStatus(): Observable<ChromeProfilesStatus> {
     return this.http.get<ChromeProfilesStatus>(`${API_BASE_URL}/actions/chrome-profiles/status`);
+  }
+
+  checkChromeProfilesUrl(request: ChromeProfilesUrlCheckRequest): Observable<ChromeProfilesUrlCheckStatus> {
+    return this.http.post<ChromeProfilesUrlCheckStatus>(`${API_BASE_URL}/actions/chrome-profiles/check-url`, request);
   }
 }

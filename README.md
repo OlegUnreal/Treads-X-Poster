@@ -92,6 +92,56 @@ npx ng serve
 
 The Angular dev server proxies `/api` requests to `http://localhost:8080`, so start the Spring Boot backend first.
 
+### Local Proxy Chrome Profiles
+
+Use this when you want to run the same isolated Chrome proxy profiles on the Windows workstation instead of the remote VNC server.
+
+Runtime files live outside the repository:
+
+```text
+C:\Users\ZEPHYRUS\chrome-proxy-profiles\
+```
+
+That folder must contain `profiles.env`. It includes proxy credentials, so keep it out of git. The local launcher also copies `remote-chrome-profiles/proxy-forwarder.py` there automatically.
+
+Start one or more local profiles:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\start-local-chrome-profiles.ps1 -Count 2 -Url "https://www.youtube.com/watch?v=WU7Wo8IJoh4"
+```
+
+Pornhub or another video page:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\start-local-chrome-profiles.ps1 -Count 2 -Url "https://www.pornhub.com/view_video.php?viewkey=VIDEO_KEY"
+```
+
+Open profile marker pages instead of a video URL:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\start-local-chrome-profiles.ps1 -Count 2 -Url profile-home
+```
+
+Run specific profiles:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\start-local-chrome-profiles.ps1 -Profiles ip2,ip4 -Url "https://example.com/video"
+```
+
+Stop local Chrome profiles and local proxy forwarders:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\stop-local-chrome-profiles.ps1
+```
+
+Notes:
+
+- Each profile uses its own Chrome user data directory under `C:\Users\ZEPHYRUS\chrome-proxy-profiles\data\`.
+- If `PROXY_ipN` points to `127.0.0.1`, the script starts a local Python proxy forwarder for the authenticated upstream proxy.
+- YouTube URLs open in incognito when `INCOGNITO_DOMAINS` includes `youtube.com youtu.be`.
+- Pornhub stays non-incognito when `INCOGNITO_MODE=false`, so age confirmation cookies can persist per profile.
+- Webshare/free proxy traffic can hit bandwidth limits; if a proxy returns `Bandwidth limit reached`, the launcher is working but the provider limit is exhausted.
+
 ## Production Setup
 
 The backend can run on a server as long as runtime files live in a persistent folder. Configure that folder with `DATA_DIR` instead of relying on files inside the repository checkout.
