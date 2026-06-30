@@ -2,29 +2,18 @@ package com.behindthesmile.posting.service;
 
 import com.behindthesmile.posting.api.YoutubePlaybackRequest;
 import com.behindthesmile.posting.config.AppProperties;
-import org.openqa.selenium.JavascriptExecutor;
-import org.openqa.selenium.OutputType;
-import org.openqa.selenium.TakesScreenshot;
-import org.openqa.selenium.WebDriver;
-import org.openqa.selenium.WebDriverException;
-import org.openqa.selenium.chrome.ChromeDriver;
-import org.openqa.selenium.chrome.ChromeDriverService;
-import org.openqa.selenium.chrome.ChromeOptions;
-import org.openqa.selenium.edge.EdgeDriver;
-import org.openqa.selenium.edge.EdgeOptions;
-import org.openqa.selenium.support.ui.WebDriverWait;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import java.io.File;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
+import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
-import java.util.LinkedHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -33,58 +22,58 @@ import java.util.concurrent.TimeUnit;
 @Service
 public class YoutubePlaybackService {
     private static final Logger log = LoggerFactory.getLogger(YoutubePlaybackService.class);
+    private static final Path DESKTOP_LOG = Path.of("/tmp/behind-the-smile-youtube-desktop.log");
 
     private final AccountConfigService accountConfigService;
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
-    private WebDriver driver;
+    private Process browserProcess;
     private ScheduledFuture<?> stopTask;
     private String currentUrl = "";
     private int currentPercent = 0;
     private String lastError = "";
+    private Instant lastStartedAt;
 
     public YoutubePlaybackService(AccountConfigService accountConfigService) {
         this.accountConfigService = accountConfigService;
     }
 
-    public synchronized Map<String, Object> play(YoutubePlaybackRequest request) throws Exception {
+    public synchronized Map<String, Object> play(YoutubePlaybackRequest request) {
         try {
             String url = normalizeYoutubeUrl(request == null ? null : request.url());
             int percent = clampPercent(request == null ? null : request.percent());
             cancelStopTask();
-            if (driver == null) {
-                driver = createDriver();
-            }
 
             currentUrl = url;
             currentPercent = percent;
             lastError = "";
-            driver.get(url);
-            WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(30));
-            wait.until(webDriver -> ((JavascriptExecutor) webDriver)
-                    .executeScript("return Boolean(document.querySelector('video'));")
-                    .equals(Boolean.TRUE));
+            lastStartedAt = Instant.now();
 
-            double durationSeconds = readDurationSeconds();
-            startVideo(percent);
+            AppProperties.X x = accountConfigService.activeAccount().x();
+            Path profilePath = Path.of(x.browserProfileDir()).toAbsolutePath().normalize();
+            Files.createDirectories(profilePath);
+
+            Process process = startDesktopBrowser(url, profilePath);
+            if (!process.waitFor(10, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                throw new IllegalStateException("Desktop browser launcher did not return after 10 seconds.");
+            }
+            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+            if (process.exitValue() != 0) {
+                throw new IllegalStateException(output.isBlank() ? "Desktop browser launcher failed." : output);
+            }
+            browserProcess = process;
+
             if (percent <= 0) {
-                pauseVideo();
-            } else if (durationSeconds > 0 && percent < 100) {
-                long delayMs = Math.max(1000L, Math.round(durationSeconds * percent * 10.0));
-                stopTask = scheduler.schedule(this::safePause, delayMs, TimeUnit.MILLISECONDS);
+                stopTask = scheduler.schedule(this::safePauseDesktop, 5, TimeUnit.SECONDS);
             }
 
-            Map<String, Object> status = new LinkedHashMap<>();
+            Map<String, Object> status = status();
             status.put("status", "playing");
-            status.put("url", currentUrl);
-            status.put("percent", currentPercent);
-            status.put("durationSeconds", durationSeconds);
-            status.put("browser", accountConfigService.activeAccount().x().browser());
-            status.put("accountId", accountConfigService.activeAccount().id());
-            status.put("lastError", lastError);
+            status.put("message", output.isBlank() ? "Desktop Chrome launched." : output);
             return status;
         } catch (Exception ex) {
             lastError = readableError(ex);
-            log.warn("Could not start YouTube playback: {}", lastError);
+            log.warn("Could not start desktop YouTube playback: {}", lastError);
             Map<String, Object> status = status();
             status.put("status", "error");
             status.put("lastError", lastError);
@@ -94,205 +83,131 @@ public class YoutubePlaybackService {
 
     public synchronized Map<String, Object> stop() {
         cancelStopTask();
-        safePause();
-        return Map.of(
-                "status", "stopped",
-                "url", currentUrl,
-                "percent", currentPercent
-        );
+        safePauseDesktop();
+        Map<String, Object> status = status();
+        status.put("status", "stopped");
+        return status;
     }
 
     public synchronized Map<String, Object> status() {
-        if (driver == null) {
-            Map<String, Object> status = new LinkedHashMap<>();
-            status.put("status", "idle");
-            status.put("url", currentUrl);
-            status.put("percent", currentPercent);
-            status.put("lastError", lastError);
-            status.put("videoPresent", false);
-            return status;
-        }
-
-        try {
-            Object details = ((JavascriptExecutor) driver).executeScript("""
-                    const video = document.querySelector('video');
-                    return {
-                      pageUrl: location.href,
-                      title: document.title || '',
-                      videoPresent: Boolean(video),
-                      paused: video ? video.paused : null,
-                      currentTime: video ? video.currentTime : 0,
-                      duration: video && Number.isFinite(video.duration) ? video.duration : 0,
-                      readyState: video ? video.readyState : 0,
-                      muted: video ? video.muted : null,
-                      volume: video ? video.volume : null
-                    };
-                    """);
-            if (details instanceof Map<?, ?> map) {
-                Map<String, Object> status = new LinkedHashMap<>();
-                status.put("status", "open");
-                status.put("url", currentUrl);
-                status.put("percent", currentPercent);
-                status.put("lastError", lastError);
-                status.put("pageUrl", stringValue(map, "pageUrl"));
-                status.put("title", stringValue(map, "title"));
-                status.put("videoPresent", valueOrDefault(map, "videoPresent", false));
-                status.put("paused", valueOrDefault(map, "paused", true));
-                status.put("currentTime", valueOrDefault(map, "currentTime", 0));
-                status.put("durationSeconds", valueOrDefault(map, "duration", 0));
-                status.put("readyState", valueOrDefault(map, "readyState", 0));
-                status.put("muted", valueOrDefault(map, "muted", false));
-                status.put("volume", valueOrDefault(map, "volume", 0));
-                return status;
-            }
-        } catch (Exception ex) {
-            lastError = readableError(ex);
-            log.warn("Could not read YouTube playback status: {}", lastError);
-        }
-
-        Map<String, Object> fallback = new LinkedHashMap<>();
-        fallback.put("status", "open");
-        fallback.put("url", currentUrl);
-        fallback.put("percent", currentPercent);
-        fallback.put("lastError", lastError);
-        fallback.put("videoPresent", false);
-        return fallback;
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("status", currentUrl.isBlank() ? "idle" : "open");
+        status.put("automationMode", "desktop");
+        status.put("url", currentUrl);
+        status.put("pageUrl", currentUrl);
+        status.put("percent", currentPercent);
+        status.put("lastError", lastError);
+        status.put("lastStartedAt", lastStartedAt == null ? "" : lastStartedAt.toString());
+        status.put("browser", accountConfigService.activeAccount().x().browser());
+        status.put("accountId", accountConfigService.activeAccount().id());
+        status.put("videoPresent", null);
+        status.put("paused", null);
+        status.put("currentTime", null);
+        status.put("durationSeconds", null);
+        status.put("logTail", readLogTail());
+        return status;
     }
 
     public synchronized byte[] screenshot() {
-        if (driver == null) {
-            throw new IllegalStateException("YouTube browser is not open.");
-        }
-        if (!(driver instanceof TakesScreenshot screenshotDriver)) {
-            throw new IllegalStateException("Current browser does not support screenshots.");
-        }
-        return screenshotDriver.getScreenshotAs(OutputType.BYTES);
-    }
-
-    private String readableError(Exception ex) {
-        String message = ex.getMessage();
-        if (message == null || message.isBlank()) {
-            message = ex.getClass().getSimpleName();
-        }
-        if (ex instanceof WebDriverException && message.contains("\n")) {
-            message = message.substring(0, message.indexOf('\n'));
-        }
-        return message.length() > 600 ? message.substring(0, 600) : message;
-    }
-
-    private String stringValue(Map<?, ?> map, String key) {
-        Object value = map.get(key);
-        return value == null ? "" : String.valueOf(value);
-    }
-
-    private Object valueOrDefault(Map<?, ?> map, String key, Object fallback) {
-        Object value = map.get(key);
-        return value == null ? fallback : value;
-    }
-
-    private WebDriver createDriver() throws Exception {
-        AppProperties.X x = accountConfigService.activeAccount().x();
-        String browser = x.browser() == null ? "chrome" : x.browser().trim().toLowerCase(Locale.ROOT);
-        Path profilePath = Path.of(x.browserProfileDir()).toAbsolutePath().normalize();
-        Files.createDirectories(profilePath);
-
-        if ("edge".equals(browser)) {
-            EdgeOptions options = new EdgeOptions();
-            options.addArguments("--user-data-dir=" + profilePath);
-            options.addArguments("--profile-directory=Default");
-            options.addArguments("--start-maximized");
-            addServerBrowserArguments(options);
-            if (x.browserHeadless()) {
-                options.addArguments("--headless=new");
-            }
-            return new EdgeDriver(options);
-        }
-
-        ChromeOptions options = new ChromeOptions();
-        options.addArguments("--user-data-dir=" + profilePath);
-        options.addArguments("--profile-directory=Default");
-        options.addArguments("--start-maximized");
-        addServerBrowserArguments(options);
-        if (x.browserHeadless()) {
-            options.addArguments("--headless=new");
-        }
-        return new ChromeDriver(chromeDriverService(), options);
-    }
-
-    private ChromeDriverService chromeDriverService() {
-        return new ChromeDriverService.Builder()
-                .withLogFile(new File("/tmp/behind-the-smile-youtube-chromedriver.log"))
-                .withVerbose(true)
-                .build();
-    }
-
-    private void addServerBrowserArguments(ChromeOptions options) {
-        options.addArguments("--no-sandbox");
-        options.addArguments("--disable-dev-shm-usage");
-        options.addArguments("--disable-gpu");
-        options.addArguments("--no-first-run");
-        options.addArguments("--no-default-browser-check");
-        options.addArguments("--window-size=1365,900");
-        options.addArguments("--remote-allow-origins=*");
-        options.addArguments("--autoplay-policy=no-user-gesture-required");
-    }
-
-    private void addServerBrowserArguments(EdgeOptions options) {
-        options.addArguments("--no-sandbox");
-        options.addArguments("--disable-dev-shm-usage");
-        options.addArguments("--disable-gpu");
-        options.addArguments("--no-first-run");
-        options.addArguments("--no-default-browser-check");
-        options.addArguments("--window-size=1365,900");
-        options.addArguments("--remote-allow-origins=*");
-        options.addArguments("--autoplay-policy=no-user-gesture-required");
-    }
-
-    private double readDurationSeconds() {
-        Object result = ((JavascriptExecutor) driver).executeScript("""
-                const video = document.querySelector('video');
-                return video && Number.isFinite(video.duration) ? video.duration : 0;
-                """);
-        if (result instanceof Number number) {
-            return number.doubleValue();
-        }
-        return 0;
-    }
-
-    private void startVideo(int percent) {
-        ((JavascriptExecutor) driver).executeScript("""
-                const video = document.querySelector('video');
-                if (!video) return;
-                video.currentTime = 0;
-                if (arguments[0] > 0) {
-                  const play = video.play();
-                  if (play && typeof play.catch === 'function') play.catch(() => {});
-                }
-                """, percent);
-    }
-
-    private void pauseVideo() {
-        if (driver == null) {
-            return;
-        }
-        ((JavascriptExecutor) driver).executeScript("""
-                const video = document.querySelector('video');
-                if (video) video.pause();
-                """);
-    }
-
-    private synchronized void safePause() {
         try {
-            pauseVideo();
+            return captureDesktopScreenshot();
         } catch (Exception ex) {
-            log.warn("Could not pause YouTube playback: {}", ex.getMessage());
+            lastError = readableError(ex);
+            throw new IllegalStateException(lastError, ex);
         }
     }
 
-    private void cancelStopTask() {
-        if (stopTask != null) {
-            stopTask.cancel(false);
-            stopTask = null;
+    private Process startDesktopBrowser(String url, Path profilePath) throws Exception {
+        String command = """
+                set -euo pipefail
+                BROWSER="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+                if [ -z "$BROWSER" ]; then
+                  echo "Missing Chrome/Chromium on the server." >&2
+                  exit 127
+                fi
+                nohup "$BROWSER" \
+                  --user-data-dir=%s \
+                  --profile-directory=Default \
+                  --start-maximized \
+                  --new-window \
+                  --no-sandbox \
+                  --disable-dev-shm-usage \
+                  --no-first-run \
+                  --no-default-browser-check \
+                  --window-size=1365,900 \
+                  --autoplay-policy=no-user-gesture-required \
+                  %s >%s 2>&1 &
+                echo "Desktop Chrome launched."
+                """.formatted(shellQuote(profilePath.toString()), shellQuote(url), shellQuote(DESKTOP_LOG.toString()));
+
+        ProcessBuilder builder = new ProcessBuilder("bash", "-lc", command)
+                .redirectErrorStream(true);
+        builder.environment().putIfAbsent("DISPLAY", ":1");
+        return builder.start();
+    }
+
+    private byte[] captureDesktopScreenshot() throws Exception {
+        Path screenshotPath = Files.createTempFile("behind-the-smile-desktop-", ".png");
+        try {
+            String command = """
+                    set -euo pipefail
+                    OUT=%s
+                    if command -v gnome-screenshot >/dev/null 2>&1; then
+                      gnome-screenshot -f "$OUT"
+                    elif command -v scrot >/dev/null 2>&1; then
+                      scrot "$OUT"
+                    elif command -v import >/dev/null 2>&1; then
+                      import -window root "$OUT"
+                    else
+                      echo "No desktop screenshot tool found. Install gnome-screenshot, scrot, or imagemagick." >&2
+                      exit 127
+                    fi
+                    """.formatted(shellQuote(screenshotPath.toString()));
+            Process process = new ProcessBuilder("bash", "-lc", command)
+                    .redirectErrorStream(true)
+                    .start();
+            process.getOutputStream().close();
+            if (!process.waitFor(15, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                throw new IllegalStateException("Desktop screenshot did not finish after 15 seconds.");
+            }
+            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+            if (process.exitValue() != 0) {
+                throw new IllegalStateException(output.isBlank() ? "Desktop screenshot failed." : output);
+            }
+            return Files.readAllBytes(screenshotPath);
+        } finally {
+            Files.deleteIfExists(screenshotPath);
+        }
+    }
+
+    private void safePauseDesktop() {
+        try {
+            String command = """
+                    if command -v xdotool >/dev/null 2>&1; then
+                      xdotool search --onlyvisible --class 'google-chrome|chromium|Chromium' windowactivate --sync key k >/dev/null 2>&1 || true
+                    fi
+                    """;
+            Process process = new ProcessBuilder("bash", "-lc", command)
+                    .redirectErrorStream(true)
+                    .start();
+            process.waitFor(5, TimeUnit.SECONDS);
+        } catch (Exception ex) {
+            lastError = readableError(ex);
+            log.warn("Could not pause desktop playback: {}", lastError);
+        }
+    }
+
+    private String readLogTail() {
+        try {
+            if (!Files.isRegularFile(DESKTOP_LOG)) {
+                return "";
+            }
+            byte[] bytes = Files.readAllBytes(DESKTOP_LOG);
+            int start = Math.max(0, bytes.length - 4000);
+            return new String(bytes, start, bytes.length - start, StandardCharsets.UTF_8);
+        } catch (Exception ex) {
+            return readableError(ex);
         }
     }
 
@@ -317,5 +232,24 @@ public class YoutubePlaybackService {
             return 100;
         }
         return Math.max(0, Math.min(100, percent));
+    }
+
+    private void cancelStopTask() {
+        if (stopTask != null) {
+            stopTask.cancel(false);
+            stopTask = null;
+        }
+    }
+
+    private String readableError(Exception ex) {
+        String message = ex.getMessage();
+        if (message == null || message.isBlank()) {
+            message = ex.getClass().getSimpleName();
+        }
+        return message.length() > 600 ? message.substring(0, 600) : message;
+    }
+
+    private String shellQuote(String value) {
+        return "'" + value.replace("'", "'\"'\"'") + "'";
     }
 }

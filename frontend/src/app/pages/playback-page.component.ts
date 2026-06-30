@@ -74,9 +74,9 @@ import { DashboardService } from '../services/dashboard.service';
           </div>
           <div>
             <dt>Video</dt>
-            <dd>{{ status.videoPresent ? 'Detected' : 'Not found' }}</dd>
+            <dd>{{ videoLabel(status) }}</dd>
           </div>
-          <div *ngIf="status.currentTime !== undefined">
+          <div *ngIf="status.currentTime !== undefined && status.currentTime !== null">
             <dt>Time</dt>
             <dd>{{ status.currentTime | number:'1.0-0' }} sec</dd>
           </div>
@@ -89,6 +89,8 @@ import { DashboardService } from '../services/dashboard.service';
             <dd>{{ status.browser }}</dd>
           </div>
         </dl>
+
+        <pre class="log-tail" *ngIf="status?.logTail">{{ status?.logTail }}</pre>
 
         <div class="profile-list" *ngIf="profilesStatus?.profiles?.length">
           <div class="profile-row" *ngFor="let profile of profilesStatus?.profiles">
@@ -265,6 +267,9 @@ export class PlaybackPageComponent {
   }
 
   protected playbackLabel(status: YoutubePlaybackStatus): string {
+    if (status.automationMode === 'desktop') {
+      return status.status === 'idle' ? 'idle' : 'desktop browser';
+    }
     if (status.status === 'idle') {
       return 'idle';
     }
@@ -272,6 +277,13 @@ export class PlaybackPageComponent {
       return status.status;
     }
     return status.paused ? 'paused' : 'playing';
+  }
+
+  protected videoLabel(status: YoutubePlaybackStatus): string {
+    if (status.automationMode === 'desktop') {
+      return 'Desktop mode';
+    }
+    return status.videoPresent ? 'Detected' : 'Not found';
   }
 
   private normalizedPercent(): number {
