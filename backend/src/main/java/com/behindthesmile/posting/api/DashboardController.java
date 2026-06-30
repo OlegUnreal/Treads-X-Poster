@@ -214,8 +214,8 @@ public class DashboardController {
     }
 
     @PostMapping("/actions/chrome-profiles/start-all")
-    public Map<String, Object> startAllChromeProfiles() throws Exception {
-        return chromeProfileLauncherService.startAll();
+    public Map<String, Object> startAllChromeProfiles(@RequestBody(required = false) ChromeProfilesLaunchRequest request) throws Exception {
+        return chromeProfileLauncherService.startAll(request);
     }
 
     @GetMapping("/actions/chrome-profiles/status")

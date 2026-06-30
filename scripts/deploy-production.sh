@@ -36,6 +36,17 @@ if [ ! -f "${APP_DIR}/config/content-plan.json" ] && [ -f "${APP_DIR}/backend/co
   cp "${APP_DIR}/backend/config/content-plan.json" "${APP_DIR}/config/content-plan.json"
 fi
 
+if [ -d "${APP_DIR}/remote-chrome-profiles" ]; then
+  CHROME_PROFILES_DIR="${CHROME_PROFILES_DIR:-/root/chrome-proxy-profiles}"
+  mkdir -p "${CHROME_PROFILES_DIR}"
+  for file in check-deps.sh proxy-forwarder.py start-all.sh start-profile.sh stop-all.sh profiles.env.example README.md; do
+    if [ -f "${APP_DIR}/remote-chrome-profiles/${file}" ]; then
+      cp "${APP_DIR}/remote-chrome-profiles/${file}" "${CHROME_PROFILES_DIR}/${file}"
+    fi
+  done
+  chmod +x "${CHROME_PROFILES_DIR}/check-deps.sh" "${CHROME_PROFILES_DIR}/start-all.sh" "${CHROME_PROFILES_DIR}/start-profile.sh" "${CHROME_PROFILES_DIR}/stop-all.sh" || true
+fi
+
 mvn -f backend/pom.xml package -DskipTests
 
 JAR_PATH="$(find "${APP_DIR}/backend/target" -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | head -n 1)"

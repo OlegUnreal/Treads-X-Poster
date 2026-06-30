@@ -144,12 +144,30 @@ export interface YoutubePlaybackStatus {
 export interface ChromeProfilesStatus {
   directory: string;
   script: string;
+  startProfileScript?: string;
+  envFile?: string;
   directoryExists: boolean;
   scriptExists: boolean;
+  startProfileScriptExists?: boolean;
+  envFileExists?: boolean;
+  profiles?: ChromeProfileSummary[];
   logExists: boolean;
   lastStartedAt: string;
   logTail: string;
+  minDelaySeconds?: number;
+  maxDelaySeconds?: number;
   message?: string;
+}
+
+export interface ChromeProfileSummary {
+  name: string;
+  proxy: string;
+  upstreamProxy: string;
+}
+
+export interface ChromeProfilesLaunchRequest {
+  minDelaySeconds: number;
+  maxDelaySeconds: number;
 }
 
 export interface PostingJobStatus {
