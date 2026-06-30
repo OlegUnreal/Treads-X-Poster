@@ -47,6 +47,11 @@ if [ -d "${APP_DIR}/remote-chrome-profiles" ]; then
   chmod +x "${CHROME_PROFILES_DIR}/check-deps.sh" "${CHROME_PROFILES_DIR}/start-all.sh" "${CHROME_PROFILES_DIR}/start-profile.sh" "${CHROME_PROFILES_DIR}/stop-all.sh" || true
 fi
 
+if ! command -v scrot >/dev/null 2>&1 || ! command -v xdotool >/dev/null 2>&1; then
+  apt-get update
+  DEBIAN_FRONTEND=noninteractive apt-get install -y scrot xdotool
+fi
+
 mvn -f backend/pom.xml package -DskipTests
 
 JAR_PATH="$(find "${APP_DIR}/backend/target" -maxdepth 1 -type f -name '*.jar' ! -name '*sources.jar' ! -name '*javadoc.jar' | head -n 1)"

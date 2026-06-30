@@ -163,9 +163,10 @@ public class YoutubePlaybackService {
                       exit 127
                     fi
                     """.formatted(shellQuote(screenshotPath.toString()));
-            Process process = new ProcessBuilder("bash", "-lc", command)
-                    .redirectErrorStream(true)
-                    .start();
+            ProcessBuilder builder = new ProcessBuilder("bash", "-lc", command)
+                    .redirectErrorStream(true);
+            builder.environment().putIfAbsent("DISPLAY", ":1");
+            Process process = builder.start();
             process.getOutputStream().close();
             if (!process.waitFor(15, TimeUnit.SECONDS)) {
                 process.destroyForcibly();
@@ -188,9 +189,10 @@ public class YoutubePlaybackService {
                       xdotool search --onlyvisible --class 'google-chrome|chromium|Chromium' windowactivate --sync key k >/dev/null 2>&1 || true
                     fi
                     """;
-            Process process = new ProcessBuilder("bash", "-lc", command)
-                    .redirectErrorStream(true)
-                    .start();
+            ProcessBuilder builder = new ProcessBuilder("bash", "-lc", command)
+                    .redirectErrorStream(true);
+            builder.environment().putIfAbsent("DISPLAY", ":1");
+            Process process = builder.start();
             process.waitFor(5, TimeUnit.SECONDS);
         } catch (Exception ex) {
             lastError = readableError(ex);
