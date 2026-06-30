@@ -152,16 +152,23 @@ public class YoutubePlaybackService {
             String command = """
                     set -euo pipefail
                     OUT=%s
+                    capture_ok() {
+                      [ -s "$OUT" ]
+                    }
                     if command -v gnome-screenshot >/dev/null 2>&1; then
-                      gnome-screenshot -f "$OUT"
-                    elif command -v scrot >/dev/null 2>&1; then
-                      scrot "$OUT"
-                    elif command -v import >/dev/null 2>&1; then
-                      import -window root "$OUT"
-                    else
-                      echo "No desktop screenshot tool found. Install gnome-screenshot, scrot, or imagemagick." >&2
-                      exit 127
+                      gnome-screenshot -f "$OUT" >/dev/null 2>&1 || true
+                      capture_ok && exit 0
                     fi
+                    if command -v scrot >/dev/null 2>&1; then
+                      scrot "$OUT" >/dev/null 2>&1 || true
+                      capture_ok && exit 0
+                    fi
+                    if command -v import >/dev/null 2>&1; then
+                      import -window root "$OUT" >/dev/null 2>&1 || true
+                      capture_ok && exit 0
+                    fi
+                    echo "Desktop screenshot failed or produced an empty image." >&2
+                    exit 1
                     """.formatted(shellQuote(screenshotPath.toString()));
             ProcessBuilder builder = new ProcessBuilder("bash", "-lc", command)
                     .redirectErrorStream(true);
@@ -175,6 +182,9 @@ public class YoutubePlaybackService {
             String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
             if (process.exitValue() != 0) {
                 throw new IllegalStateException(output.isBlank() ? "Desktop screenshot failed." : output);
+            }
+            if (Files.size(screenshotPath) <= 0) {
+                throw new IllegalStateException("Desktop screenshot produced an empty image.");
             }
             return Files.readAllBytes(screenshotPath);
         } finally {
