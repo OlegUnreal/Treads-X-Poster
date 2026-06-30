@@ -39,12 +39,25 @@ fi
 if [ -d "${APP_DIR}/remote-chrome-profiles" ]; then
   CHROME_PROFILES_DIR="${CHROME_PROFILES_DIR:-/root/chrome-proxy-profiles}"
   mkdir -p "${CHROME_PROFILES_DIR}"
-  for file in check-deps.sh proxy-forwarder.py start-all.sh start-profile.sh stop-all.sh profiles.env.example README.md; do
+  for file in check-deps.sh ensure-proxies.py proxy-forwarder.py start-all.sh start-profile.sh stop-all.sh profiles.env.example README.md; do
     if [ -f "${APP_DIR}/remote-chrome-profiles/${file}" ]; then
       cp "${APP_DIR}/remote-chrome-profiles/${file}" "${CHROME_PROFILES_DIR}/${file}"
     fi
   done
   chmod +x "${CHROME_PROFILES_DIR}/check-deps.sh" "${CHROME_PROFILES_DIR}/start-all.sh" "${CHROME_PROFILES_DIR}/start-profile.sh" "${CHROME_PROFILES_DIR}/stop-all.sh" || true
+  if [ -f "${CHROME_PROFILES_DIR}/profiles.env" ] && [ -f "${CHROME_PROFILES_DIR}/ensure-proxies.py" ]; then
+    python3 "${CHROME_PROFILES_DIR}/ensure-proxies.py" --env "${CHROME_PROFILES_DIR}/profiles.env" \
+      31.59.20.176:6754 \
+      31.56.127.193:7684 \
+      45.38.107.97:6014 \
+      38.154.203.95:5863 \
+      198.105.121.200:6462 \
+      64.137.96.74:6641 \
+      198.23.243.226:6361 \
+      38.154.185.97:6370 \
+      142.111.67.146:5611 \
+      191.96.254.138:6185 || true
+  fi
 fi
 
 if ! command -v scrot >/dev/null 2>&1 || ! command -v xdotool >/dev/null 2>&1; then
