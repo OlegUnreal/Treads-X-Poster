@@ -234,6 +234,7 @@ public class YoutubePlaybackService {
         options.addArguments("--no-default-browser-check");
         options.addArguments("--window-size=1365,900");
         options.addArguments("--remote-allow-origins=*");
+        options.addArguments("--autoplay-policy=no-user-gesture-required");
     }
 
     private void addServerBrowserArguments(EdgeOptions options) {
@@ -244,6 +245,7 @@ public class YoutubePlaybackService {
         options.addArguments("--no-default-browser-check");
         options.addArguments("--window-size=1365,900");
         options.addArguments("--remote-allow-origins=*");
+        options.addArguments("--autoplay-policy=no-user-gesture-required");
     }
 
     private double readDurationSeconds() {
