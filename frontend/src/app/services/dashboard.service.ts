@@ -5,6 +5,7 @@ import {
   AccountSelectionResponse,
   ActionResult,
   BrowserXPublishRequest,
+  ChromeProfilesStatus,
   GeneratePromptRequest,
   GeneratePromptResponse,
   PostingJobRequest,
@@ -149,5 +150,13 @@ export class DashboardService {
 
   getYoutubeStatus(): Observable<YoutubePlaybackStatus> {
     return this.http.get<YoutubePlaybackStatus>(`${API_BASE_URL}/actions/youtube/status`);
+  }
+
+  startAllChromeProfiles(): Observable<ChromeProfilesStatus> {
+    return this.http.post<ChromeProfilesStatus>(`${API_BASE_URL}/actions/chrome-profiles/start-all`, {});
+  }
+
+  getChromeProfilesStatus(): Observable<ChromeProfilesStatus> {
+    return this.http.get<ChromeProfilesStatus>(`${API_BASE_URL}/actions/chrome-profiles/status`);
   }
 }

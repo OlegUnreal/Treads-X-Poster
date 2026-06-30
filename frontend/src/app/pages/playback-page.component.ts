@@ -1,7 +1,7 @@
 import { DecimalPipe, NgIf } from '@angular/common';
 import { Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { YoutubePlaybackStatus } from '../models/dashboard.models';
+import { ChromeProfilesStatus, YoutubePlaybackStatus } from '../models/dashboard.models';
 import { DashboardService } from '../services/dashboard.service';
 
 @Component({
@@ -41,7 +41,15 @@ import { DashboardService } from '../services/dashboard.service';
           <a class="btn btn-outline-secondary btn-sm" href="/api/actions/youtube/screenshot" target="_blank" rel="noopener">Screenshot</a>
         </div>
 
+        <div class="profiles-actions">
+          <button class="btn btn-outline-primary btn-sm" type="button" [disabled]="profilesBusy" (click)="startProfiles()">
+            {{ profilesBusy ? 'Starting...' : 'Start proxy Chrome profiles' }}
+          </button>
+          <button class="btn btn-outline-secondary btn-sm" type="button" [disabled]="profilesBusy" (click)="refreshProfilesStatus()">Profiles status</button>
+        </div>
+
         <p class="feedback" *ngIf="message" [class.error]="error">{{ message }}</p>
+        <p class="feedback" *ngIf="profilesMessage" [class.error]="profilesError">{{ profilesMessage }}</p>
 
         <dl class="status" *ngIf="status">
           <div>
@@ -69,6 +77,8 @@ import { DashboardService } from '../services/dashboard.service';
             <dd>{{ status.browser }}</dd>
           </div>
         </dl>
+
+        <pre class="log-tail" *ngIf="profilesStatus?.logTail">{{ profilesStatus?.logTail }}</pre>
       </article>
     </section>
   `,
@@ -103,6 +113,7 @@ import { DashboardService } from '../services/dashboard.service';
     .slider-row { display: grid; grid-template-columns: minmax(0, 1fr) 92px; gap: 10px; align-items: end; margin-top: 12px; }
     .percent-input { text-align: center; }
     .actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+    .profiles-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #dde3ea; }
     .feedback {
       margin: 10px 0 0;
       padding: 8px 10px;
@@ -115,6 +126,7 @@ import { DashboardService } from '../services/dashboard.service';
     .status { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 12px 0 0; }
     .status div { padding: 10px; border: 1px solid #dde3ea; border-radius: 10px; background: #f8fafc; }
     .status dd { margin: 0; color: #17212b; font: 800 14px/1.3 "Segoe UI", sans-serif; overflow-wrap: anywhere; }
+    .log-tail { margin: 12px 0 0; max-height: 220px; overflow: auto; padding: 10px; border-radius: 10px; background: #0f172a; color: #dbeafe; font: 600 12px/1.45 Consolas, monospace; white-space: pre-wrap; }
     @media (max-width: 760px) { .page-head, .slider-row, .status { grid-template-columns: 1fr; display: grid; } .actions button { width: 100%; } }
   `]
 })
@@ -127,6 +139,10 @@ export class PlaybackPageComponent {
   protected message = '';
   protected error = false;
   protected status: YoutubePlaybackStatus | null = null;
+  protected profilesBusy = false;
+  protected profilesMessage = '';
+  protected profilesError = false;
+  protected profilesStatus: ChromeProfilesStatus | null = null;
 
   protected play(): void {
     const cleanUrl = this.url.trim();
@@ -175,6 +191,42 @@ export class PlaybackPageComponent {
       this.status = status;
       this.message = 'Status refreshed.';
       this.error = false;
+    });
+  }
+
+  protected startProfiles(): void {
+    this.profilesBusy = true;
+    this.profilesError = false;
+    this.profilesMessage = 'Starting proxy Chrome profiles...';
+    this.dashboardService.startAllChromeProfiles().subscribe({
+      next: (status) => {
+        this.profilesStatus = status;
+        this.profilesMessage = status.message || 'Chrome proxy profiles started.';
+        this.profilesError = false;
+        this.profilesBusy = false;
+      },
+      error: (error) => {
+        this.profilesMessage = error?.error?.message || error?.message || 'Could not start proxy Chrome profiles.';
+        this.profilesError = true;
+        this.profilesBusy = false;
+      }
+    });
+  }
+
+  protected refreshProfilesStatus(): void {
+    this.profilesBusy = true;
+    this.dashboardService.getChromeProfilesStatus().subscribe({
+      next: (status) => {
+        this.profilesStatus = status;
+        this.profilesMessage = status.scriptExists ? 'Profile launcher is available.' : 'Profile launcher script is missing.';
+        this.profilesError = !status.scriptExists;
+        this.profilesBusy = false;
+      },
+      error: (error) => {
+        this.profilesMessage = error?.error?.message || error?.message || 'Could not read profile launcher status.';
+        this.profilesError = true;
+        this.profilesBusy = false;
+      }
     });
   }
 

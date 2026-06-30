@@ -141,6 +141,17 @@ export interface YoutubePlaybackStatus {
   accountId?: string;
 }
 
+export interface ChromeProfilesStatus {
+  directory: string;
+  script: string;
+  directoryExists: boolean;
+  scriptExists: boolean;
+  logExists: boolean;
+  lastStartedAt: string;
+  logTail: string;
+  message?: string;
+}
+
 export interface PostingJobStatus {
   running: boolean;
   intervalHours: number | null;

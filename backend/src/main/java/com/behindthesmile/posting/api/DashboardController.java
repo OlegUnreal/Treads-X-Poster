@@ -2,6 +2,7 @@ package com.behindthesmile.posting.api;
 
 import com.behindthesmile.posting.model.QueuedPost;
 import com.behindthesmile.posting.service.AppPathService;
+import com.behindthesmile.posting.service.ChromeProfileLauncherService;
 import com.behindthesmile.posting.service.SocialPostingService;
 import com.behindthesmile.posting.service.YoutubePlaybackService;
 import org.springframework.http.MediaType;
@@ -33,17 +34,20 @@ public class DashboardController {
     private final com.behindthesmile.posting.service.PostingJobService postingJobService;
     private final AppPathService appPathService;
     private final YoutubePlaybackService youtubePlaybackService;
+    private final ChromeProfileLauncherService chromeProfileLauncherService;
 
     public DashboardController(
             SocialPostingService socialPostingService,
             com.behindthesmile.posting.service.PostingJobService postingJobService,
             AppPathService appPathService,
-            YoutubePlaybackService youtubePlaybackService
+            YoutubePlaybackService youtubePlaybackService,
+            ChromeProfileLauncherService chromeProfileLauncherService
     ) {
         this.socialPostingService = socialPostingService;
         this.postingJobService = postingJobService;
         this.appPathService = appPathService;
         this.youtubePlaybackService = youtubePlaybackService;
+        this.chromeProfileLauncherService = chromeProfileLauncherService;
     }
 
     @GetMapping("/health")
@@ -207,6 +211,16 @@ public class DashboardController {
         return ResponseEntity.ok()
                 .contentType(MediaType.IMAGE_PNG)
                 .body(youtubePlaybackService.screenshot());
+    }
+
+    @PostMapping("/actions/chrome-profiles/start-all")
+    public Map<String, Object> startAllChromeProfiles() throws Exception {
+        return chromeProfileLauncherService.startAll();
+    }
+
+    @GetMapping("/actions/chrome-profiles/status")
+    public Map<String, Object> chromeProfileStatus() throws Exception {
+        return chromeProfileLauncherService.status();
     }
 
     @PostMapping("/actions/attach-open-images")
