@@ -143,6 +143,7 @@ public class YoutubePlaybackService {
         ProcessBuilder builder = new ProcessBuilder("bash", "-lc", command)
                 .redirectErrorStream(true);
         builder.environment().putIfAbsent("DISPLAY", ":1");
+        builder.environment().putIfAbsent("XAUTHORITY", "/root/.Xauthority");
         return builder.start();
     }
 
@@ -156,15 +157,15 @@ public class YoutubePlaybackService {
                       [ -s "$OUT" ]
                     }
                     if command -v gnome-screenshot >/dev/null 2>&1; then
-                      gnome-screenshot -f "$OUT" >/dev/null 2>&1 || true
+                      gnome-screenshot -f "$OUT" || true
                       capture_ok && exit 0
                     fi
                     if command -v scrot >/dev/null 2>&1; then
-                      scrot "$OUT" >/dev/null 2>&1 || true
+                      scrot "$OUT" || true
                       capture_ok && exit 0
                     fi
                     if command -v import >/dev/null 2>&1; then
-                      import -window root "$OUT" >/dev/null 2>&1 || true
+                      import -window root "$OUT" || true
                       capture_ok && exit 0
                     fi
                     echo "Desktop screenshot failed or produced an empty image." >&2
@@ -173,6 +174,7 @@ public class YoutubePlaybackService {
             ProcessBuilder builder = new ProcessBuilder("bash", "-lc", command)
                     .redirectErrorStream(true);
             builder.environment().putIfAbsent("DISPLAY", ":1");
+            builder.environment().putIfAbsent("XAUTHORITY", "/root/.Xauthority");
             Process process = builder.start();
             process.getOutputStream().close();
             if (!process.waitFor(15, TimeUnit.SECONDS)) {
@@ -202,6 +204,7 @@ public class YoutubePlaybackService {
             ProcessBuilder builder = new ProcessBuilder("bash", "-lc", command)
                     .redirectErrorStream(true);
             builder.environment().putIfAbsent("DISPLAY", ":1");
+            builder.environment().putIfAbsent("XAUTHORITY", "/root/.Xauthority");
             Process process = builder.start();
             process.waitFor(5, TimeUnit.SECONDS);
         } catch (Exception ex) {
