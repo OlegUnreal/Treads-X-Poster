@@ -150,6 +150,7 @@ public class YoutubePlaybackService {
     private byte[] captureDesktopScreenshot() throws Exception {
         Path screenshotPath = Files.createTempFile("behind-the-smile-desktop-", ".png");
         try {
+            Files.deleteIfExists(screenshotPath);
             String command = """
                     set -euo pipefail
                     OUT=%s
