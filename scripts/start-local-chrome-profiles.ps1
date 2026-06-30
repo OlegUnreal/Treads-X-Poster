@@ -69,7 +69,8 @@ function Start-Forwarder {
     $forwarder = Join-Path $RuntimeDir "proxy-forwarder.py"
     $stdoutLog = Join-Path $RuntimeDir "$ProfileName-proxy.out.log"
     $stderrLog = Join-Path $RuntimeDir "$ProfileName-proxy.err.log"
-    Start-Process -FilePath $python -ArgumentList @($forwarder, $Listen, $Upstream) -WindowStyle Hidden -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
+    $command = "& '$python' '$forwarder' '$Listen' '$Upstream' > '$stdoutLog' 2> '$stderrLog'"
+    Start-Process -FilePath "powershell.exe" -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $command) -WindowStyle Hidden
     Start-Sleep -Seconds 1
 }
 
