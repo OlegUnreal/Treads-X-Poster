@@ -6,6 +6,7 @@ import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.OutputType;
 import org.openqa.selenium.TakesScreenshot;
 import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebDriverException;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeDriverService;
 import org.openqa.selenium.chrome.ChromeOptions;
@@ -39,44 +40,56 @@ public class YoutubePlaybackService {
     private ScheduledFuture<?> stopTask;
     private String currentUrl = "";
     private int currentPercent = 0;
+    private String lastError = "";
 
     public YoutubePlaybackService(AccountConfigService accountConfigService) {
         this.accountConfigService = accountConfigService;
     }
 
     public synchronized Map<String, Object> play(YoutubePlaybackRequest request) throws Exception {
-        String url = normalizeYoutubeUrl(request == null ? null : request.url());
-        int percent = clampPercent(request == null ? null : request.percent());
-        cancelStopTask();
-        if (driver == null) {
-            driver = createDriver();
+        try {
+            String url = normalizeYoutubeUrl(request == null ? null : request.url());
+            int percent = clampPercent(request == null ? null : request.percent());
+            cancelStopTask();
+            if (driver == null) {
+                driver = createDriver();
+            }
+
+            currentUrl = url;
+            currentPercent = percent;
+            lastError = "";
+            driver.get(url);
+            WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(30));
+            wait.until(webDriver -> ((JavascriptExecutor) webDriver)
+                    .executeScript("return Boolean(document.querySelector('video'));")
+                    .equals(Boolean.TRUE));
+
+            double durationSeconds = readDurationSeconds();
+            startVideo(percent);
+            if (percent <= 0) {
+                pauseVideo();
+            } else if (durationSeconds > 0 && percent < 100) {
+                long delayMs = Math.max(1000L, Math.round(durationSeconds * percent * 10.0));
+                stopTask = scheduler.schedule(this::safePause, delayMs, TimeUnit.MILLISECONDS);
+            }
+
+            Map<String, Object> status = new LinkedHashMap<>();
+            status.put("status", "playing");
+            status.put("url", currentUrl);
+            status.put("percent", currentPercent);
+            status.put("durationSeconds", durationSeconds);
+            status.put("browser", accountConfigService.activeAccount().x().browser());
+            status.put("accountId", accountConfigService.activeAccount().id());
+            status.put("lastError", lastError);
+            return status;
+        } catch (Exception ex) {
+            lastError = readableError(ex);
+            log.warn("Could not start YouTube playback: {}", lastError);
+            Map<String, Object> status = status();
+            status.put("status", "error");
+            status.put("lastError", lastError);
+            return status;
         }
-
-        currentUrl = url;
-        currentPercent = percent;
-        driver.get(url);
-        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(30));
-        wait.until(webDriver -> ((JavascriptExecutor) webDriver)
-                .executeScript("return Boolean(document.querySelector('video'));")
-                .equals(Boolean.TRUE));
-
-        double durationSeconds = readDurationSeconds();
-        startVideo(percent);
-        if (percent <= 0) {
-            pauseVideo();
-        } else if (durationSeconds > 0 && percent < 100) {
-            long delayMs = Math.max(1000L, Math.round(durationSeconds * percent * 10.0));
-            stopTask = scheduler.schedule(this::safePause, delayMs, TimeUnit.MILLISECONDS);
-        }
-
-        return Map.of(
-                "status", "playing",
-                "url", currentUrl,
-                "percent", currentPercent,
-                "durationSeconds", durationSeconds,
-                "browser", accountConfigService.activeAccount().x().browser(),
-                "accountId", accountConfigService.activeAccount().id()
-        );
     }
 
     public synchronized Map<String, Object> stop() {
@@ -91,12 +104,13 @@ public class YoutubePlaybackService {
 
     public synchronized Map<String, Object> status() {
         if (driver == null) {
-            return Map.of(
-                    "status", "idle",
-                    "url", currentUrl,
-                    "percent", currentPercent,
-                    "videoPresent", false
-            );
+            Map<String, Object> status = new LinkedHashMap<>();
+            status.put("status", "idle");
+            status.put("url", currentUrl);
+            status.put("percent", currentPercent);
+            status.put("lastError", lastError);
+            status.put("videoPresent", false);
+            return status;
         }
 
         try {
@@ -119,6 +133,7 @@ public class YoutubePlaybackService {
                 status.put("status", "open");
                 status.put("url", currentUrl);
                 status.put("percent", currentPercent);
+                status.put("lastError", lastError);
                 status.put("pageUrl", stringValue(map, "pageUrl"));
                 status.put("title", stringValue(map, "title"));
                 status.put("videoPresent", valueOrDefault(map, "videoPresent", false));
@@ -131,15 +146,17 @@ public class YoutubePlaybackService {
                 return status;
             }
         } catch (Exception ex) {
-            log.warn("Could not read YouTube playback status: {}", ex.getMessage());
+            lastError = readableError(ex);
+            log.warn("Could not read YouTube playback status: {}", lastError);
         }
 
-        return Map.of(
-                "status", "open",
-                "url", currentUrl,
-                "percent", currentPercent,
-                "videoPresent", false
-        );
+        Map<String, Object> fallback = new LinkedHashMap<>();
+        fallback.put("status", "open");
+        fallback.put("url", currentUrl);
+        fallback.put("percent", currentPercent);
+        fallback.put("lastError", lastError);
+        fallback.put("videoPresent", false);
+        return fallback;
     }
 
     public synchronized byte[] screenshot() {
@@ -150,6 +167,17 @@ public class YoutubePlaybackService {
             throw new IllegalStateException("Current browser does not support screenshots.");
         }
         return screenshotDriver.getScreenshotAs(OutputType.BYTES);
+    }
+
+    private String readableError(Exception ex) {
+        String message = ex.getMessage();
+        if (message == null || message.isBlank()) {
+            message = ex.getClass().getSimpleName();
+        }
+        if (ex instanceof WebDriverException && message.contains("\n")) {
+            message = message.substring(0, message.indexOf('\n'));
+        }
+        return message.length() > 600 ? message.substring(0, 600) : message;
     }
 
     private String stringValue(Map<?, ?> map, String key) {

@@ -183,8 +183,13 @@ export class PlaybackPageComponent {
     this.dashboardService.playYoutube({ url: cleanUrl, percent: this.normalizedPercent() }).subscribe({
       next: (status) => {
         this.status = status;
-        this.message = `Playback started. Target: ${status.percent ?? this.percent}%.`;
-        this.error = false;
+        if (status.status === 'error') {
+          this.message = status.lastError || 'Could not start playback.';
+          this.error = true;
+        } else {
+          this.message = `Playback started. Target: ${status.percent ?? this.percent}%.`;
+          this.error = false;
+        }
         this.busy = false;
       },
       error: (error) => {
@@ -215,8 +220,8 @@ export class PlaybackPageComponent {
   protected refreshStatus(): void {
     this.dashboardService.getYoutubeStatus().subscribe((status) => {
       this.status = status;
-      this.message = 'Status refreshed.';
-      this.error = false;
+      this.message = status.lastError || 'Status refreshed.';
+      this.error = status.status === 'error' || Boolean(status.lastError);
     });
   }
 

@@ -126,6 +126,7 @@ export interface YoutubePlaybackRequest {
 
 export interface YoutubePlaybackStatus {
   status: string;
+  lastError?: string;
   url?: string;
   pageUrl?: string;
   title?: string;
