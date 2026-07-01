@@ -103,7 +103,7 @@ echo "Starting $PROFILE_NAME through $PROXY"
 
 should_use_incognito() {
   local value="$1"
-  if [[ "${INCOGNITO_MODE:-true}" == "true" ]]; then
+  if [[ "${INCOGNITO_MODE:-false}" == "true" ]]; then
     return 0
   fi
   for domain in ${INCOGNITO_DOMAINS:-}; do

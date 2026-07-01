@@ -234,7 +234,7 @@ function Should-UseIncognito {
         [hashtable]$Env,
         [string]$LaunchUrl
     )
-    $mode = "true"
+    $mode = "false"
     if ($Env.ContainsKey("INCOGNITO_MODE")) {
         $mode = $Env["INCOGNITO_MODE"]
     }
