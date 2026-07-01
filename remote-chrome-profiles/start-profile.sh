@@ -103,8 +103,16 @@ fi
 
 echo "Starting $PROFILE_NAME through $PROXY"
 
+is_youtube_url() {
+  local value="$1"
+  [[ "$value" == *"youtube.com"* || "$value" == *"youtu.be"* ]]
+}
+
 should_use_incognito() {
   local value="$1"
+  if is_youtube_url "$value"; then
+    return 1
+  fi
   if [[ "${INCOGNITO_MODE:-false}" == "true" ]]; then
     return 0
   fi

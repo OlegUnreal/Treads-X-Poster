@@ -203,8 +203,13 @@ def read_existing_settings(env_path: Path) -> dict[str, str]:
         key = key.strip()
         if key in PROFILE_SETTINGS_KEYS:
             settings[key] = unquote(value.strip())
-    if settings.get("INCOGNITO_DOMAINS") == "youtube.com youtu.be":
-        settings["INCOGNITO_DOMAINS"] = ""
+    if settings.get("INCOGNITO_DOMAINS"):
+        domains = [
+            domain
+            for domain in settings["INCOGNITO_DOMAINS"].split()
+            if domain not in {"youtube.com", "youtu.be"}
+        ]
+        settings["INCOGNITO_DOMAINS"] = " ".join(domains)
     return settings
 
 

@@ -21,7 +21,7 @@ const bundledJava = path.join(resourcesRoot, 'runtime', 'java', 'bin', process.p
 const bundledPython = path.join(resourcesRoot, 'runtime', 'python', process.platform === 'win32' ? 'python.exe' : 'python');
 const backendPort = Number(process.env.BTS_BACKEND_PORT || 8081);
 const frontendPort = Number(process.env.BTS_DESKTOP_PORT || 4311);
-const profilesEnvSyncUrl = process.env.BTS_PROFILES_ENV_SYNC_URL || 'http://167.233.93.6/api/actions/chrome-profiles/profiles-env';
+const profilesEnvSyncUrl = process.env.BTS_PROFILES_ENV_SYNC_URL || 'http://167.233.93.6:4301/api/actions/chrome-profiles/profiles-env';
 const profilesEnvSyncToken = process.env.BTS_PROFILES_ENV_SYNC_TOKEN || '';
 const profilesRuntimeDir = path.join(app.getPath('home'), 'chrome-proxy-profiles');
 const profilesEnvFile = path.join(profilesRuntimeDir, 'profiles.env');

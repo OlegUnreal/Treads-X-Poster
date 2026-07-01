@@ -236,6 +236,9 @@ function Should-UseIncognito {
         [hashtable]$Env,
         [string]$LaunchUrl
     )
+    if (Test-IsYouTubeUrl -Value $LaunchUrl) {
+        return $false
+    }
     $mode = "false"
     if ($Env.ContainsKey("INCOGNITO_MODE")) {
         $mode = $Env["INCOGNITO_MODE"]
