@@ -82,11 +82,13 @@ public class ChromeProfileLauncherService {
         int maxDelay = clampDelay(request == null ? null : request.maxDelaySeconds(), minDelay, 3600);
         List<Map<String, String>> allProfiles = readProfiles();
         List<String> selectedProfiles = selectedProfiles(request == null ? null : request.profileNames(), allProfiles);
-        int maxProfiles = selectedProfiles.isEmpty()
-                ? Math.max(1, allProfiles.stream()
+        int requestedCount = request == null ? 1 : request.profileCount() == null ? 1 : request.profileCount();
+        int availableProfiles = allProfiles.stream()
                 .filter(profile -> !profile.getOrDefault("proxy", "").isBlank() || !profile.getOrDefault("upstreamProxy", "").isBlank())
                 .toList()
-                .size())
+                .size();
+        int maxProfiles = selectedProfiles.isEmpty()
+                ? Math.max(1, availableProfiles == 0 ? requestedCount : availableProfiles)
                 : selectedProfiles.size();
         int profileCount = clampProfileCount(request == null ? null : request.profileCount(), maxProfiles);
         String launchUrl = normalizeLaunchUrl(request == null ? null : request.url());
