@@ -205,6 +205,8 @@ import { DashboardService } from '../services/dashboard.service';
       background: #e9f7ef;
       color: #146c43;
       font: 700 13px/1.35 "Segoe UI", sans-serif;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
     }
     .feedback.error { background: #fff1f2; color: #be123c; }
     .check-list { display: grid; gap: 6px; margin: 12px 0 0; }
@@ -284,6 +286,7 @@ export class PlaybackPageComponent implements OnInit {
         this.message = this.errorMessage(error, 'Could not open Chrome profiles.');
         this.error = true;
         this.busy = false;
+        this.loadProfilesDiagnostics('message', this.message);
       }
     });
   }
@@ -333,6 +336,7 @@ export class PlaybackPageComponent implements OnInit {
         this.profilesMessage = this.errorMessage(error, 'Could not start Chrome profiles.');
         this.profilesError = true;
         this.profilesBusy = false;
+        this.loadProfilesDiagnostics('profilesMessage', this.profilesMessage);
       }
     });
   }
@@ -358,6 +362,7 @@ export class PlaybackPageComponent implements OnInit {
         this.checkMessage = this.errorMessage(error, 'Could not check URL.');
         this.checkError = true;
         this.checkBusy = false;
+        this.loadProfilesDiagnostics('checkMessage', this.checkMessage);
       }
     });
   }
@@ -397,6 +402,7 @@ export class PlaybackPageComponent implements OnInit {
         this.message = this.errorMessage(error, 'Could not open checked profiles.');
         this.error = true;
         this.busy = false;
+        this.loadProfilesDiagnostics('message', this.message);
       }
     });
   }
@@ -424,6 +430,7 @@ export class PlaybackPageComponent implements OnInit {
         this.profilesMessage = this.errorMessage(error, `Could not open ${profileName}.`);
         this.profilesError = true;
         this.busyProfileName = '';
+        this.loadProfilesDiagnostics('profilesMessage', this.profilesMessage);
       }
     });
   }
@@ -576,12 +583,57 @@ export class PlaybackPageComponent implements OnInit {
       }
     }
     if (candidate?.message?.trim()) {
+      if (candidate.message.startsWith('Http failure response')) {
+        if (candidate.status) {
+          return `${fallback} (${candidate.status}${candidate.statusText ? ' ' + candidate.statusText : ''})`;
+        }
+        return fallback;
+      }
       if (candidate.status && candidate.statusText) {
         return `${candidate.message}: ${candidate.status} ${candidate.statusText}`;
       }
       return candidate.message;
     }
     return fallback;
+  }
+
+  private loadProfilesDiagnostics(target: 'message' | 'profilesMessage' | 'checkMessage', baseMessage: string): void {
+    this.dashboardService.getChromeProfilesStatus().subscribe({
+      next: (status) => {
+        this.profilesStatus = status;
+        const diagnostics = this.profileDiagnostics(status);
+        this.setDiagnosticMessage(target, diagnostics ? `${baseMessage}\n\n${diagnostics}` : baseMessage);
+      },
+      error: () => this.setDiagnosticMessage(target, baseMessage)
+    });
+  }
+
+  private setDiagnosticMessage(target: 'message' | 'profilesMessage' | 'checkMessage', value: string): void {
+    if (target === 'message') {
+      this.message = value;
+      this.error = true;
+      return;
+    }
+    if (target === 'profilesMessage') {
+      this.profilesMessage = value;
+      this.profilesError = true;
+      return;
+    }
+    this.checkMessage = value;
+    this.checkError = true;
+  }
+
+  private profileDiagnostics(status: ChromeProfilesStatus): string {
+    const lines = [
+      'Profile launcher diagnostics:',
+      `Runtime directory: ${status.directory || 'unknown'} (${status.directoryExists ? 'exists' : 'missing'})`,
+      `profiles.env: ${status.envFile || 'unknown'} (${status.envFileExists ? 'exists' : 'missing'})`,
+      `Launcher script: ${status.script || 'unknown'} (${status.scriptExists ? 'exists' : 'missing'})`,
+      `Profile script: ${status.startProfileScript || 'unknown'} (${status.startProfileScriptExists ? 'exists' : 'missing'})`
+    ];
+    const logTail = (status.logTail || '').trim();
+    lines.push(logTail ? `Last launcher log:\n${logTail}` : 'Last launcher log: empty');
+    return lines.join('\n');
   }
 
   private isGenericServerError(message: string): boolean {
