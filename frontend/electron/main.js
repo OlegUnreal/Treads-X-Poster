@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell } = require('electron');
+const { app, BrowserWindow, dialog, shell } = require('electron');
 const childProcess = require('child_process');
 const fs = require('fs');
 const http = require('http');
@@ -25,6 +25,7 @@ const profilesEnvSyncUrl = process.env.BTS_PROFILES_ENV_SYNC_URL || 'http://167.
 const profilesEnvSyncToken = process.env.BTS_PROFILES_ENV_SYNC_TOKEN || '';
 const profilesRuntimeDir = path.join(app.getPath('home'), 'chrome-proxy-profiles');
 const profilesEnvFile = path.join(profilesRuntimeDir, 'profiles.env');
+const appRuntimeRoot = path.join(profilesRuntimeDir, 'app');
 
 let backendProcess = null;
 let staticServer = null;
@@ -134,7 +135,7 @@ function startBackend() {
 
   const env = {
     ...process.env,
-    APP_REPO_DIR: resourcesRoot,
+    APP_REPO_DIR: appRuntimeRoot,
     APP_PYTHON_EXE: fs.existsSync(bundledPython) ? bundledPython : (process.env.APP_PYTHON_EXE || ''),
     SERVER_PORT: String(backendPort),
     PATH: [...runtimePathEntries, process.env.PATH || ''].filter(Boolean).join(path.delimiter),
@@ -150,6 +151,50 @@ function startBackend() {
     stdio: 'ignore',
     windowsHide: true
   });
+}
+
+function copyRequiredFile(source, destination) {
+  if (!fs.existsSync(source)) {
+    throw new Error(`Bundled runtime file is missing: ${source}`);
+  }
+  fs.mkdirSync(path.dirname(destination), { recursive: true });
+  fs.copyFileSync(source, destination);
+}
+
+function copyOptionalFile(source, destination) {
+  if (!fs.existsSync(source)) {
+    return;
+  }
+  fs.mkdirSync(path.dirname(destination), { recursive: true });
+  fs.copyFileSync(source, destination);
+}
+
+function prepareAppRuntimeFiles() {
+  const scriptsSource = path.join(resourcesRoot, 'scripts');
+  const remoteProfilesSource = path.join(resourcesRoot, 'remote-chrome-profiles');
+  const scriptsTarget = path.join(appRuntimeRoot, 'scripts');
+  const remoteProfilesTarget = path.join(appRuntimeRoot, 'remote-chrome-profiles');
+
+  copyRequiredFile(
+    path.join(scriptsSource, 'start-local-chrome-profiles.ps1'),
+    path.join(scriptsTarget, 'start-local-chrome-profiles.ps1')
+  );
+  copyRequiredFile(
+    path.join(scriptsSource, 'start-profiles.ps1'),
+    path.join(scriptsTarget, 'start-profiles.ps1')
+  );
+  copyRequiredFile(
+    path.join(remoteProfilesSource, 'proxy-forwarder.py'),
+    path.join(remoteProfilesTarget, 'proxy-forwarder.py')
+  );
+  copyOptionalFile(
+    path.join(remoteProfilesSource, 'import-webshare-proxies.py'),
+    path.join(remoteProfilesTarget, 'import-webshare-proxies.py')
+  );
+  copyOptionalFile(
+    path.join(remoteProfilesSource, 'profiles.env.example'),
+    path.join(remoteProfilesTarget, 'profiles.env.example')
+  );
 }
 
 function requestText(url, headers = {}) {
@@ -288,6 +333,7 @@ function stopProfilesEnvWatcher() {
 async function createWindow() {
   await syncProfilesEnv();
   startProfilesEnvWatcher();
+  prepareAppRuntimeFiles();
   startBackend();
   await Promise.all([waitForPort(backendPort), startStaticServer()]);
 
@@ -310,7 +356,10 @@ async function createWindow() {
   await win.loadURL(`http://127.0.0.1:${frontendPort}/playback?desktop=1`);
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(createWindow).catch((error) => {
+  dialog.showErrorBox('Behind The Smile Playback failed to start', error?.message || String(error));
+  app.quit();
+});
 
 app.on('window-all-closed', () => {
   stopProfilesEnvWatcher();
