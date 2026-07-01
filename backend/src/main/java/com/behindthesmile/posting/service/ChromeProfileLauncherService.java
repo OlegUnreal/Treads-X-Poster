@@ -105,6 +105,7 @@ public class ChromeProfileLauncherService {
         command.add(startScript.toString());
         command.add("-Count");
         command.add(String.valueOf(profileCount));
+        command.add("-SkipWebShareSync");
         if (!launchUrl.isBlank()) {
             command.add("-Url");
             command.add(launchUrl);

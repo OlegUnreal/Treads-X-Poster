@@ -74,6 +74,20 @@
           "proxy-forwarder.py",
           "profiles.env.example"
         ]
+      },
+      {
+        "from": "runtime/java",
+        "to": "runtime/java",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "runtime/python",
+        "to": "runtime/python",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "win": {

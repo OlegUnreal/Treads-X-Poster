@@ -38,6 +38,13 @@ function Read-EnvFile {
 }
 
 function Get-PythonPath {
+    if ($env:APP_PYTHON_EXE -and (Test-Path -LiteralPath $env:APP_PYTHON_EXE)) {
+        $versionOutput = & $env:APP_PYTHON_EXE --version 2>&1
+        if ($LASTEXITCODE -eq 0 -and ($versionOutput -join " ") -match "Python\s+3\.") {
+            return $env:APP_PYTHON_EXE
+        }
+    }
+
     $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
     $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
     foreach ($pathPart in (($machinePath + ";" + $userPath) -split ";")) {

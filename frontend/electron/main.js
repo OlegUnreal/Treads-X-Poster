@@ -17,6 +17,8 @@ const frontendDist = app.isPackaged
 const frontendRoot = !app.isPackaged && fs.existsSync(path.join(frontendDist, 'browser'))
   ? path.join(frontendDist, 'browser')
   : frontendDist;
+const bundledJava = path.join(resourcesRoot, 'runtime', 'java', 'bin', process.platform === 'win32' ? 'java.exe' : 'java');
+const bundledPython = path.join(resourcesRoot, 'runtime', 'python', process.platform === 'win32' ? 'python.exe' : 'python');
 const backendPort = Number(process.env.BTS_BACKEND_PORT || 8081);
 const frontendPort = Number(process.env.BTS_DESKTOP_PORT || 4311);
 const profilesEnvSyncUrl = process.env.BTS_PROFILES_ENV_SYNC_URL || 'http://167.233.93.6/api/actions/chrome-profiles/profiles-env';
@@ -121,18 +123,28 @@ function startBackend() {
   if (!fs.existsSync(backendJar)) {
     throw new Error(`Backend jar is missing: ${backendJar}`);
   }
+  const javaExecutable = fs.existsSync(bundledJava) ? bundledJava : 'java';
+  const runtimePathEntries = [];
+  if (fs.existsSync(path.dirname(bundledJava))) {
+    runtimePathEntries.push(path.dirname(bundledJava));
+  }
+  if (fs.existsSync(path.dirname(bundledPython))) {
+    runtimePathEntries.push(path.dirname(bundledPython));
+  }
 
   const env = {
     ...process.env,
     APP_REPO_DIR: resourcesRoot,
+    APP_PYTHON_EXE: fs.existsSync(bundledPython) ? bundledPython : (process.env.APP_PYTHON_EXE || ''),
     SERVER_PORT: String(backendPort),
+    PATH: [...runtimePathEntries, process.env.PATH || ''].filter(Boolean).join(path.delimiter),
     DATA_DIR: path.join(app.getPath('userData'), 'data'),
     MEDIA_DIR: path.join(app.getPath('userData'), 'data', 'media'),
     CONTENT_PLAN_FILE: path.join(resourcesRoot, 'backend', 'config', 'content-plan.json'),
     PUBLIC_BASE_URL: `http://127.0.0.1:${frontendPort}`
   };
 
-  backendProcess = childProcess.spawn('java', ['-jar', backendJar], {
+  backendProcess = childProcess.spawn(javaExecutable, ['-jar', backendJar], {
     cwd: backendDir,
     env,
     stdio: 'ignore',

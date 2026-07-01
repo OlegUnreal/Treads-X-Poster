@@ -6,4 +6,5 @@ data/
 backend/target/
 frontend/dist/
 frontend/release/
+frontend/runtime/
 frontend/.angular/
