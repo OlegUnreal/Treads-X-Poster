@@ -200,16 +200,17 @@ function stopOldWindowsProcesses() {
   }
   const script = `
 $ErrorActionPreference = 'SilentlyContinue'
+$currentAppPid = ${process.pid}
 $ports = @(${backendPort}, ${frontendPort}) | Select-Object -Unique
 foreach ($port in $ports) {
   Get-NetTCPConnection -LocalPort $port -State Listen |
-    Where-Object { $_.OwningProcess -and $_.OwningProcess -ne $PID } |
+    Where-Object { $_.OwningProcess -and $_.OwningProcess -ne $PID -and $_.OwningProcess -ne $currentAppPid } |
     ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
   netstat -ano -p tcp |
     Select-String ":$port\\s+.*LISTENING\\s+(\\d+)$" |
     ForEach-Object {
       $processId = [int]$_.Matches[0].Groups[1].Value
-      if ($processId -and $processId -ne $PID) {
+      if ($processId -and $processId -ne $PID -and $processId -ne $currentAppPid) {
         Stop-Process -Id $processId -Force
       }
     }
@@ -218,12 +219,12 @@ $pidFile = '${backendPidFile.replace(/'/g, "''")}'
 if (Test-Path -LiteralPath $pidFile) {
   $oldPid = 0
   [void][int]::TryParse((Get-Content -LiteralPath $pidFile -Raw).Trim(), [ref]$oldPid)
-  if ($oldPid -gt 0 -and $oldPid -ne $PID) {
+  if ($oldPid -gt 0 -and $oldPid -ne $PID -and $oldPid -ne $currentAppPid) {
     Stop-Process -Id $oldPid -Force
   }
 }
 Get-CimInstance Win32_Process -Filter "name = 'java.exe' or name = 'javaw.exe'" |
-  Where-Object { $_.ProcessId -ne $PID -and ($_.CommandLine -match '[\\\\/]backend[\\\\/]app\\.jar' -or $_.CommandLine -match 'social-posting.*\\.jar') } |
+  Where-Object { $_.ProcessId -ne $PID -and $_.ProcessId -ne $currentAppPid -and ($_.CommandLine -match '[\\\\/]backend[\\\\/]app\\.jar' -or $_.CommandLine -match 'social-posting.*\\.jar') } |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 Start-Sleep -Milliseconds 700
 `;
@@ -439,7 +440,8 @@ async function createWindow() {
   await syncProfilesEnv();
   startProfilesEnvWatcher();
   prepareAppRuntimeFiles();
-  await Promise.all([startVerifiedBackend(), startStaticServer()]);
+  await startVerifiedBackend();
+  await startStaticServer();
 
   const win = new BrowserWindow({
     width: 1120,
