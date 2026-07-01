@@ -297,6 +297,11 @@ $selectedProfiles = $profileNames | Select-Object -First $Count
 
 $DelayFrom = [Math]::Max(0, $DelayFrom)
 $DelayTo = [Math]::Max($DelayFrom, $DelayTo)
+if ($SyncWebShareProxies -and $selectedProfiles.Count -gt 1 -and $DelayTo -eq 0) {
+    $DelayFrom = 30
+    $DelayTo = 120
+    Write-Host "Using default WebShare launch stagger: $DelayFrom-$DelayTo seconds."
+}
 $windowSize = "1000,760"
 if ($profileEnv.ContainsKey("WINDOW_SIZE")) {
     $windowSize = $profileEnv["WINDOW_SIZE"]

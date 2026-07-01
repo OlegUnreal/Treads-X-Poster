@@ -113,7 +113,7 @@ python .\remote-chrome-profiles\import-webshare-proxies.py "$env:USERPROFILE\chr
 The local launcher can also refresh from Doppler/WebShare before starting profiles:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\start-local-chrome-profiles.ps1 -SyncWebShareProxies -Count 10 -Url profile-home
+powershell -ExecutionPolicy Bypass -File .\scripts\start-local-chrome-profiles.ps1 -SyncWebShareProxies -Count 3 -DelayFrom 45 -DelayTo 180 -Url profile-home
 ```
 
 Start one or more local profiles:

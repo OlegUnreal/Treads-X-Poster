@@ -68,10 +68,10 @@ WEBSHARE_API_TOKEN=... python3 import-webshare-proxies.py --from-webshare-api --
 
 When `WEBSHARE_API_TOKEN` is available from Doppler, production deploy uses the API. If no API token is configured but `webshare-proxies.txt` exists, deploy uses the file fallback.
 
-Avoid launching 100 Chrome windows at once. Start a smaller batch:
+Avoid launching 100 Chrome windows at once. For video sites, start a small batch and use a wide stagger:
 
 ```bash
-PROFILE_LIMIT=10 STAGGER_MIN_SECONDS=15 STAGGER_MAX_SECONDS=60 ./start-all.sh
+PROFILE_LIMIT=3 STAGGER_MIN_SECONDS=45 STAGGER_MAX_SECONDS=180 ./start-all.sh
 ```
 
 Each profile uses a separate user data directory under:
