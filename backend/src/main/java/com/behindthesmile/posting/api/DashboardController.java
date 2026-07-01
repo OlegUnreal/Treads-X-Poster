@@ -228,13 +228,31 @@ public class DashboardController {
     public ResponseEntity<String> chromeProfilesEnv(
             @RequestHeader(value = "X-Profiles-Env-Token", required = false) String token
     ) throws Exception {
-        String expectedToken = System.getenv("PROFILES_ENV_DOWNLOAD_TOKEN");
-        if (expectedToken != null && !expectedToken.isBlank() && !expectedToken.equals(token)) {
+        if (!profilesEnvTokenAllowed(token, "PROFILES_ENV_DOWNLOAD_TOKEN")) {
             return ResponseEntity.status(403).body("Forbidden");
         }
         return ResponseEntity.ok()
                 .contentType(MediaType.TEXT_PLAIN)
                 .body(chromeProfileLauncherService.profilesEnvContent());
+    }
+
+    @PutMapping(value = "/actions/chrome-profiles/profiles-env", consumes = MediaType.TEXT_PLAIN_VALUE)
+    public ResponseEntity<Map<String, Object>> updateChromeProfilesEnv(
+            @RequestHeader(value = "X-Profiles-Env-Token", required = false) String token,
+            @RequestBody String content
+    ) throws Exception {
+        if (!profilesEnvTokenAllowed(token, "PROFILES_ENV_UPLOAD_TOKEN")) {
+            return ResponseEntity.status(403).body(Map.of("error", "Forbidden"));
+        }
+        return ResponseEntity.ok(chromeProfileLauncherService.updateProfilesEnvContent(content));
+    }
+
+    private boolean profilesEnvTokenAllowed(String token, String envName) {
+        String expectedToken = System.getenv(envName);
+        if (expectedToken == null || expectedToken.isBlank()) {
+            expectedToken = System.getenv("PROFILES_ENV_SYNC_TOKEN");
+        }
+        return expectedToken == null || expectedToken.isBlank() || expectedToken.equals(token);
     }
 
     @PostMapping("/actions/chrome-profiles/check-url")

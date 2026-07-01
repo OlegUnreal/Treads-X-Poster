@@ -7,8 +7,10 @@ import org.springframework.stereotype.Service;
 import java.io.BufferedReader;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -221,6 +223,31 @@ public class ChromeProfileLauncherService {
             throw new IllegalStateException("profiles.env is missing: " + envFile);
         }
         return Files.readString(envFile, StandardCharsets.UTF_8);
+    }
+
+    public Map<String, Object> updateProfilesEnvContent(String content) throws Exception {
+        if (content == null || !content.contains("PROFILE_NAMES=")) {
+            throw new IllegalArgumentException("profiles.env must contain PROFILE_NAMES.");
+        }
+        if (!content.contains("UPSTREAM_PROXY_") && !content.contains("PROXY_")) {
+            throw new IllegalArgumentException("profiles.env must contain proxy settings.");
+        }
+
+        Path envFile = envFile();
+        Files.createDirectories(envFile.getParent());
+        Path tempFile = envFile.resolveSibling(envFile.getFileName() + ".tmp");
+        Files.writeString(tempFile, content.replace("\r\n", "\n").replace("\r", "\n"), StandardCharsets.UTF_8);
+        try {
+            Files.move(tempFile, envFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException ex) {
+            Files.move(tempFile, envFile, StandardCopyOption.REPLACE_EXISTING);
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("message", "profiles.env updated");
+        result.put("envFile", envFile.toString());
+        result.put("profiles", readProfiles());
+        return result;
     }
 
     private int clampProfileCount(Integer value, int maxProfiles) {

@@ -21,9 +21,15 @@ const backendPort = Number(process.env.BTS_BACKEND_PORT || 8081);
 const frontendPort = Number(process.env.BTS_DESKTOP_PORT || 4311);
 const profilesEnvSyncUrl = process.env.BTS_PROFILES_ENV_SYNC_URL || 'http://167.233.93.6/api/actions/chrome-profiles/profiles-env';
 const profilesEnvSyncToken = process.env.BTS_PROFILES_ENV_SYNC_TOKEN || '';
+const profilesRuntimeDir = path.join(app.getPath('home'), 'chrome-proxy-profiles');
+const profilesEnvFile = path.join(profilesRuntimeDir, 'profiles.env');
 
 let backendProcess = null;
 let staticServer = null;
+let profilesEnvWatcher = null;
+let profilesEnvUploadTimer = null;
+let profilesEnvLastUploaded = '';
+let profilesEnvSyncing = false;
 
 function waitForPort(port, timeoutMs = 60000) {
   const startedAt = Date.now();
@@ -156,6 +162,37 @@ function requestText(url, headers = {}) {
   });
 }
 
+function sendText(url, content, headers = {}) {
+  const client = url.startsWith('https://') ? require('https') : require('http');
+  return new Promise((resolve, reject) => {
+    const request = client.request(url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Content-Length': Buffer.byteLength(content, 'utf8'),
+        ...headers
+      }
+    }, (response) => {
+      const chunks = [];
+      response.on('data', (chunk) => chunks.push(chunk));
+      response.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8');
+        if ((response.statusCode || 0) < 200 || (response.statusCode || 0) >= 300) {
+          reject(new Error(`profiles.env upload returned HTTP ${response.statusCode}: ${body.slice(0, 160)}`));
+          return;
+        }
+        resolve(body);
+      });
+    });
+    request.setTimeout(20000, () => {
+      request.destroy(new Error('profiles.env upload timed out'));
+    });
+    request.on('error', reject);
+    request.write(content);
+    request.end();
+  });
+}
+
 function validateProfilesEnv(content) {
   if (!content || !content.includes('PROFILE_NAMES=')) {
     throw new Error('Downloaded profiles.env does not contain PROFILE_NAMES');
@@ -169,24 +206,76 @@ async function syncProfilesEnv() {
   if (!profilesEnvSyncUrl) {
     return;
   }
-  const runtimeDir = path.join(app.getPath('home'), 'chrome-proxy-profiles');
-  const envFile = path.join(runtimeDir, 'profiles.env');
   const headers = profilesEnvSyncToken ? { 'X-Profiles-Env-Token': profilesEnvSyncToken } : {};
   try {
     const content = await requestText(profilesEnvSyncUrl, headers);
     validateProfilesEnv(content);
-    fs.mkdirSync(runtimeDir, { recursive: true });
-    fs.writeFileSync(envFile, content.replace(/\r?\n/g, '\r\n'), 'utf8');
+    profilesEnvSyncing = true;
+    fs.mkdirSync(profilesRuntimeDir, { recursive: true });
+    fs.writeFileSync(profilesEnvFile, content.replace(/\r?\n/g, '\r\n'), 'utf8');
+    profilesEnvLastUploaded = fs.readFileSync(profilesEnvFile, 'utf8');
   } catch (error) {
-    if (!fs.existsSync(envFile)) {
+    if (!fs.existsSync(profilesEnvFile)) {
       throw error;
     }
     console.warn(`profiles.env sync failed, using existing local copy: ${error.message}`);
+  } finally {
+    setTimeout(() => {
+      profilesEnvSyncing = false;
+    }, 1000);
+  }
+}
+
+async function uploadProfilesEnv() {
+  if (!profilesEnvSyncUrl || !fs.existsSync(profilesEnvFile)) {
+    return;
+  }
+  try {
+    const content = fs.readFileSync(profilesEnvFile, 'utf8');
+    validateProfilesEnv(content);
+    if (content === profilesEnvLastUploaded) {
+      return;
+    }
+    const headers = profilesEnvSyncToken ? { 'X-Profiles-Env-Token': profilesEnvSyncToken } : {};
+    await sendText(profilesEnvSyncUrl, content, headers);
+    profilesEnvLastUploaded = content;
+  } catch (error) {
+    console.warn(`profiles.env upload failed: ${error.message}`);
+  }
+}
+
+function startProfilesEnvWatcher() {
+  if (!profilesEnvSyncUrl || profilesEnvWatcher || !fs.existsSync(profilesEnvFile)) {
+    return;
+  }
+  profilesEnvLastUploaded = fs.readFileSync(profilesEnvFile, 'utf8');
+  profilesEnvWatcher = fs.watch(profilesEnvFile, () => {
+    if (profilesEnvSyncing) {
+      return;
+    }
+    clearTimeout(profilesEnvUploadTimer);
+    profilesEnvUploadTimer = setTimeout(uploadProfilesEnv, 2500);
+  });
+  profilesEnvWatcher.on('error', (error) => {
+    console.warn(`profiles.env watcher failed: ${error.message}`);
+    profilesEnvWatcher = null;
+  });
+}
+
+function stopProfilesEnvWatcher() {
+  if (profilesEnvUploadTimer) {
+    clearTimeout(profilesEnvUploadTimer);
+    profilesEnvUploadTimer = null;
+  }
+  if (profilesEnvWatcher) {
+    profilesEnvWatcher.close();
+    profilesEnvWatcher = null;
   }
 }
 
 async function createWindow() {
   await syncProfilesEnv();
+  startProfilesEnvWatcher();
   startBackend();
   await Promise.all([waitForPort(backendPort), startStaticServer()]);
 
@@ -212,6 +301,7 @@ async function createWindow() {
 app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {
+  stopProfilesEnvWatcher();
   if (backendProcess) {
     backendProcess.kill();
     backendProcess = null;
