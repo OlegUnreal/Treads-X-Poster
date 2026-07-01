@@ -5,4 +5,5 @@ data/
 *.log
 backend/target/
 frontend/dist/
+frontend/release/
 frontend/.angular/

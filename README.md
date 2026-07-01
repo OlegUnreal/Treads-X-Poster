@@ -96,6 +96,20 @@ The Angular dev server proxies `/api` requests to `http://localhost:8080`, so st
 
 Use this when you want the Playback UI as a local Windows application instead of the hosted admin page. It builds the Spring Boot backend, builds the Angular UI, starts the backend on `127.0.0.1:8081`, serves the UI locally, and opens the Playback screen in Electron.
 
+Build the `.exe`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\package-windows-app.ps1
+```
+
+Run the generated app:
+
+```powershell
+.\frontend\release\BehindTheSmilePlayback.exe
+```
+
+Development launch without packaging:
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\start-windows-app.ps1
 ```

@@ -2,11 +2,13 @@
   "name": "behind-the-smile-admin",
   "version": "0.1.0",
   "private": true,
+  "main": "electron/main.js",
   "scripts": {
     "start": "ng serve --host 0.0.0.0 --port 4200",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
-    "desktop": "electron electron/main.js"
+    "desktop": "electron electron/main.js",
+    "package:win": "electron-builder --win portable"
   },
   "dependencies": {
     "@angular/animations": "^18.2.0",
@@ -27,6 +29,60 @@
     "@angular/compiler-cli": "^18.2.0",
     "@types/node": "^22.10.1",
     "electron": "^31.7.7",
+    "electron-builder": "^24.13.3",
     "typescript": "^5.5.4"
+  },
+  "build": {
+    "appId": "com.behindthesmile.playback",
+    "productName": "Behind The Smile Playback",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "dist/behind-the-smile-admin/browser",
+        "to": "frontend",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "../backend/target/app.jar",
+        "to": "backend/app.jar"
+      },
+      {
+        "from": "../backend/config/content-plan.json",
+        "to": "backend/config/content-plan.json"
+      },
+      {
+        "from": "../scripts",
+        "to": "scripts",
+        "filter": [
+          "start-local-chrome-profiles.ps1",
+          "start-profiles.ps1"
+        ]
+      },
+      {
+        "from": "../remote-chrome-profiles",
+        "to": "remote-chrome-profiles",
+        "filter": [
+          "import-webshare-proxies.py",
+          "proxy-forwarder.py",
+          "profiles.env.example"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ]
+    },
+    "portable": {
+      "artifactName": "BehindTheSmilePlayback.exe"
+    }
   }
 }

@@ -6,10 +6,15 @@ const net = require('net');
 const path = require('path');
 
 const repoRoot = path.resolve(__dirname, '..', '..');
-const backendDir = path.join(repoRoot, 'backend');
-const backendJar = path.join(backendDir, 'target', 'app.jar');
-const frontendDist = path.join(__dirname, '..', 'dist', 'behind-the-smile-admin');
-const frontendRoot = fs.existsSync(path.join(frontendDist, 'browser'))
+const resourcesRoot = app.isPackaged ? process.resourcesPath : repoRoot;
+const backendDir = app.isPackaged ? path.join(resourcesRoot, 'backend') : path.join(repoRoot, 'backend');
+const backendJar = app.isPackaged
+  ? path.join(resourcesRoot, 'backend', 'app.jar')
+  : path.join(backendDir, 'target', 'app.jar');
+const frontendDist = app.isPackaged
+  ? path.join(resourcesRoot, 'frontend')
+  : path.join(__dirname, '..', 'dist', 'behind-the-smile-admin');
+const frontendRoot = !app.isPackaged && fs.existsSync(path.join(frontendDist, 'browser'))
   ? path.join(frontendDist, 'browser')
   : frontendDist;
 const backendPort = Number(process.env.BTS_BACKEND_PORT || 8081);
@@ -111,11 +116,11 @@ function startBackend() {
 
   const env = {
     ...process.env,
-    APP_REPO_DIR: repoRoot,
+    APP_REPO_DIR: resourcesRoot,
     SERVER_PORT: String(backendPort),
     DATA_DIR: path.join(app.getPath('userData'), 'data'),
     MEDIA_DIR: path.join(app.getPath('userData'), 'data', 'media'),
-    CONTENT_PLAN_FILE: path.join(repoRoot, 'backend', 'config', 'content-plan.json'),
+    CONTENT_PLAN_FILE: path.join(resourcesRoot, 'backend', 'config', 'content-plan.json'),
     PUBLIC_BASE_URL: `http://127.0.0.1:${frontendPort}`
   };
 
