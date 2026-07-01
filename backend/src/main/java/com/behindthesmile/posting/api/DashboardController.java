@@ -260,6 +260,14 @@ public class DashboardController {
         return chromeProfileLauncherService.checkUrl(request);
     }
 
+    @PutMapping("/actions/chrome-profiles/{profileName}/login-status")
+    public Map<String, Object> updateChromeProfileLoginStatus(
+            @PathVariable String profileName,
+            @RequestBody ChromeProfileLoginStatusRequest request
+    ) throws Exception {
+        return chromeProfileLauncherService.updateLoginStatus(profileName, request);
+    }
+
     @PostMapping("/actions/attach-open-images")
     public ActionResult attachOpenImages() {
         return socialPostingService.attachImagesToReadyQueue();

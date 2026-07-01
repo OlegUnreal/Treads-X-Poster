@@ -1,6 +1,7 @@
 package com.behindthesmile.posting.service;
 
 import com.behindthesmile.posting.api.ChromeProfilesLaunchRequest;
+import com.behindthesmile.posting.api.ChromeProfileLoginStatusRequest;
 import com.behindthesmile.posting.api.ChromeProfilesUrlCheckRequest;
 import org.springframework.stereotype.Service;
 
@@ -234,19 +235,34 @@ public class ChromeProfileLauncherService {
         }
 
         Path envFile = envFile();
-        Files.createDirectories(envFile.getParent());
-        Path tempFile = envFile.resolveSibling(envFile.getFileName() + ".tmp");
-        Files.writeString(tempFile, content.replace("\r\n", "\n").replace("\r", "\n"), StandardCharsets.UTF_8);
-        try {
-            Files.move(tempFile, envFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException ex) {
-            Files.move(tempFile, envFile, StandardCopyOption.REPLACE_EXISTING);
-        }
+        writeEnvFile(envFile, content);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("message", "profiles.env updated");
         result.put("envFile", envFile.toString());
         result.put("profiles", readProfiles());
+        return result;
+    }
+
+    public Map<String, Object> updateLoginStatus(String profileName, ChromeProfileLoginStatusRequest request) throws Exception {
+        String cleanProfileName = profileName == null ? "" : profileName.trim();
+        if (cleanProfileName.isBlank() || !cleanProfileName.matches("[A-Za-z0-9_-]+")) {
+            throw new IllegalArgumentException("Invalid profile name.");
+        }
+        boolean loggedIn = request != null && Boolean.TRUE.equals(request.loggedIn());
+        Map<String, String> env = readEnvFile();
+        List<String> profileNames = List.of(env.getOrDefault("PROFILE_NAMES", "").trim().split("\\s+"));
+        if (!profileNames.contains(cleanProfileName)) {
+            throw new IllegalArgumentException("Unknown profile: " + cleanProfileName);
+        }
+
+        Path envFile = envFile();
+        String content = Files.isRegularFile(envFile) ? Files.readString(envFile, StandardCharsets.UTF_8) : "";
+        String updated = upsertEnvValue(content, "LOGIN_STATUS_" + cleanProfileName, loggedIn ? "logged_in" : "not_logged_in");
+        writeEnvFile(envFile, updated);
+
+        Map<String, Object> result = status();
+        result.put("message", cleanProfileName + " marked " + (loggedIn ? "logged in" : "not logged in"));
         return result;
     }
 
@@ -406,6 +422,9 @@ public class ChromeProfileLauncherService {
             Map<String, String> profile = new LinkedHashMap<>();
             profile.put("name", profileName);
             profile.put("label", env.getOrDefault("PROFILE_LABEL_" + profileName, profileName));
+            String loginStatus = env.getOrDefault("LOGIN_STATUS_" + profileName, "not_logged_in");
+            profile.put("loginStatus", loginStatus);
+            profile.put("loggedIn", String.valueOf("logged_in".equalsIgnoreCase(loginStatus)));
             profile.put("proxy", maskProxy(env.getOrDefault("PROXY_" + profileName, "")));
             profile.put("upstreamProxy", maskProxy(env.getOrDefault("UPSTREAM_PROXY_" + profileName, "")));
             profiles.add(profile);
@@ -441,6 +460,42 @@ public class ChromeProfileLauncherService {
             return value.substring(1, value.length() - 1);
         }
         return value;
+    }
+
+    private String upsertEnvValue(String content, String key, String value) {
+        String line = key + "=\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+        String normalized = content == null ? "" : content.replace("\r\n", "\n").replace("\r", "\n");
+        String[] lines = normalized.split("\n", -1);
+        List<String> updated = new ArrayList<>();
+        boolean replaced = false;
+        for (String existingLine : lines) {
+            if (existingLine.startsWith(key + "=")) {
+                if (!replaced) {
+                    updated.add(line);
+                    replaced = true;
+                }
+            } else {
+                updated.add(existingLine);
+            }
+        }
+        if (!replaced) {
+            if (!updated.isEmpty() && !updated.get(updated.size() - 1).isBlank()) {
+                updated.add("");
+            }
+            updated.add(line);
+        }
+        return String.join("\n", updated);
+    }
+
+    private void writeEnvFile(Path envFile, String content) throws Exception {
+        Files.createDirectories(envFile.getParent());
+        Path tempFile = envFile.resolveSibling(envFile.getFileName() + ".tmp");
+        Files.writeString(tempFile, content.replace("\r\n", "\n").replace("\r", "\n"), StandardCharsets.UTF_8);
+        try {
+            Files.move(tempFile, envFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException ex) {
+            Files.move(tempFile, envFile, StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
     private String maskProxy(String proxy) {

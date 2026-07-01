@@ -135,10 +135,25 @@ import { DashboardService } from '../services/dashboard.service';
               <strong>{{ profile.name }}</strong>
               <small *ngIf="profile.label && profile.label !== profile.name">{{ profile.label }}</small>
             </div>
+            <span class="login-pill" [class.logged-in]="isLoggedIn(profile)" [class.not-logged-in]="!isLoggedIn(profile)">
+              {{ isLoggedIn(profile) ? 'Logged in' : 'Not logged in' }}
+            </span>
             <span>{{ profile.proxy || profile.upstreamProxy || 'Proxy not set' }}</span>
-            <button class="btn btn-outline-primary btn-sm" type="button" [disabled]="busyProfileName === profile.name" (click)="openProfile(profile.name)">
-              {{ busyProfileName === profile.name ? 'Opening...' : 'Open' }}
-            </button>
+            <div class="profile-row-actions">
+              <button class="btn btn-outline-primary btn-sm" type="button" [disabled]="busyProfileName === profile.name" (click)="openProfile(profile.name)">
+                {{ busyProfileName === profile.name ? 'Opening...' : 'Open' }}
+              </button>
+              <button
+                class="btn btn-sm"
+                [class.btn-outline-success]="!isLoggedIn(profile)"
+                [class.btn-outline-secondary]="isLoggedIn(profile)"
+                type="button"
+                [disabled]="busyLoginStatusName === profile.name"
+                (click)="setLoginStatus(profile.name, !isLoggedIn(profile))"
+              >
+                {{ busyLoginStatusName === profile.name ? 'Saving...' : isLoggedIn(profile) ? 'Mark not logged in' : 'Mark logged in' }}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -202,11 +217,15 @@ import { DashboardService } from '../services/dashboard.service';
     .status div { padding: 10px; border: 1px solid #dde3ea; border-radius: 10px; background: #f8fafc; }
     .status dd { margin: 0; color: #17212b; font: 800 14px/1.3 "Segoe UI", sans-serif; overflow-wrap: anywhere; }
     .profile-list { display: grid; gap: 6px; margin: 12px 0 0; }
-    .profile-row { display: grid; grid-template-columns: 150px minmax(0, 1fr) 76px; gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid #dde3ea; border-radius: 10px; background: #f8fafc; color: #17212b; font: 700 12px/1.3 "Segoe UI", sans-serif; }
+    .profile-row { display: grid; grid-template-columns: 150px 104px minmax(0, 1fr) 190px; gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid #dde3ea; border-radius: 10px; background: #f8fafc; color: #17212b; font: 700 12px/1.3 "Segoe UI", sans-serif; }
     .profile-id { display: grid; gap: 2px; min-width: 0; }
     .profile-id strong, .profile-id small { overflow-wrap: anywhere; }
     .profile-id small { color: #64748b; font-weight: 700; }
-    .profile-row span { color: #64748b; overflow-wrap: anywhere; }
+    .login-pill { justify-self: start; padding: 5px 8px; border-radius: 999px; border: 1px solid #cbd5e1; background: #f8fafc; color: #475569; font: 800 11px/1 "Segoe UI", sans-serif; white-space: nowrap; }
+    .login-pill.logged-in { border-color: #86efac; background: #f0fdf4; color: #15803d; }
+    .login-pill.not-logged-in { border-color: #fecdd3; background: #fff1f2; color: #be123c; }
+    .profile-row > span:not(.login-pill) { color: #64748b; overflow-wrap: anywhere; }
+    .profile-row-actions { display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
     .log-tail { margin: 12px 0 0; max-height: 220px; overflow: auto; padding: 10px; border-radius: 10px; background: #0f172a; color: #dbeafe; font: 600 12px/1.45 Consolas, monospace; white-space: pre-wrap; }
     @media (max-width: 760px) { .page-head, .slider-row, .status, .profile-row { grid-template-columns: 1fr; display: grid; } .actions button, .profiles-actions button { width: 100%; } }
   `]
@@ -232,6 +251,7 @@ export class PlaybackPageComponent implements OnInit {
   protected checkError = false;
   protected urlCheckStatus: ChromeProfilesUrlCheckStatus | null = null;
   protected busyProfileName = '';
+  protected busyLoginStatusName = '';
 
   ngOnInit(): void {
     this.refreshProfilesStatus(false);
@@ -408,6 +428,25 @@ export class PlaybackPageComponent implements OnInit {
     });
   }
 
+  protected setLoginStatus(profileName: string, loggedIn: boolean): void {
+    this.busyLoginStatusName = profileName;
+    this.profilesError = false;
+    this.profilesMessage = `Saving ${profileName} login status...`;
+    this.dashboardService.updateChromeProfileLoginStatus(profileName, loggedIn).subscribe({
+      next: (status) => {
+        this.profilesStatus = status;
+        this.profilesMessage = `${profileName} marked ${loggedIn ? 'logged in' : 'not logged in'}.`;
+        this.profilesError = false;
+        this.busyLoginStatusName = '';
+      },
+      error: (error) => {
+        this.profilesMessage = error?.error?.message || error?.message || `Could not update ${profileName}.`;
+        this.profilesError = true;
+        this.busyLoginStatusName = '';
+      }
+    });
+  }
+
   protected refreshProfilesStatus(showMessage = true): void {
     this.profilesBusy = true;
     this.dashboardService.getChromeProfilesStatus().subscribe({
@@ -468,6 +507,10 @@ export class PlaybackPageComponent implements OnInit {
       return [];
     }
     return this.urlCheckStatus.results.filter((result) => result.ok).map((result) => result.name);
+  }
+
+  protected isLoggedIn(profile: { loggedIn?: boolean | string; loginStatus?: string }): boolean {
+    return profile.loggedIn === true || profile.loggedIn === 'true' || profile.loginStatus === 'logged_in';
   }
 
   private normalizedPercent(): number {

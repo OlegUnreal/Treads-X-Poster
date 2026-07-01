@@ -168,6 +168,8 @@ export interface ChromeProfilesStatus {
 export interface ChromeProfileSummary {
   name: string;
   label?: string;
+  loginStatus?: string;
+  loggedIn?: boolean | string;
   proxy: string;
   upstreamProxy: string;
 }

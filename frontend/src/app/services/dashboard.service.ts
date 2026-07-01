@@ -166,4 +166,11 @@ export class DashboardService {
   checkChromeProfilesUrl(request: ChromeProfilesUrlCheckRequest): Observable<ChromeProfilesUrlCheckStatus> {
     return this.http.post<ChromeProfilesUrlCheckStatus>(`${API_BASE_URL}/actions/chrome-profiles/check-url`, request);
   }
+
+  updateChromeProfileLoginStatus(profileName: string, loggedIn: boolean): Observable<ChromeProfilesStatus> {
+    return this.http.put<ChromeProfilesStatus>(
+      `${API_BASE_URL}/actions/chrome-profiles/${encodeURIComponent(profileName)}/login-status`,
+      { loggedIn }
+    );
+  }
 }
