@@ -27,6 +27,7 @@ const profilesRuntimeDir = path.join(app.getPath('home'), 'chrome-proxy-profiles
 const profilesEnvFile = path.join(profilesRuntimeDir, 'profiles.env');
 const appRuntimeRoot = path.join(profilesRuntimeDir, 'app');
 const backendPidFile = path.join(profilesRuntimeDir, 'behind-the-smile-backend.pid');
+const startupLogFile = path.join(profilesRuntimeDir, 'behind-the-smile-startup.log');
 
 let backendProcess = null;
 let staticServer = null;
@@ -194,10 +195,62 @@ function startBackend() {
   fs.writeFileSync(backendPidFile, String(backendProcess.pid), 'utf8');
 }
 
+function appendStartupLog(message) {
+  try {
+    fs.mkdirSync(path.dirname(startupLogFile), { recursive: true });
+    fs.appendFileSync(startupLogFile, `${new Date().toISOString()} ${message}\n`, 'utf8');
+  } catch {
+    // Startup logging must never block the app.
+  }
+}
+
+function killProcessTree(pid, reason) {
+  const numericPid = Number(pid);
+  if (!Number.isInteger(numericPid) || numericPid <= 0 || numericPid === process.pid) {
+    return;
+  }
+  try {
+    appendStartupLog(`Killing PID ${numericPid}: ${reason}`);
+    childProcess.execFileSync('taskkill.exe', ['/PID', String(numericPid), '/F', '/T'], {
+      stdio: 'ignore',
+      windowsHide: true
+    });
+  } catch (error) {
+    appendStartupLog(`Could not kill PID ${numericPid}: ${error.message}`);
+  }
+}
+
+function killProcessesListeningOnPort(port) {
+  if (process.platform !== 'win32') {
+    return;
+  }
+  try {
+    const output = childProcess.execFileSync('netstat.exe', ['-ano', '-p', 'tcp'], {
+      encoding: 'utf8',
+      windowsHide: true
+    });
+    for (const rawLine of output.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line || !line.includes(`:${port}`)) {
+        continue;
+      }
+      const parts = line.split(/\s+/);
+      if (parts.length < 5 || !/^LISTENING$/i.test(parts[3])) {
+        continue;
+      }
+      killProcessTree(Number(parts[4]), `listening on port ${port}`);
+    }
+  } catch (error) {
+    appendStartupLog(`Could not inspect port ${port}: ${error.message}`);
+  }
+}
+
 function stopOldWindowsProcesses() {
   if (!app.isPackaged || process.platform !== 'win32') {
     return;
   }
+  killProcessesListeningOnPort(backendPort);
+  killProcessesListeningOnPort(frontendPort);
   const script = `
 $ErrorActionPreference = 'SilentlyContinue'
 $currentAppPid = ${process.pid}
@@ -240,7 +293,8 @@ Start-Sleep -Milliseconds 700
 
 async function startVerifiedBackend() {
   let lastError = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    appendStartupLog(`Backend start attempt ${attempt + 1}`);
     stopOldWindowsProcesses();
     startBackend();
     await waitForPort(backendPort);
@@ -253,6 +307,7 @@ async function startVerifiedBackend() {
         backendProcess.kill();
         backendProcess = null;
       }
+      killProcessesListeningOnPort(backendPort);
       stopOldWindowsProcesses();
     }
   }
