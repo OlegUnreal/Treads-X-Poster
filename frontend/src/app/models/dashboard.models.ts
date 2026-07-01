@@ -167,6 +167,7 @@ export interface ChromeProfilesStatus {
 
 export interface ChromeProfileSummary {
   name: string;
+  label?: string;
   proxy: string;
   upstreamProxy: string;
 }

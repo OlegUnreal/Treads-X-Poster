@@ -405,6 +405,7 @@ public class ChromeProfileLauncherService {
             }
             Map<String, String> profile = new LinkedHashMap<>();
             profile.put("name", profileName);
+            profile.put("label", env.getOrDefault("PROFILE_LABEL_" + profileName, profileName));
             profile.put("proxy", maskProxy(env.getOrDefault("PROXY_" + profileName, "")));
             profile.put("upstreamProxy", maskProxy(env.getOrDefault("UPSTREAM_PROXY_" + profileName, "")));
             profiles.add(profile);

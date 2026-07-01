@@ -131,8 +131,14 @@ import { DashboardService } from '../services/dashboard.service';
 
         <div class="profile-list" *ngIf="profilesStatus?.profiles?.length">
           <div class="profile-row" *ngFor="let profile of profilesStatus?.profiles">
-            <strong>{{ profile.name }}</strong>
+            <div class="profile-id">
+              <strong>{{ profile.name }}</strong>
+              <small *ngIf="profile.label && profile.label !== profile.name">{{ profile.label }}</small>
+            </div>
             <span>{{ profile.proxy || profile.upstreamProxy || 'Proxy not set' }}</span>
+            <button class="btn btn-outline-primary btn-sm" type="button" [disabled]="busyProfileName === profile.name" (click)="openProfile(profile.name)">
+              {{ busyProfileName === profile.name ? 'Opening...' : 'Open' }}
+            </button>
           </div>
         </div>
 
@@ -196,7 +202,10 @@ import { DashboardService } from '../services/dashboard.service';
     .status div { padding: 10px; border: 1px solid #dde3ea; border-radius: 10px; background: #f8fafc; }
     .status dd { margin: 0; color: #17212b; font: 800 14px/1.3 "Segoe UI", sans-serif; overflow-wrap: anywhere; }
     .profile-list { display: grid; gap: 6px; margin: 12px 0 0; }
-    .profile-row { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid #dde3ea; border-radius: 10px; background: #f8fafc; color: #17212b; font: 700 12px/1.3 "Segoe UI", sans-serif; }
+    .profile-row { display: grid; grid-template-columns: 150px minmax(0, 1fr) 76px; gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid #dde3ea; border-radius: 10px; background: #f8fafc; color: #17212b; font: 700 12px/1.3 "Segoe UI", sans-serif; }
+    .profile-id { display: grid; gap: 2px; min-width: 0; }
+    .profile-id strong, .profile-id small { overflow-wrap: anywhere; }
+    .profile-id small { color: #64748b; font-weight: 700; }
     .profile-row span { color: #64748b; overflow-wrap: anywhere; }
     .log-tail { margin: 12px 0 0; max-height: 220px; overflow: auto; padding: 10px; border-radius: 10px; background: #0f172a; color: #dbeafe; font: 600 12px/1.45 Consolas, monospace; white-space: pre-wrap; }
     @media (max-width: 760px) { .page-head, .slider-row, .status, .profile-row { grid-template-columns: 1fr; display: grid; } .actions button, .profiles-actions button { width: 100%; } }
@@ -222,6 +231,7 @@ export class PlaybackPageComponent implements OnInit {
   protected checkMessage = '';
   protected checkError = false;
   protected urlCheckStatus: ChromeProfilesUrlCheckStatus | null = null;
+  protected busyProfileName = '';
 
   ngOnInit(): void {
     this.refreshProfilesStatus(false);
@@ -367,6 +377,33 @@ export class PlaybackPageComponent implements OnInit {
         this.message = error?.error?.message || error?.message || 'Could not open checked profiles.';
         this.error = true;
         this.busy = false;
+      }
+    });
+  }
+
+  protected openProfile(profileName: string): void {
+    const cleanUrl = this.url.trim() || 'https://www.youtube.com/';
+    this.busyProfileName = profileName;
+    this.profilesError = false;
+    this.profilesMessage = `Opening ${profileName}...`;
+    this.dashboardService.startAllChromeProfiles({
+      minDelaySeconds: 0,
+      maxDelaySeconds: 0,
+      profileCount: 1,
+      profileNames: [profileName],
+      url: cleanUrl
+    }).subscribe({
+      next: (status) => {
+        this.profilesStatus = status;
+        this.profileCount = 1;
+        this.profilesMessage = `Opened ${profileName}.`;
+        this.profilesError = false;
+        this.busyProfileName = '';
+      },
+      error: (error) => {
+        this.profilesMessage = error?.error?.message || error?.message || `Could not open ${profileName}.`;
+        this.profilesError = true;
+        this.busyProfileName = '';
       }
     });
   }
