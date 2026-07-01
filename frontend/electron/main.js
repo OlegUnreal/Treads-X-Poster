@@ -31,6 +31,7 @@ const startupLogFile = path.join(profilesRuntimeDir, 'behind-the-smile-startup.l
 
 let backendProcess = null;
 let staticServer = null;
+let mainWindow = null;
 let profilesEnvWatcher = null;
 let profilesEnvUploadTimer = null;
 let profilesEnvLastUploaded = '';
@@ -93,6 +94,171 @@ async function verifyBackendRuntime() {
   if (!launcherScript.startsWith(expectedRoot) || !status.scriptExists) {
     throw new Error(`Wrong backend is running. Expected launcher under ${appRuntimeRoot}, got ${status.script || 'unknown'}`);
   }
+}
+
+function loadingHtml() {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Behind The Smile Playback</title>
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #f4f6f8;
+      color: #18212f;
+      font-family: "Segoe UI", Arial, sans-serif;
+    }
+    .panel {
+      width: min(560px, calc(100vw - 48px));
+      background: #ffffff;
+      border: 1px solid #dfe5ec;
+      border-radius: 12px;
+      box-shadow: 0 20px 55px rgba(24, 33, 47, 0.14);
+      padding: 30px;
+    }
+    .top {
+      display: flex;
+      gap: 18px;
+      align-items: center;
+    }
+    .spinner {
+      width: 34px;
+      height: 34px;
+      border: 4px solid #dbeafe;
+      border-top-color: #0d6efd;
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+      flex: 0 0 auto;
+    }
+    h1 {
+      margin: 0;
+      font-size: 20px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+    .status {
+      margin: 8px 0 0;
+      color: #526173;
+      font-size: 14px;
+    }
+    .log {
+      margin-top: 22px;
+      display: grid;
+      gap: 8px;
+      color: #6b7788;
+      font-size: 13px;
+      line-height: 1.35;
+    }
+    .log div::before {
+      content: "";
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      margin-right: 9px;
+      border-radius: 50%;
+      background: #9db3c8;
+    }
+    .error {
+      margin-top: 18px;
+      padding: 12px;
+      border-radius: 8px;
+      background: #fff1f2;
+      color: #be123c;
+      white-space: pre-wrap;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+    body.failed .spinner {
+      display: none;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <main class="panel">
+    <div class="top">
+      <div class="spinner" aria-hidden="true"></div>
+      <div>
+        <h1>Behind The Smile Playback</h1>
+        <p id="status" class="status">Opening app...</p>
+      </div>
+    </div>
+    <div id="log" class="log"></div>
+    <div id="error" class="error" hidden></div>
+  </main>
+  <script>
+    const log = document.getElementById('log');
+    const status = document.getElementById('status');
+    const errorBox = document.getElementById('error');
+    window.setStatus = (message) => {
+      status.textContent = message;
+      const row = document.createElement('div');
+      row.textContent = message;
+      log.prepend(row);
+      while (log.children.length > 5) {
+        log.removeChild(log.lastElementChild);
+      }
+    };
+    window.setError = (message) => {
+      document.body.classList.add('failed');
+      status.textContent = 'Startup failed';
+      errorBox.hidden = false;
+      errorBox.textContent = message;
+    };
+  </script>
+</body>
+</html>`;
+}
+
+async function createMainWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1120,
+    height: 820,
+    minWidth: 920,
+    minHeight: 680,
+    title: 'Behind The Smile Playback',
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
+
+  await mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(loadingHtml())}`);
+}
+
+function setStartupStatus(message) {
+  appendStartupLog(message);
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  mainWindow.webContents.executeJavaScript(`window.setStatus && window.setStatus(${JSON.stringify(message)})`)
+    .catch(() => {});
+}
+
+function showStartupError(error) {
+  const message = error?.message || String(error);
+  appendStartupLog(`Startup failed: ${message}`);
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    dialog.showErrorBox('Behind The Smile Playback failed to start', message);
+    app.quit();
+    return;
+  }
+  mainWindow.webContents.executeJavaScript(`window.setError && window.setError(${JSON.stringify(message)})`)
+    .catch(() => {
+      dialog.showErrorBox('Behind The Smile Playback failed to start', message);
+    });
 }
 
 function contentType(filePath) {
@@ -295,10 +461,14 @@ async function startVerifiedBackend() {
   let lastError = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     appendStartupLog(`Backend start attempt ${attempt + 1}`);
+    setStartupStatus(`Stopping previous local services (${attempt + 1}/3)...`);
     stopOldWindowsProcesses();
+    setStartupStatus('Starting local playback backend...');
     startBackend();
+    setStartupStatus('Waiting for local backend...');
     await waitForPort(backendPort);
     try {
+      setStartupStatus('Checking local backend...');
       await verifyBackendRuntime();
       return;
     } catch (error) {
@@ -492,35 +662,38 @@ function stopProfilesEnvWatcher() {
 }
 
 async function createWindow() {
+  await createMainWindow();
+  setStartupStatus('Syncing profile config...');
   await syncProfilesEnv();
+  setStartupStatus('Watching local config changes...');
   startProfilesEnvWatcher();
+  setStartupStatus('Preparing local runtime files...');
   prepareAppRuntimeFiles();
+  setStartupStatus('Starting local services...');
   await startVerifiedBackend();
+  setStartupStatus('Starting app window server...');
   await startStaticServer();
-
-  const win = new BrowserWindow({
-    width: 1120,
-    height: 820,
-    minWidth: 920,
-    minHeight: 680,
-    title: 'Behind The Smile Playback',
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false
-    }
-  });
-
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
-    return { action: 'deny' };
-  });
-  await win.loadURL(`http://127.0.0.1:${frontendPort}/playback?desktop=1`);
+  setStartupStatus('Opening playback screen...');
+  await mainWindow.loadURL(`http://127.0.0.1:${frontendPort}/playback?desktop=1`);
 }
 
-app.whenReady().then(createWindow).catch((error) => {
-  dialog.showErrorBox('Behind The Smile Playback failed to start', error?.message || String(error));
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
   app.quit();
-});
+} else {
+  app.on('second-instance', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return;
+    }
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.focus();
+    setStartupStatus('App is already starting or running.');
+  });
+
+  app.whenReady().then(createWindow).catch(showStartupError);
+}
 
 app.on('window-all-closed', () => {
   stopProfilesEnvWatcher();
