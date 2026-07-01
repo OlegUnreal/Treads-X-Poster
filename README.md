@@ -156,6 +156,8 @@ The local launcher refreshes WebShare proxies automatically before starting prof
 powershell -ExecutionPolicy Bypass -File .\scripts\start-profiles.ps1 3 profile-home
 ```
 
+The WebShare refresh keeps stable profile assignments: if a proxy still exists in the fresh provider list, it stays attached to the same `ipN` profile. Each `ipN` also keeps its own Chrome data folder, so cookies and login state survive app restarts, redeploys, and normal proxy refreshes.
+
 Use the full `start-local-chrome-profiles.ps1 -SkipWebShareSync` command only when you intentionally want to reuse the existing local `profiles.env`.
 
 Start one or more local profiles:
@@ -192,8 +194,8 @@ Notes:
 
 - Each profile uses its own Chrome user data directory under `C:\Users\ZEPHYRUS\chrome-proxy-profiles\data\`.
 - If `PROXY_ipN` points to `127.0.0.1`, the script starts a local Python proxy forwarder for the authenticated upstream proxy.
-- YouTube URLs open in incognito when `INCOGNITO_DOMAINS` includes `youtube.com youtu.be`.
-- Pornhub stays non-incognito when `INCOGNITO_MODE=false`, so age confirmation cookies can persist per profile.
+- Keep `INCOGNITO_MODE=false` and leave `INCOGNITO_DOMAINS` empty for YouTube or any site where a profile must remember sign-in state, cookies, or age confirmation.
+- Treat each `ipN` as one long-lived device/profile. Open `profile-home` or the target site's homepage first, complete any manual sign-in once, then launch videos with only count and URL.
 - Webshare/free proxy traffic can hit bandwidth limits; if a proxy returns `Bandwidth limit reached`, the launcher is working but the provider limit is exhausted.
 
 ## Production Setup

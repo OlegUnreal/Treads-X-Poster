@@ -203,7 +203,69 @@ def read_existing_settings(env_path: Path) -> dict[str, str]:
         key = key.strip()
         if key in PROFILE_SETTINGS_KEYS:
             settings[key] = unquote(value.strip())
+    if settings.get("INCOGNITO_DOMAINS") == "youtube.com youtu.be":
+        settings["INCOGNITO_DOMAINS"] = ""
     return settings
+
+
+def read_existing_proxy_targets(env_path: Path) -> list[str]:
+    values: dict[str, str] = {}
+    profile_names: list[str] = []
+    if not env_path.exists():
+        return []
+
+    for line in env_path.read_text(encoding="utf-8-sig").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        key = key.strip()
+        clean_value = unquote(value.strip())
+        if key == "PROFILE_NAMES":
+            profile_names = clean_value.split()
+        elif key.startswith("UPSTREAM_PROXY_"):
+            values[key.removeprefix("UPSTREAM_PROXY_")] = clean_value
+
+    ordered_profiles = profile_names or sorted(values.keys(), key=profile_sort_key)
+    targets: list[str] = []
+    seen: set[str] = set()
+    for profile in ordered_profiles:
+        target = proxy_target(values.get(profile, ""))
+        if target and target not in seen:
+            targets.append(target)
+            seen.add(target)
+    return targets
+
+
+def profile_sort_key(name: str) -> tuple[int, str]:
+    match = re.fullmatch(r"ip(\d+)", name)
+    if match:
+        return int(match.group(1)), name
+    return sys.maxsize, name
+
+
+def preserve_existing_proxy_order(proxies: list[str], existing_targets: list[str]) -> list[str]:
+    fresh_by_target: dict[str, str] = {}
+    fresh_order: list[str] = []
+    for proxy in proxies:
+        target = proxy_target(proxy)
+        if not target or target in fresh_by_target:
+            continue
+        fresh_by_target[target] = proxy
+        fresh_order.append(target)
+
+    ordered: list[str] = []
+    used: set[str] = set()
+    for target in existing_targets:
+        proxy = fresh_by_target.get(target)
+        if proxy and target not in used:
+            ordered.append(proxy)
+            used.add(target)
+
+    for target in fresh_order:
+        if target not in used:
+            ordered.append(fresh_by_target[target])
+    return ordered
 
 
 def unquote(value: str) -> str:
@@ -237,7 +299,7 @@ def write_profiles_env(env_path: Path, proxies: list[str], start_port: int, sett
     default_settings = {
         "VNC_DISPLAY": ":1",
         "INCOGNITO_MODE": "false",
-        "INCOGNITO_DOMAINS": "youtube.com youtu.be",
+        "INCOGNITO_DOMAINS": "",
         "AUTO_CLICK_DOMAINS": "pornhub.com",
         "AUTO_CLICK_DELAY_SECONDS": "8",
         "START_URL": "profile-home",
@@ -289,6 +351,7 @@ def main() -> int:
         return 1
 
     settings = read_existing_settings(env_path)
+    proxies = preserve_existing_proxy_order(proxies, read_existing_proxy_targets(env_path))
     env_path.parent.mkdir(parents=True, exist_ok=True)
     write_profiles_env(env_path, proxies, args.start_port, settings)
     print(f"Wrote {len(proxies)} proxy profile(s) to {env_path}")

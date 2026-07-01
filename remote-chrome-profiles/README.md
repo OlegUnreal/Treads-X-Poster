@@ -68,6 +68,8 @@ WEBSHARE_API_TOKEN=... python3 import-webshare-proxies.py --from-webshare-api --
 
 When `WEBSHARE_API_TOKEN` is available from Doppler, production deploy uses the API. If no API token is configured but `webshare-proxies.txt` exists, deploy uses the file fallback.
 
+The importer keeps existing profile assignments stable. If the same WebShare proxy is still available after a refresh, it stays on the same `ipN` profile; only removed or new proxies are replaced/appended. This lets each profile behave like a long-lived device instead of a fresh browser every deploy.
+
 Avoid launching 100 Chrome windows at once. For video sites, start a small batch and use a wide stagger:
 
 ```bash
@@ -79,6 +81,8 @@ Each profile uses a separate user data directory under:
 ```text
 ~/chrome-proxy-profiles/data/<profile-name>
 ```
+
+For sites that rely on account state or trust history, keep `INCOGNITO_MODE=false` and leave `INCOGNITO_DOMAINS` empty. Open `profile-home` or the site's homepage first, sign in manually when needed, then future launches reuse the same cookies in that profile directory.
 
 Check leaks from each browser window:
 
