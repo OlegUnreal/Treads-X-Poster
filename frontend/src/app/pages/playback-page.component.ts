@@ -281,7 +281,7 @@ export class PlaybackPageComponent implements OnInit {
         this.busy = false;
       },
       error: (error) => {
-        this.message = error?.error?.message || error?.message || 'Could not open Chrome profiles.';
+        this.message = this.errorMessage(error, 'Could not open Chrome profiles.');
         this.error = true;
         this.busy = false;
       }
@@ -298,7 +298,7 @@ export class PlaybackPageComponent implements OnInit {
         this.busy = false;
       },
       error: (error) => {
-        this.message = error?.error?.message || error?.message || 'Could not stop playback.';
+        this.message = this.errorMessage(error, 'Could not stop playback.');
         this.error = true;
         this.busy = false;
       }
@@ -330,7 +330,7 @@ export class PlaybackPageComponent implements OnInit {
         this.profilesBusy = false;
       },
       error: (error) => {
-        this.profilesMessage = error?.error?.message || error?.message || 'Could not start Chrome profiles.';
+        this.profilesMessage = this.errorMessage(error, 'Could not start Chrome profiles.');
         this.profilesError = true;
         this.profilesBusy = false;
       }
@@ -355,7 +355,7 @@ export class PlaybackPageComponent implements OnInit {
         this.checkBusy = false;
       },
       error: (error) => {
-        this.checkMessage = error?.error?.message || error?.message || 'Could not check URL.';
+        this.checkMessage = this.errorMessage(error, 'Could not check URL.');
         this.checkError = true;
         this.checkBusy = false;
       }
@@ -394,7 +394,7 @@ export class PlaybackPageComponent implements OnInit {
         this.busy = false;
       },
       error: (error) => {
-        this.message = error?.error?.message || error?.message || 'Could not open checked profiles.';
+        this.message = this.errorMessage(error, 'Could not open checked profiles.');
         this.error = true;
         this.busy = false;
       }
@@ -421,7 +421,7 @@ export class PlaybackPageComponent implements OnInit {
         this.busyProfileName = '';
       },
       error: (error) => {
-        this.profilesMessage = error?.error?.message || error?.message || `Could not open ${profileName}.`;
+        this.profilesMessage = this.errorMessage(error, `Could not open ${profileName}.`);
         this.profilesError = true;
         this.busyProfileName = '';
       }
@@ -440,7 +440,7 @@ export class PlaybackPageComponent implements OnInit {
         this.busyLoginStatusName = '';
       },
       error: (error) => {
-        this.profilesMessage = error?.error?.message || error?.message || `Could not update ${profileName}.`;
+        this.profilesMessage = this.errorMessage(error, `Could not update ${profileName}.`);
         this.profilesError = true;
         this.busyLoginStatusName = '';
       }
@@ -461,7 +461,7 @@ export class PlaybackPageComponent implements OnInit {
       },
       error: (error) => {
         if (showMessage) {
-          this.profilesMessage = error?.error?.message || error?.message || 'Could not read profile launcher status.';
+          this.profilesMessage = this.errorMessage(error, 'Could not read profile launcher status.');
         }
         this.profilesError = true;
         this.profilesBusy = false;
@@ -543,5 +543,44 @@ export class PlaybackPageComponent implements OnInit {
 
   private clampProfileCount(): void {
     this.profileCount = this.normalizedProfileCount();
+  }
+
+  private errorMessage(error: unknown, fallback: string): string {
+    const candidate = error as {
+      error?: unknown;
+      message?: string;
+      status?: number;
+      statusText?: string;
+    };
+    const nested = candidate?.error;
+    if (typeof nested === 'string' && nested.trim()) {
+      try {
+        const parsed = JSON.parse(nested) as { message?: string; error?: string };
+        if (parsed.message?.trim()) {
+          return parsed.message;
+        }
+        if (parsed.error?.trim()) {
+          return parsed.error;
+        }
+      } catch {
+        return nested;
+      }
+    }
+    if (nested && typeof nested === 'object') {
+      const nestedObject = nested as { message?: string; error?: string };
+      if (nestedObject.message?.trim()) {
+        return nestedObject.message;
+      }
+      if (nestedObject.error?.trim()) {
+        return nestedObject.error;
+      }
+    }
+    if (candidate?.message?.trim()) {
+      if (candidate.status && candidate.statusText) {
+        return `${candidate.message}: ${candidate.status} ${candidate.statusText}`;
+      }
+      return candidate.message;
+    }
+    return fallback;
   }
 }
