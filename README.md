@@ -226,6 +226,7 @@ GitHub Actions can run the same script from `Deploy production`. Add these repos
 - `DEPLOY_USER` - SSH user, for example `root`.
 - `DEPLOY_PASSWORD` - SSH password for the deploy user.
 - `DEPLOY_PORT` - optional, defaults to `22`.
+- `DOPPLER_TOKEN` - optional Doppler service token for production config sync.
 
 Alternatively, use `DEPLOY_SSH_KEY` instead of `DEPLOY_PASSWORD` if you want key-based SSH later.
 
@@ -234,6 +235,45 @@ Optional repository variable:
 - `DEPLOY_PATH` - server checkout path, defaults to `/opt/behind-the-smile`.
 
 The workflow deploys automatically on pushes to `main`. It can also be started manually from the Actions tab and pointed at another branch.
+
+### Doppler production config
+
+Doppler can be the source of truth for production environment values. The deploy script still supports the old server `.env` flow, but if `DOPPLER_TOKEN` is present it downloads the latest Doppler config into:
+
+```text
+/opt/behind-the-smile/backend/config/.env
+```
+
+Then systemd starts Spring Boot with that file as `EnvironmentFile`.
+
+Recommended Doppler setup:
+
+```text
+Project: behind-the-smile
+Environment: production
+Config: prd
+```
+
+Add the same keys that exist in `backend/config/.env.production.example`, for example:
+
+```text
+OPENAI_API_KEY
+OPENAI_MODEL
+DATA_DIR
+CONTENT_PLAN_FILE
+X_PUBLISH_MODE
+X_BROWSER_PROFILE_DIR
+THREADS_ACCESS_TOKEN
+THREADS_USER_ID
+```
+
+For production deploys, generate a Doppler Service Token for the production config and store it in GitHub as the repository secret `DOPPLER_TOKEN`. On the next deploy, `scripts/deploy-production.sh` installs the Doppler CLI if needed and runs:
+
+```bash
+doppler secrets download --no-file --format env
+```
+
+The downloaded values replace the server `.env` before the backend service is restarted. If `DOPPLER_TOKEN` is not set, deploy keeps using the existing server-side `.env`.
 
 ## Important Notes
 

@@ -10,6 +10,8 @@ FRONTEND_PORT="${FRONTEND_PORT:-4301}"
 DISPLAY_VALUE="${DISPLAY_VALUE:-:1}"
 XAUTHORITY_VALUE="${XAUTHORITY_VALUE:-/root/.Xauthority}"
 PUBLIC_HOST="${PUBLIC_HOST:-_}"
+DOPPLER_ENV_FILE="${DOPPLER_ENV_FILE:-${APP_DIR}/backend/config/.env}"
+DOPPLER_INSTALL="${DOPPLER_INSTALL:-true}"
 
 echo "Deploying branch '${BRANCH}' from ${APP_DIR}"
 
@@ -30,6 +32,32 @@ fi
 
 git reset --hard "origin/${BRANCH}"
 git clean -fd -e generated/ -e backend/config/.env
+
+if [ -n "${DOPPLER_TOKEN:-}" ]; then
+  echo "DOPPLER_TOKEN is set. Updating ${DOPPLER_ENV_FILE} from Doppler."
+
+  if ! command -v doppler >/dev/null 2>&1; then
+    if [ "${DOPPLER_INSTALL}" != "true" ]; then
+      echo "Doppler CLI is not installed and DOPPLER_INSTALL is not true."
+      exit 1
+    fi
+
+    echo "Installing Doppler CLI."
+    if command -v apt-get >/dev/null 2>&1; then
+      apt-get update
+      DEBIAN_FRONTEND=noninteractive apt-get install -y curl gnupg
+    fi
+    (curl -Ls --tlsv1.2 --proto "=https" --retry 3 https://cli.doppler.com/install.sh || wget -t 3 -qO- https://cli.doppler.com/install.sh) | sh
+  fi
+
+  mkdir -p "$(dirname "${DOPPLER_ENV_FILE}")"
+  doppler secrets download --no-file --format env > "${DOPPLER_ENV_FILE}.tmp"
+  chmod 600 "${DOPPLER_ENV_FILE}.tmp"
+  mv "${DOPPLER_ENV_FILE}.tmp" "${DOPPLER_ENV_FILE}"
+  echo "Doppler config written to ${DOPPLER_ENV_FILE}."
+else
+  echo "DOPPLER_TOKEN is not set. Keeping existing ${DOPPLER_ENV_FILE} if present."
+fi
 
 mkdir -p "${APP_DIR}/config"
 if [ ! -f "${APP_DIR}/config/content-plan.json" ] && [ -f "${APP_DIR}/backend/config/content-plan.json" ]; then
