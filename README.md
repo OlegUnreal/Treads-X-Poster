@@ -108,6 +108,12 @@ Run the generated app:
 .\frontend\release\BehindTheSmilePlayback.exe
 ```
 
+Release builds are produced by the `Windows release` GitHub Actions workflow from the `windows` branch. The downloadable artifact/release asset is named with a `win-` prefix, for example:
+
+```text
+win-BehindTheSmilePlayback-123.exe
+```
+
 Development launch without packaging:
 
 ```powershell

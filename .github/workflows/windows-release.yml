@@ -1,0 +1,81 @@
+name: Windows release
+
+on:
+  push:
+    branches:
+      - windows
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version suffix, for example 0.1.0
+        required: false
+        default: ""
+      create_release:
+        description: Create a GitHub release with the exe
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows-exe:
+    name: Build Windows exe
+    runs-on: windows-latest
+    steps:
+      - name: Checkout windows branch
+        uses: actions/checkout@v4
+        with:
+          ref: windows
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build portable exe
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File .\scripts\package-windows-app.ps1 -SkipInstall
+
+      - name: Rename exe with win prefix
+        shell: powershell
+        run: |
+          $version = "${{ github.event.inputs.version }}"
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            $version = "${{ github.run_number }}"
+          }
+          $target = "win-BehindTheSmilePlayback-$version.exe"
+          Copy-Item -LiteralPath "frontend\release\BehindTheSmilePlayback.exe" -Destination $target -Force
+          "WIN_EXE=$target" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "WIN_TAG=win-$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Upload exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.WIN_TAG }}
+          path: ${{ env.WIN_EXE }}
+          if-no-files-found: error
+
+      - name: Create GitHub release
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true'
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${env:WIN_TAG}" "${env:WIN_EXE}" `
+            --title "${env:WIN_TAG}" `
+            --notes "Windows playback app built from the windows branch." `
+            --target windows
