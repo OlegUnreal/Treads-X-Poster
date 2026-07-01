@@ -158,6 +158,14 @@ powershell -ExecutionPolicy Bypass -File .\scripts\start-profiles.ps1 3 profile-
 
 The WebShare refresh keeps stable profile assignments: if a proxy still exists in the fresh provider list, it stays attached to the same `ipN` profile. Each `ipN` also keeps its own Chrome data folder, so cookies and login state survive app restarts, redeploys, and normal proxy refreshes.
 
+The Windows app automatically downloads the server `profiles.env` on startup from:
+
+```text
+http://167.233.93.6/api/actions/chrome-profiles/profiles-env
+```
+
+It saves the file to `C:\Users\<you>\chrome-proxy-profiles\profiles.env` before the local backend starts. If the server is temporarily unavailable, the app keeps using the last local copy. Override the URL with `BTS_PROFILES_ENV_SYNC_URL` when the server address changes. If `PROFILES_ENV_DOWNLOAD_TOKEN` is set on the server, set the same value locally as `BTS_PROFILES_ENV_SYNC_TOKEN`.
+
 Use the full `start-local-chrome-profiles.ps1 -SkipWebShareSync` command only when you intentionally want to reuse the existing local `profiles.env`.
 
 Start one or more local profiles:

@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
@@ -221,6 +222,19 @@ public class DashboardController {
     @GetMapping("/actions/chrome-profiles/status")
     public Map<String, Object> chromeProfileStatus() throws Exception {
         return chromeProfileLauncherService.status();
+    }
+
+    @GetMapping(value = "/actions/chrome-profiles/profiles-env", produces = MediaType.TEXT_PLAIN_VALUE)
+    public ResponseEntity<String> chromeProfilesEnv(
+            @RequestHeader(value = "X-Profiles-Env-Token", required = false) String token
+    ) throws Exception {
+        String expectedToken = System.getenv("PROFILES_ENV_DOWNLOAD_TOKEN");
+        if (expectedToken != null && !expectedToken.isBlank() && !expectedToken.equals(token)) {
+            return ResponseEntity.status(403).body("Forbidden");
+        }
+        return ResponseEntity.ok()
+                .contentType(MediaType.TEXT_PLAIN)
+                .body(chromeProfileLauncherService.profilesEnvContent());
     }
 
     @PostMapping("/actions/chrome-profiles/check-url")

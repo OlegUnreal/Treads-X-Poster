@@ -215,6 +215,14 @@ public class ChromeProfileLauncherService {
         return response;
     }
 
+    public String profilesEnvContent() throws Exception {
+        Path envFile = envFile();
+        if (!Files.isRegularFile(envFile)) {
+            throw new IllegalStateException("profiles.env is missing: " + envFile);
+        }
+        return Files.readString(envFile, StandardCharsets.UTF_8);
+    }
+
     private int clampProfileCount(Integer value, int maxProfiles) {
         if (maxProfiles <= 0) {
             return 0;

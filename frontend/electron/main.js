@@ -19,6 +19,8 @@ const frontendRoot = !app.isPackaged && fs.existsSync(path.join(frontendDist, 'b
   : frontendDist;
 const backendPort = Number(process.env.BTS_BACKEND_PORT || 8081);
 const frontendPort = Number(process.env.BTS_DESKTOP_PORT || 4311);
+const profilesEnvSyncUrl = process.env.BTS_PROFILES_ENV_SYNC_URL || 'http://167.233.93.6/api/actions/chrome-profiles/profiles-env';
+const profilesEnvSyncToken = process.env.BTS_PROFILES_ENV_SYNC_TOKEN || '';
 
 let backendProcess = null;
 let staticServer = null;
@@ -132,7 +134,59 @@ function startBackend() {
   });
 }
 
+function requestText(url, headers = {}) {
+  const client = url.startsWith('https://') ? require('https') : require('http');
+  return new Promise((resolve, reject) => {
+    const request = client.get(url, { headers }, (response) => {
+      const chunks = [];
+      response.on('data', (chunk) => chunks.push(chunk));
+      response.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8');
+        if ((response.statusCode || 0) < 200 || (response.statusCode || 0) >= 300) {
+          reject(new Error(`profiles.env sync returned HTTP ${response.statusCode}: ${body.slice(0, 160)}`));
+          return;
+        }
+        resolve(body);
+      });
+    });
+    request.setTimeout(20000, () => {
+      request.destroy(new Error('profiles.env sync timed out'));
+    });
+    request.on('error', reject);
+  });
+}
+
+function validateProfilesEnv(content) {
+  if (!content || !content.includes('PROFILE_NAMES=')) {
+    throw new Error('Downloaded profiles.env does not contain PROFILE_NAMES');
+  }
+  if (!content.includes('UPSTREAM_PROXY_') && !content.includes('PROXY_')) {
+    throw new Error('Downloaded profiles.env does not contain proxy settings');
+  }
+}
+
+async function syncProfilesEnv() {
+  if (!profilesEnvSyncUrl) {
+    return;
+  }
+  const runtimeDir = path.join(app.getPath('home'), 'chrome-proxy-profiles');
+  const envFile = path.join(runtimeDir, 'profiles.env');
+  const headers = profilesEnvSyncToken ? { 'X-Profiles-Env-Token': profilesEnvSyncToken } : {};
+  try {
+    const content = await requestText(profilesEnvSyncUrl, headers);
+    validateProfilesEnv(content);
+    fs.mkdirSync(runtimeDir, { recursive: true });
+    fs.writeFileSync(envFile, content.replace(/\r?\n/g, '\r\n'), 'utf8');
+  } catch (error) {
+    if (!fs.existsSync(envFile)) {
+      throw error;
+    }
+    console.warn(`profiles.env sync failed, using existing local copy: ${error.message}`);
+  }
+}
+
 async function createWindow() {
+  await syncProfilesEnv();
   startBackend();
   await Promise.all([waitForPort(backendPort), startStaticServer()]);
 
