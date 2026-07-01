@@ -57,6 +57,43 @@ function waitForPort(port, timeoutMs = 60000) {
   });
 }
 
+function requestBackendJson(pathname) {
+  return new Promise((resolve, reject) => {
+    const request = http.get({
+      hostname: '127.0.0.1',
+      port: backendPort,
+      path: pathname,
+      timeout: 10000
+    }, (response) => {
+      const chunks = [];
+      response.on('data', (chunk) => chunks.push(chunk));
+      response.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8');
+        if ((response.statusCode || 0) < 200 || (response.statusCode || 0) >= 300) {
+          reject(new Error(`Backend returned HTTP ${response.statusCode}: ${body.slice(0, 200)}`));
+          return;
+        }
+        try {
+          resolve(JSON.parse(body));
+        } catch (error) {
+          reject(new Error(`Backend returned invalid JSON: ${body.slice(0, 200)}`));
+        }
+      });
+    });
+    request.on('timeout', () => request.destroy(new Error('Backend check timed out')));
+    request.on('error', reject);
+  });
+}
+
+async function verifyBackendRuntime() {
+  const status = await requestBackendJson('/api/actions/chrome-profiles/status');
+  const expectedRoot = path.normalize(appRuntimeRoot).toLowerCase();
+  const launcherScript = path.normalize(status.script || '').toLowerCase();
+  if (!launcherScript.startsWith(expectedRoot) || !status.scriptExists) {
+    throw new Error(`Wrong backend is running. Expected launcher under ${appRuntimeRoot}, got ${status.script || 'unknown'}`);
+  }
+}
+
 function contentType(filePath) {
   const ext = path.extname(filePath).toLowerCase();
   switch (ext) {
@@ -116,7 +153,8 @@ function startStaticServer() {
     });
   });
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    staticServer.on('error', reject);
     staticServer.listen(frontendPort, '127.0.0.1', resolve);
   });
 }
@@ -164,9 +202,17 @@ function stopOldWindowsProcesses() {
 $ErrorActionPreference = 'SilentlyContinue'
 $ports = @(${backendPort}, ${frontendPort}) | Select-Object -Unique
 foreach ($port in $ports) {
-  Get-NetTCPConnection -LocalAddress '127.0.0.1' -LocalPort $port -State Listen |
+  Get-NetTCPConnection -LocalPort $port -State Listen |
     Where-Object { $_.OwningProcess -and $_.OwningProcess -ne $PID } |
     ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+  netstat -ano -p tcp |
+    Select-String ":$port\\s+.*LISTENING\\s+(\\d+)$" |
+    ForEach-Object {
+      $processId = [int]$_.Matches[0].Groups[1].Value
+      if ($processId -and $processId -ne $PID) {
+        Stop-Process -Id $processId -Force
+      }
+    }
 }
 $pidFile = '${backendPidFile.replace(/'/g, "''")}'
 if (Test-Path -LiteralPath $pidFile) {
@@ -177,14 +223,39 @@ if (Test-Path -LiteralPath $pidFile) {
   }
 }
 Get-CimInstance Win32_Process -Filter "name = 'java.exe' or name = 'javaw.exe'" |
-  Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -match '\\\\backend\\\\app\\.jar' } |
+  Where-Object { $_.ProcessId -ne $PID -and ($_.CommandLine -match '[\\\\/]backend[\\\\/]app\\.jar' -or $_.CommandLine -match 'social-posting.*\\.jar') } |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 Start-Sleep -Milliseconds 700
 `;
-  childProcess.execFileSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
-    stdio: 'ignore',
-    windowsHide: true
-  });
+  try {
+    childProcess.execFileSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+      stdio: 'ignore',
+      windowsHide: true
+    });
+  } catch {
+    // The runtime verification below catches stale backends even if cleanup is partial.
+  }
+}
+
+async function startVerifiedBackend() {
+  let lastError = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    stopOldWindowsProcesses();
+    startBackend();
+    await waitForPort(backendPort);
+    try {
+      await verifyBackendRuntime();
+      return;
+    } catch (error) {
+      lastError = error;
+      if (backendProcess) {
+        backendProcess.kill();
+        backendProcess = null;
+      }
+      stopOldWindowsProcesses();
+    }
+  }
+  throw lastError || new Error('Could not start verified local backend.');
 }
 
 function copyRequiredFile(source, destination) {
@@ -368,9 +439,7 @@ async function createWindow() {
   await syncProfilesEnv();
   startProfilesEnvWatcher();
   prepareAppRuntimeFiles();
-  stopOldWindowsProcesses();
-  startBackend();
-  await Promise.all([waitForPort(backendPort), startStaticServer()]);
+  await Promise.all([startVerifiedBackend(), startStaticServer()]);
 
   const win = new BrowserWindow({
     width: 1120,
