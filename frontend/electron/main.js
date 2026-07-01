@@ -295,7 +295,7 @@ async function createWindow() {
     shell.openExternal(url);
     return { action: 'deny' };
   });
-  await win.loadURL(`http://127.0.0.1:${frontendPort}/playback`);
+  await win.loadURL(`http://127.0.0.1:${frontendPort}/playback?desktop=1`);
 }
 
 app.whenReady().then(createWindow);
