@@ -59,12 +59,12 @@
         "to": "backend/config/content-plan.json"
       },
       {
-        "from": "../scripts",
-        "to": "scripts",
-        "filter": [
-          "start-local-chrome-profiles.ps1",
-          "start-profiles.ps1"
-        ]
+        "from": "../scripts/start-local-chrome-profiles.ps1",
+        "to": "scripts/start-local-chrome-profiles.ps1"
+      },
+      {
+        "from": "../scripts/start-profiles.ps1",
+        "to": "scripts/start-profiles.ps1"
       },
       {
         "from": "../remote-chrome-profiles",
