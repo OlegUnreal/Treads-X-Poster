@@ -559,7 +559,7 @@ export class PlaybackPageComponent implements OnInit {
         if (parsed.message?.trim()) {
           return parsed.message;
         }
-        if (parsed.error?.trim()) {
+        if (parsed.error?.trim() && !this.isGenericServerError(parsed.error)) {
           return parsed.error;
         }
       } catch {
@@ -571,7 +571,7 @@ export class PlaybackPageComponent implements OnInit {
       if (nestedObject.message?.trim()) {
         return nestedObject.message;
       }
-      if (nestedObject.error?.trim()) {
+      if (nestedObject.error?.trim() && !this.isGenericServerError(nestedObject.error)) {
         return nestedObject.error;
       }
     }
@@ -582,5 +582,9 @@ export class PlaybackPageComponent implements OnInit {
       return candidate.message;
     }
     return fallback;
+  }
+
+  private isGenericServerError(message: string): boolean {
+    return ['Internal Server Error', 'Http failure response'].includes(message.trim());
   }
 }

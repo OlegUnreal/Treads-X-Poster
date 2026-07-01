@@ -15,12 +15,12 @@ public class ApiExceptionHandler {
         return error(HttpStatus.BAD_REQUEST, exception);
     }
 
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<Map<String, Object>> handleServerError(Exception exception) {
+    @ExceptionHandler(Throwable.class)
+    public ResponseEntity<Map<String, Object>> handleServerError(Throwable exception) {
         return error(HttpStatus.INTERNAL_SERVER_ERROR, exception);
     }
 
-    private ResponseEntity<Map<String, Object>> error(HttpStatus status, Exception exception) {
+    private ResponseEntity<Map<String, Object>> error(HttpStatus status, Throwable exception) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("status", status.value());
         body.put("error", status.getReasonPhrase());
@@ -29,11 +29,19 @@ public class ApiExceptionHandler {
         return ResponseEntity.status(status).body(body);
     }
 
-    private String friendlyMessage(Exception exception) {
-        String message = exception.getMessage();
-        if (message == null || message.isBlank()) {
-            return exception.getClass().getSimpleName();
+    private String friendlyMessage(Throwable exception) {
+        StringBuilder message = new StringBuilder();
+        Throwable current = exception;
+        while (current != null) {
+            String part = current.getMessage();
+            if (part != null && !part.isBlank() && !message.toString().contains(part)) {
+                if (!message.isEmpty()) {
+                    message.append(" | Caused by: ");
+                }
+                message.append(part);
+            }
+            current = current.getCause();
         }
-        return message;
+        return message.isEmpty() ? exception.getClass().getSimpleName() : message.toString();
     }
 }
