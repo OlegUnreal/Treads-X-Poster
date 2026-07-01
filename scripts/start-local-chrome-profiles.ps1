@@ -5,7 +5,10 @@ param(
     [int]$DelayFrom = 0,
     [int]$DelayTo = 0,
     [string]$RuntimeDir = "$env:USERPROFILE\chrome-proxy-profiles",
-    [string]$ChromePath = "C:\Program Files\Google\Chrome\Application\chrome.exe"
+    [string]$ChromePath = "C:\Program Files\Google\Chrome\Application\chrome.exe",
+    [switch]$SyncWebShareProxies,
+    [string]$DopplerProject = "behind-the-smile",
+    [string]$DopplerConfig = "prd"
 )
 
 $ErrorActionPreference = "Stop"
@@ -43,12 +46,87 @@ function Get-PythonPath {
     throw "Python was not found on PATH."
 }
 
+function Get-DopplerPath {
+    $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+    $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+    foreach ($pathPart in (($machinePath + ";" + $userPath) -split ";")) {
+        if ($pathPart -and ($env:Path -notlike "*$pathPart*")) {
+            $env:Path = $env:Path + ";" + $pathPart
+        }
+    }
+
+    $cmd = Get-Command "doppler.exe" -ErrorAction SilentlyContinue
+    if ($cmd) {
+        return $cmd.Source
+    }
+
+    $wingetRoot = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages"
+    if (Test-Path -LiteralPath $wingetRoot) {
+        $candidate = Get-ChildItem -Path $wingetRoot -Recurse -Filter doppler.exe -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($candidate) {
+            return $candidate.FullName
+        }
+    }
+    return $null
+}
+
+function Sync-WebShareProfiles {
+    param(
+        [string]$ImporterPath,
+        [string]$EnvPath,
+        [string]$Project,
+        [string]$Config
+    )
+
+    if (-not (Test-Path -LiteralPath $ImporterPath)) {
+        throw "Missing WebShare importer: $ImporterPath"
+    }
+
+    $token = $env:WEBSHARE_API_TOKEN
+    if (-not $token) {
+        $doppler = Get-DopplerPath
+        if ($doppler) {
+            $token = (& $doppler secrets get WEBSHARE_API_TOKEN --project $Project --config $Config --plain 2>$null)
+            if ($LASTEXITCODE -ne 0) {
+                $token = $null
+            }
+        }
+    }
+
+    if (-not $token) {
+        throw "Missing WEBSHARE_API_TOKEN. Set it locally or log in to Doppler with access to $Project/$Config."
+    }
+
+    $python = Get-PythonPath
+    $previousToken = $env:WEBSHARE_API_TOKEN
+    try {
+        $env:WEBSHARE_API_TOKEN = $token.Trim()
+        & $python $ImporterPath --from-webshare-api --env $EnvPath
+        if ($LASTEXITCODE -ne 0) {
+            throw "WebShare proxy sync failed."
+        }
+    } finally {
+        $env:WEBSHARE_API_TOKEN = $previousToken
+    }
+}
+
 function Test-PortListening {
     param([int]$Port)
     try {
         return [bool](Get-NetTCPConnection -LocalAddress "127.0.0.1" -LocalPort $Port -State Listen -ErrorAction Stop)
     } catch {
         return $false
+    }
+}
+
+function Stop-ListeningPort {
+    param([int]$Port)
+    $connections = Get-NetTCPConnection -LocalAddress "127.0.0.1" -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+    foreach ($connection in $connections) {
+        if ($connection.OwningProcess) {
+            Stop-Process -Id $connection.OwningProcess -Force -ErrorAction SilentlyContinue
+        }
     }
 }
 
@@ -63,15 +141,30 @@ function Start-Forwarder {
     }
     $port = [int]($Listen.Split(":")[-1])
     if (Test-PortListening -Port $port) {
-        return
+        Stop-ListeningPort -Port $port
+        Start-Sleep -Milliseconds 500
     }
     $python = Get-PythonPath
     $forwarder = Join-Path $RuntimeDir "proxy-forwarder.py"
     $stdoutLog = Join-Path $RuntimeDir "$ProfileName-proxy.out.log"
     $stderrLog = Join-Path $RuntimeDir "$ProfileName-proxy.err.log"
-    $command = "& '$python' '$forwarder' '$Listen' '$Upstream' > '$stdoutLog' 2> '$stderrLog'"
-    Start-Process -FilePath "powershell.exe" -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $command) -WindowStyle Hidden
+    Start-Process `
+        -FilePath $python `
+        -ArgumentList @($forwarder, $Listen, $Upstream) `
+        -RedirectStandardOutput $stdoutLog `
+        -RedirectStandardError $stderrLog `
+        -WindowStyle Hidden
     Start-Sleep -Seconds 1
+    if (-not (Test-PortListening -Port $port)) {
+        $errorText = ""
+        if (Test-Path -LiteralPath $stderrLog) {
+            $errorText = (Get-Content -LiteralPath $stderrLog -Raw).Trim()
+        }
+        if ($errorText) {
+            throw "Proxy forwarder for $ProfileName did not start on $Listen. $errorText"
+        }
+        throw "Proxy forwarder for $ProfileName did not start on $Listen."
+    }
 }
 
 function New-ProfileHome {
@@ -142,9 +235,23 @@ if (-not (Test-Path -LiteralPath $ChromePath)) {
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $forwarderSource = Join-Path $repoRoot "remote-chrome-profiles\proxy-forwarder.py"
+$importerSource = Join-Path $repoRoot "remote-chrome-profiles\import-webshare-proxies.py"
 $envFile = Join-Path $RuntimeDir "profiles.env"
 New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $RuntimeDir "data") | Out-Null
+
+Copy-Item -LiteralPath $forwarderSource -Destination (Join-Path $RuntimeDir "proxy-forwarder.py") -Force
+if (Test-Path -LiteralPath $importerSource) {
+    Copy-Item -LiteralPath $importerSource -Destination (Join-Path $RuntimeDir "import-webshare-proxies.py") -Force
+}
+
+if ($SyncWebShareProxies) {
+    Sync-WebShareProfiles `
+        -ImporterPath (Join-Path $RuntimeDir "import-webshare-proxies.py") `
+        -EnvPath $envFile `
+        -Project $DopplerProject `
+        -Config $DopplerConfig
+}
 
 if (-not (Test-Path -LiteralPath $envFile)) {
     $example = Join-Path $repoRoot "remote-chrome-profiles\profiles.env.example"
@@ -152,8 +259,6 @@ if (-not (Test-Path -LiteralPath $envFile)) {
     Write-Host "Created template profiles.env at $envFile. Fill proxy values before running again."
     exit 1
 }
-
-Copy-Item -LiteralPath $forwarderSource -Destination (Join-Path $RuntimeDir "proxy-forwarder.py") -Force
 
 $profileEnv = Read-EnvFile -Path $envFile
 $profileNames = @()

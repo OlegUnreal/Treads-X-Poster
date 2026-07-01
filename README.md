@@ -104,6 +104,18 @@ C:\Users\ZEPHYRUS\chrome-proxy-profiles\
 
 That folder must contain `profiles.env`. It includes proxy credentials, so keep it out of git. The local launcher also copies `remote-chrome-profiles/proxy-forwarder.py` there automatically.
 
+For many WebShare proxies, use `WEBSHARE_API_TOKEN` in Doppler so production deploy can refresh the current proxy list automatically. Manual fallback: keep the provider export outside git as `webshare-proxies.txt` in the same runtime folder and generate `profiles.env` from it:
+
+```powershell
+python .\remote-chrome-profiles\import-webshare-proxies.py "$env:USERPROFILE\chrome-proxy-profiles\webshare-proxies.txt" --env "$env:USERPROFILE\chrome-proxy-profiles\profiles.env"
+```
+
+The local launcher can also refresh from Doppler/WebShare before starting profiles:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\start-local-chrome-profiles.ps1 -SyncWebShareProxies -Count 10 -Url profile-home
+```
+
 Start one or more local profiles:
 
 ```powershell
