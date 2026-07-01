@@ -46,6 +46,15 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Write Windows app version
+        shell: powershell
+        run: |
+          $version = "${{ github.event.inputs.version }}"
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            $version = "${{ github.run_number }}"
+          }
+          Set-Content -LiteralPath "frontend\electron\version.txt" -Value $version -Encoding UTF8
+
       - name: Build portable exe
         shell: powershell
         run: powershell -ExecutionPolicy Bypass -File .\scripts\package-windows-app.ps1 -SkipInstall

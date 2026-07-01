@@ -8,6 +8,8 @@ param(
     [string]$ChromePath = "C:\Program Files\Google\Chrome\Application\chrome.exe",
     [switch]$SyncWebShareProxies,
     [switch]$SkipWebShareSync,
+    [ValidateSet("open", "login")]
+    [string]$Mode = "open",
     [string]$DopplerProject = "behind-the-smile",
     [string]$DopplerConfig = "prd"
 )
@@ -253,6 +255,39 @@ function Should-UseIncognito {
     return $false
 }
 
+function Test-IsYouTubeUrl {
+    param([string]$Value)
+    try {
+        $uri = [Uri]$Value
+        $host = $uri.Host.ToLowerInvariant()
+        return ($host -eq "youtube.com" -or $host.EndsWith(".youtube.com") -or $host -eq "youtu.be" -or $host.EndsWith(".youtu.be"))
+    } catch {
+        return $false
+    }
+}
+
+function Write-ProfileState {
+    param(
+        [string]$ProfileName,
+        [string]$LaunchUrl,
+        [string]$ProfileDir,
+        [int]$ProcessId,
+        [string]$Mode
+    )
+    $stateDir = Join-Path $RuntimeDir "state"
+    New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
+    $statePath = Join-Path $stateDir "$ProfileName.env"
+    $escapedUrl = $LaunchUrl.Replace('\', '\\').Replace('"', '\"')
+    $escapedProfileDir = $ProfileDir.Replace('\', '\\').Replace('"', '\"')
+    @"
+PID="$ProcessId"
+LAST_URL="$escapedUrl"
+LAST_OPENED_AT="$(Get-Date -Format o)"
+PROFILE_DIR="$escapedProfileDir"
+MODE="$Mode"
+"@ | Set-Content -LiteralPath $statePath -Encoding UTF8
+}
+
 if (-not (Test-Path -LiteralPath $ChromePath)) {
     throw "Chrome was not found: $ChromePath"
 }
@@ -263,6 +298,7 @@ $importerSource = Join-Path $repoRoot "remote-chrome-profiles\import-webshare-pr
 $envFile = Join-Path $RuntimeDir "profiles.env"
 New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $RuntimeDir "data") | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $RuntimeDir "state") | Out-Null
 
 Copy-Item -LiteralPath $forwarderSource -Destination (Join-Path $RuntimeDir "proxy-forwarder.py") -Force
 if (Test-Path -LiteralPath $importerSource) {
@@ -306,10 +342,16 @@ $selectedProfiles = $profileNames | Select-Object -First $Count
 
 $DelayFrom = [Math]::Max(0, $DelayFrom)
 $DelayTo = [Math]::Max($DelayFrom, $DelayTo)
-if ($shouldSyncWebShare -and $selectedProfiles.Count -gt 1 -and $DelayTo -eq 0) {
-    $DelayFrom = 30
-    $DelayTo = 120
-    Write-Host "Using default WebShare launch stagger: $DelayFrom-$DelayTo seconds."
+if ($selectedProfiles.Count -gt 1 -and $DelayTo -eq 0) {
+    if (Test-IsYouTubeUrl -Value $Url) {
+        $DelayFrom = 20
+        $DelayTo = 90
+        Write-Host "Using default YouTube launch stagger: $DelayFrom-$DelayTo seconds."
+    } elseif ($shouldSyncWebShare) {
+        $DelayFrom = 30
+        $DelayTo = 120
+        Write-Host "Using default WebShare launch stagger: $DelayFrom-$DelayTo seconds."
+    }
 }
 $windowSize = "1000,760"
 if ($profileEnv.ContainsKey("WINDOW_SIZE")) {
@@ -330,7 +372,7 @@ foreach ($profileName in $selectedProfiles) {
     $profileDir = Join-Path $RuntimeDir "data\$profileName"
     New-Item -ItemType Directory -Force -Path $profileDir | Out-Null
 
-    $launchUrl = $Url
+    $launchUrl = if ($Mode -eq "login") { "https://accounts.google.com/" } else { $Url }
     if ($launchUrl -eq "profile-home") {
         $launchUrl = New-ProfileHome -ProfileName $profileName -Proxy $proxy -Upstream $upstream
     }
@@ -339,16 +381,8 @@ foreach ($profileName in $selectedProfiles) {
     $chromeArgs = @(
         "--user-data-dir=$profileDir",
         "--proxy-server=$proxy",
-        "--no-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-background-networking",
-        "--disable-background-timer-throttling",
-        "--disable-renderer-backgrounding",
-        "--disable-extensions",
-        "--disable-sync",
         "--no-first-run",
         "--no-default-browser-check",
-        "--disable-features=Translate,OptimizationHints,MediaRouter,WebRtcHideLocalIpsWithMdns",
         "--autoplay-policy=no-user-gesture-required",
         "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
         "--window-size=$windowSize",
@@ -362,7 +396,8 @@ foreach ($profileName in $selectedProfiles) {
         $chromeArgs = @("--incognito") + $chromeArgs
     }
 
-    Start-Process -FilePath $ChromePath -ArgumentList $chromeArgs
+    $process = Start-Process -FilePath $ChromePath -ArgumentList $chromeArgs -PassThru
+    Write-ProfileState -ProfileName $profileName -LaunchUrl $launchUrl -ProfileDir $profileDir -ProcessId $process.Id -Mode $Mode
     $started++
     Write-Host "Started $profileName through $proxy"
 

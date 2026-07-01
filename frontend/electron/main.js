@@ -28,6 +28,8 @@ const profilesEnvFile = path.join(profilesRuntimeDir, 'profiles.env');
 const appRuntimeRoot = path.join(profilesRuntimeDir, 'app');
 const backendPidFile = path.join(profilesRuntimeDir, 'behind-the-smile-backend.pid');
 const startupLogFile = path.join(profilesRuntimeDir, 'behind-the-smile-startup.log');
+const versionFile = path.join(__dirname, 'version.txt');
+const currentDesktopVersion = fs.existsSync(versionFile) ? fs.readFileSync(versionFile, 'utf8').trim() : 'local';
 
 let backendProcess = null;
 let staticServer = null;
@@ -296,10 +298,78 @@ function proxyApi(req, res) {
   req.pipe(proxy);
 }
 
+function getLatestWindowsRelease() {
+  const https = require('https');
+  return new Promise((resolve) => {
+    const request = https.get('https://api.github.com/repos/OlegUnreal/Treads-X-Poster/releases/latest', {
+      headers: {
+        'User-Agent': 'BehindTheSmilePlayback'
+      },
+      timeout: 12000
+    }, (response) => {
+      const chunks = [];
+      response.on('data', (chunk) => chunks.push(chunk));
+      response.on('end', () => {
+        try {
+          const data = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+          const asset = Array.isArray(data.assets)
+            ? data.assets.find((item) => item.name && item.name.startsWith('win-BehindTheSmilePlayback-'))
+            : null;
+          const latestVersion = String(data.tag_name || '').replace(/^win-/, '');
+          resolve({
+            currentVersion: currentDesktopVersion,
+            latestVersion,
+            updateAvailable: Boolean(latestVersion && currentDesktopVersion !== 'local' && latestVersion !== currentDesktopVersion),
+            releaseUrl: data.html_url || '',
+            downloadUrl: asset?.browser_download_url || '',
+            error: ''
+          });
+        } catch (error) {
+          resolve({
+            currentVersion: currentDesktopVersion,
+            latestVersion: '',
+            updateAvailable: false,
+            releaseUrl: '',
+            downloadUrl: '',
+            error: `Could not parse update response: ${error.message}`
+          });
+        }
+      });
+    });
+    request.on('timeout', () => {
+      request.destroy();
+      resolve({
+        currentVersion: currentDesktopVersion,
+        latestVersion: '',
+        updateAvailable: false,
+        releaseUrl: '',
+        downloadUrl: '',
+        error: 'Update check timed out.'
+      });
+    });
+    request.on('error', (error) => {
+      resolve({
+        currentVersion: currentDesktopVersion,
+        latestVersion: '',
+        updateAvailable: false,
+        releaseUrl: '',
+        downloadUrl: '',
+        error: `Could not check updates: ${error.message}`
+      });
+    });
+  });
+}
+
 function startStaticServer() {
-  staticServer = http.createServer((req, res) => {
+  staticServer = http.createServer(async (req, res) => {
     if (req.url.startsWith('/api/')) {
       proxyApi(req, res);
+      return;
+    }
+    if (req.url.startsWith('/desktop/update-status')) {
+      const status = await getLatestWindowsRelease();
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(status));
       return;
     }
 
@@ -489,7 +559,7 @@ function copyRequiredFile(source, destination) {
     throw new Error(`Bundled runtime file is missing: ${source}`);
   }
   fs.mkdirSync(path.dirname(destination), { recursive: true });
-  fs.copyFileSync(source, destination);
+  copyFileIfChanged(source, destination);
 }
 
 function copyOptionalFile(source, destination) {
@@ -497,6 +567,21 @@ function copyOptionalFile(source, destination) {
     return;
   }
   fs.mkdirSync(path.dirname(destination), { recursive: true });
+  copyFileIfChanged(source, destination);
+}
+
+function copyFileIfChanged(source, destination) {
+  if (fs.existsSync(destination)) {
+    const sourceStat = fs.statSync(source);
+    const destinationStat = fs.statSync(destination);
+    if (sourceStat.size === destinationStat.size) {
+      const sourceContent = fs.readFileSync(source);
+      const destinationContent = fs.readFileSync(destination);
+      if (sourceContent.equals(destinationContent)) {
+        return;
+      }
+    }
+  }
   fs.copyFileSync(source, destination);
 }
 

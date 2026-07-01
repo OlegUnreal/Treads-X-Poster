@@ -1,7 +1,7 @@
 import { DecimalPipe, NgFor, NgIf } from '@angular/common';
 import { Component, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ChromeProfilesStatus, ChromeProfilesUrlCheckStatus, YoutubePlaybackStatus } from '../models/dashboard.models';
+import { ChromeProfilesStatus, ChromeProfilesUrlCheckStatus, DesktopUpdateStatus, YoutubePlaybackStatus } from '../models/dashboard.models';
 import { DashboardService } from '../services/dashboard.service';
 
 @Component({
@@ -45,7 +45,38 @@ import { DashboardService } from '../services/dashboard.service';
           <button class="btn btn-outline-secondary btn-sm" type="button" [disabled]="busy" (click)="stop()">Stop</button>
           <button class="btn btn-outline-secondary btn-sm" type="button" [disabled]="busy" (click)="refreshStatus()">Refresh</button>
           <a class="btn btn-outline-secondary btn-sm" href="/api/actions/youtube/screenshot" target="_blank" rel="noopener">Screenshot</a>
+          <button class="btn btn-outline-secondary btn-sm" type="button" [disabled]="updateBusy" (click)="checkForUpdates()">
+            {{ updateBusy ? 'Checking update...' : 'Check update' }}
+          </button>
         </div>
+
+        <div class="desktop-status" *ngIf="profilesStatus">
+          <div [class.ok]="profilesStatus.chromeFound" [class.bad]="profilesStatus.chromeFound === false">
+            <strong>Chrome</strong>
+            <span>{{ profilesStatus.chromeFound ? 'Found' : 'Missing' }}</span>
+          </div>
+          <div [class.ok]="profilesStatus.envFileExists" [class.bad]="!profilesStatus.envFileExists">
+            <strong>Config</strong>
+            <span>{{ profilesStatus.envFileExists ? 'Loaded' : 'Missing' }}</span>
+          </div>
+          <div>
+            <strong>Proxies</strong>
+            <span>{{ profilesStatus.configuredProfileCount ?? 0 }}/{{ profilesStatus.profiles?.length ?? 0 }}</span>
+          </div>
+          <div>
+            <strong>Running</strong>
+            <span>{{ profilesStatus.runningProfileCount ?? 0 }}</span>
+          </div>
+          <div>
+            <strong>Logged in</strong>
+            <span>{{ profilesStatus.loggedInProfileCount ?? 0 }}</span>
+          </div>
+        </div>
+
+        <p class="feedback update" *ngIf="updateMessage" [class.error]="updateError">
+          {{ updateMessage }}
+          <a *ngIf="updateStatus?.releaseUrl" [href]="updateStatus?.releaseUrl" target="_blank" rel="noopener">Open release</a>
+        </p>
 
         <div class="profile-launcher">
           <div class="profile-controls">
@@ -83,6 +114,9 @@ import { DashboardService } from '../services/dashboard.service';
           <div class="profiles-actions">
             <button class="btn btn-outline-primary btn-sm" type="button" [disabled]="profilesBusy" (click)="startProfiles()">
               {{ profilesBusy ? 'Starting...' : 'Start profiles' }}
+            </button>
+            <button class="btn btn-outline-success btn-sm" type="button" [disabled]="profilesBusy" (click)="openLoginQueue()">
+              Login mode
             </button>
             <button class="btn btn-outline-secondary btn-sm" type="button" [disabled]="profilesBusy" (click)="refreshProfilesStatus()">Status</button>
           </div>
@@ -138,10 +172,27 @@ import { DashboardService } from '../services/dashboard.service';
             <span class="login-pill" [class.logged-in]="isLoggedIn(profile)" [class.not-logged-in]="!isLoggedIn(profile)">
               {{ isLoggedIn(profile) ? 'Logged in' : 'Not logged in' }}
             </span>
-            <span>{{ profile.proxy || profile.upstreamProxy || 'Proxy not set' }}</span>
+            <span>
+              {{ profile.proxy || profile.upstreamProxy || 'Proxy not set' }}
+              <small class="profile-meta">
+                {{ isRunning(profile) ? 'Running' : 'Stopped' }}{{ profile.lastUrl ? ' · ' + compactUrl(profile.lastUrl) : '' }}
+              </small>
+            </span>
             <div class="profile-row-actions">
               <button class="btn btn-outline-primary btn-sm" type="button" [disabled]="busyProfileName === profile.name" (click)="openProfile(profile.name)">
                 {{ busyProfileName === profile.name ? 'Opening...' : 'Open' }}
+              </button>
+              <button class="btn btn-outline-secondary btn-sm" type="button" [disabled]="busyProfileName === profile.name || !isRunning(profile)" (click)="focusProfile(profile.name)">
+                Focus
+              </button>
+              <button class="btn btn-outline-warning btn-sm" type="button" [disabled]="busyProfileName === profile.name" (click)="restartProfile(profile.name)">
+                Restart
+              </button>
+              <button class="btn btn-outline-danger btn-sm" type="button" [disabled]="busyProfileName === profile.name || !isRunning(profile)" (click)="closeProfile(profile.name)">
+                Close
+              </button>
+              <button class="btn btn-outline-success btn-sm" type="button" [disabled]="busyProfileName === profile.name" (click)="openLoginProfile(profile.name)">
+                Login
               </button>
               <button
                 class="btn btn-sm"
@@ -209,6 +260,12 @@ import { DashboardService } from '../services/dashboard.service';
       overflow-wrap: anywhere;
     }
     .feedback.error { background: #fff1f2; color: #be123c; }
+    .desktop-status { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 12px 0 0; }
+    .desktop-status div { display: grid; gap: 2px; padding: 9px 10px; border: 1px solid #dde3ea; border-radius: 8px; background: #f8fafc; }
+    .desktop-status div.ok { border-color: #bbf7d0; background: #f0fdf4; }
+    .desktop-status div.bad { border-color: #fecdd3; background: #fff1f2; }
+    .desktop-status strong { font: 800 11px/1.2 "Segoe UI", sans-serif; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; }
+    .desktop-status span { font: 800 13px/1.2 "Segoe UI", sans-serif; color: #17212b; overflow-wrap: anywhere; }
     .check-list { display: grid; gap: 6px; margin: 12px 0 0; }
     .check-row { display: grid; grid-template-columns: 70px minmax(0, 1fr) minmax(180px, 1.2fr); gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid #dde3ea; border-radius: 10px; background: #f8fafc; color: #17212b; font: 700 12px/1.3 "Segoe UI", sans-serif; }
     .check-row.ok { border-color: #bbf7d0; background: #f0fdf4; }
@@ -219,7 +276,7 @@ import { DashboardService } from '../services/dashboard.service';
     .status div { padding: 10px; border: 1px solid #dde3ea; border-radius: 10px; background: #f8fafc; }
     .status dd { margin: 0; color: #17212b; font: 800 14px/1.3 "Segoe UI", sans-serif; overflow-wrap: anywhere; }
     .profile-list { display: grid; gap: 6px; margin: 12px 0 0; }
-    .profile-row { display: grid; grid-template-columns: 150px 104px minmax(0, 1fr) 190px; gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid #dde3ea; border-radius: 10px; background: #f8fafc; color: #17212b; font: 700 12px/1.3 "Segoe UI", sans-serif; }
+    .profile-row { display: grid; grid-template-columns: 140px 104px minmax(0, 1fr) 360px; gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid #dde3ea; border-radius: 10px; background: #f8fafc; color: #17212b; font: 700 12px/1.3 "Segoe UI", sans-serif; }
     .profile-id { display: grid; gap: 2px; min-width: 0; }
     .profile-id strong, .profile-id small { overflow-wrap: anywhere; }
     .profile-id small { color: #64748b; font-weight: 700; }
@@ -227,9 +284,10 @@ import { DashboardService } from '../services/dashboard.service';
     .login-pill.logged-in { border-color: #86efac; background: #f0fdf4; color: #15803d; }
     .login-pill.not-logged-in { border-color: #fecdd3; background: #fff1f2; color: #be123c; }
     .profile-row > span:not(.login-pill) { color: #64748b; overflow-wrap: anywhere; }
+    .profile-meta { display: block; margin-top: 2px; color: #475569; font-weight: 700; }
     .profile-row-actions { display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
     .log-tail { margin: 12px 0 0; max-height: 220px; overflow: auto; padding: 10px; border-radius: 10px; background: #0f172a; color: #dbeafe; font: 600 12px/1.45 Consolas, monospace; white-space: pre-wrap; }
-    @media (max-width: 760px) { .page-head, .slider-row, .status, .profile-row { grid-template-columns: 1fr; display: grid; } .actions button, .profiles-actions button { width: 100%; } }
+    @media (max-width: 760px) { .page-head, .slider-row, .status, .profile-row, .desktop-status { grid-template-columns: 1fr; display: grid; } .actions button, .profiles-actions button { width: 100%; } }
   `]
 })
 export class PlaybackPageComponent implements OnInit {
@@ -245,8 +303,8 @@ export class PlaybackPageComponent implements OnInit {
   protected profilesMessage = '';
   protected profilesError = false;
   protected profilesStatus: ChromeProfilesStatus | null = null;
-  protected profilesMinDelay = 5;
-  protected profilesMaxDelay = 45;
+  protected profilesMinDelay = 20;
+  protected profilesMaxDelay = 90;
   protected profileCount = 1;
   protected checkBusy = false;
   protected checkMessage = '';
@@ -254,13 +312,17 @@ export class PlaybackPageComponent implements OnInit {
   protected urlCheckStatus: ChromeProfilesUrlCheckStatus | null = null;
   protected busyProfileName = '';
   protected busyLoginStatusName = '';
+  protected updateBusy = false;
+  protected updateMessage = '';
+  protected updateError = false;
+  protected updateStatus: DesktopUpdateStatus | null = null;
 
   ngOnInit(): void {
     this.refreshProfilesStatus(false);
   }
 
   protected play(): void {
-    const cleanUrl = this.url.trim();
+    const cleanUrl = this.normalizedUrl();
     if (!cleanUrl) {
       this.message = 'Add a video or website URL first.';
       this.error = true;
@@ -342,7 +404,7 @@ export class PlaybackPageComponent implements OnInit {
   }
 
   protected checkUrl(): void {
-    const cleanUrl = this.url.trim();
+    const cleanUrl = this.normalizedUrl();
     if (!cleanUrl) {
       this.checkMessage = 'Add a URL first.';
       this.checkError = true;
@@ -368,7 +430,7 @@ export class PlaybackPageComponent implements OnInit {
   }
 
   protected openCheckedProfiles(): void {
-    const cleanUrl = this.url.trim();
+    const cleanUrl = this.normalizedUrl();
     const profileNames = this.checkedProfileNames().slice(0, this.normalizedProfileCount());
     if (!cleanUrl) {
       this.message = 'Add a video or website URL first.';
@@ -408,7 +470,7 @@ export class PlaybackPageComponent implements OnInit {
   }
 
   protected openProfile(profileName: string): void {
-    const cleanUrl = this.url.trim() || 'https://www.youtube.com/';
+    const cleanUrl = this.normalizedUrl() || 'https://www.youtube.com/';
     this.busyProfileName = profileName;
     this.profilesError = false;
     this.profilesMessage = `Opening ${profileName}...`;
@@ -431,6 +493,64 @@ export class PlaybackPageComponent implements OnInit {
         this.profilesError = true;
         this.busyProfileName = '';
         this.loadProfilesDiagnostics('profilesMessage', this.profilesMessage);
+      }
+    });
+  }
+
+  protected focusProfile(profileName: string): void {
+    this.runProfileAction(profileName, 'Focusing', () => this.dashboardService.focusChromeProfile(profileName));
+  }
+
+  protected closeProfile(profileName: string): void {
+    this.runProfileAction(profileName, 'Closing', () => this.dashboardService.closeChromeProfile(profileName));
+  }
+
+  protected restartProfile(profileName: string): void {
+    const cleanUrl = this.normalizedUrl() || 'https://www.youtube.com/';
+    this.runProfileAction(profileName, 'Restarting', () => this.dashboardService.restartChromeProfile(profileName, cleanUrl));
+  }
+
+  protected openLoginProfile(profileName: string): void {
+    this.runProfileAction(profileName, 'Opening login mode for', () => this.dashboardService.openChromeProfileLogin(profileName));
+  }
+
+  protected openLoginQueue(): void {
+    const candidates = (this.profilesStatus?.profiles ?? [])
+      .filter((profile) => !this.isLoggedIn(profile))
+      .slice(0, this.normalizedProfileCount());
+    if (!candidates.length) {
+      this.profilesMessage = 'All selected profiles are already marked logged in.';
+      this.profilesError = false;
+      return;
+    }
+    this.profilesBusy = true;
+    this.profilesMessage = `Opening login mode for ${candidates.length} profile(s)...`;
+    this.openLoginProfileSequence(candidates.map((profile) => profile.name), 0);
+  }
+
+  protected checkForUpdates(): void {
+    this.updateBusy = true;
+    this.updateError = false;
+    this.updateMessage = 'Checking latest Windows release...';
+    this.dashboardService.getDesktopUpdateStatus().subscribe({
+      next: (status) => {
+        this.updateStatus = status;
+        this.updateBusy = false;
+        this.updateError = Boolean(status.error);
+        if (status.error) {
+          this.updateMessage = status.error;
+          return;
+        }
+        if (status.updateAvailable) {
+          this.updateMessage = `Update available: ${status.latestVersion}. Open release: ${status.releaseUrl}`;
+        } else {
+          this.updateMessage = `You are on the latest version: ${status.currentVersion || status.latestVersion}.`;
+        }
+      },
+      error: (error) => {
+        this.updateBusy = false;
+        this.updateError = true;
+        this.updateMessage = this.errorMessage(error, 'Could not check for updates.');
       }
     });
   }
@@ -510,7 +630,7 @@ export class PlaybackPageComponent implements OnInit {
   }
 
   protected checkedProfileNames(): string[] {
-    if (!this.urlCheckStatus || this.urlCheckStatus.url !== this.url.trim()) {
+    if (!this.urlCheckStatus || this.urlCheckStatus.url !== this.normalizedUrl()) {
       return [];
     }
     return this.urlCheckStatus.results.filter((result) => result.ok).map((result) => result.name);
@@ -518,6 +638,22 @@ export class PlaybackPageComponent implements OnInit {
 
   protected isLoggedIn(profile: { loggedIn?: boolean | string; loginStatus?: string }): boolean {
     return profile.loggedIn === true || profile.loggedIn === 'true' || profile.loginStatus === 'logged_in';
+  }
+
+  protected isRunning(profile: { running?: boolean | string }): boolean {
+    return profile.running === true || profile.running === 'true';
+  }
+
+  protected compactUrl(value: string): string {
+    if (!value) {
+      return '';
+    }
+    try {
+      const url = new URL(value);
+      return `${url.hostname}${url.pathname === '/' ? '' : url.pathname}`;
+    } catch {
+      return value.length > 42 ? `${value.slice(0, 39)}...` : value;
+    }
   }
 
   private normalizedPercent(): number {
@@ -550,6 +686,77 @@ export class PlaybackPageComponent implements OnInit {
 
   private clampProfileCount(): void {
     this.profileCount = this.normalizedProfileCount();
+  }
+
+  private normalizedUrl(): string {
+    const value = this.url.trim();
+    if (!value) {
+      return '';
+    }
+    try {
+      const parsed = new URL(value);
+      const host = parsed.hostname.toLowerCase();
+      if (host === 'youtu.be' || host.endsWith('.youtu.be')) {
+        const videoId = parsed.pathname.replace(/^\//, '').split('/')[0];
+        return videoId ? `https://www.youtube.com/watch?v=${videoId}` : value;
+      }
+      if (host === 'youtube.com' || host.endsWith('.youtube.com')) {
+        const videoId = parsed.searchParams.get('v');
+        if (videoId) {
+          const normalized = new URL('https://www.youtube.com/watch');
+          normalized.searchParams.set('v', videoId);
+          const list = parsed.searchParams.get('list');
+          if (list) {
+            normalized.searchParams.set('list', list);
+          }
+          return normalized.toString();
+        }
+      }
+    } catch {
+      return value;
+    }
+    return value;
+  }
+
+  private runProfileAction(profileName: string, verb: string, action: () => ReturnType<DashboardService['focusChromeProfile']>): void {
+    this.busyProfileName = profileName;
+    this.profilesError = false;
+    this.profilesMessage = `${verb} ${profileName}...`;
+    action().subscribe({
+      next: (status) => {
+        this.profilesStatus = status;
+        this.profilesMessage = status.message || `${verb} ${profileName}.`;
+        this.profilesError = false;
+        this.busyProfileName = '';
+      },
+      error: (error) => {
+        this.profilesMessage = this.errorMessage(error, `Could not update ${profileName}.`);
+        this.profilesError = true;
+        this.busyProfileName = '';
+        this.loadProfilesDiagnostics('profilesMessage', this.profilesMessage);
+      }
+    });
+  }
+
+  private openLoginProfileSequence(profileNames: string[], index: number): void {
+    if (index >= profileNames.length) {
+      this.profilesBusy = false;
+      this.profilesMessage = `Opened login mode for ${profileNames.length} profile(s).`;
+      this.refreshProfilesStatus(false);
+      return;
+    }
+    const profileName = profileNames[index];
+    this.dashboardService.openChromeProfileLogin(profileName).subscribe({
+      next: (status) => {
+        this.profilesStatus = status;
+        setTimeout(() => this.openLoginProfileSequence(profileNames, index + 1), 1500);
+      },
+      error: (error) => {
+        this.profilesBusy = false;
+        this.profilesMessage = this.errorMessage(error, `Could not open login mode for ${profileName}.`);
+        this.profilesError = true;
+      }
+    });
   }
 
   private errorMessage(error: unknown, fallback: string): string {

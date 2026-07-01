@@ -9,6 +9,7 @@ import {
   ChromeProfilesStatus,
   ChromeProfilesUrlCheckRequest,
   ChromeProfilesUrlCheckStatus,
+  DesktopUpdateStatus,
   GeneratePromptRequest,
   GeneratePromptResponse,
   PostingJobRequest,
@@ -172,5 +173,28 @@ export class DashboardService {
       `${API_BASE_URL}/actions/chrome-profiles/${encodeURIComponent(profileName)}/login-status`,
       { loggedIn }
     );
+  }
+
+  focusChromeProfile(profileName: string): Observable<ChromeProfilesStatus> {
+    return this.http.post<ChromeProfilesStatus>(`${API_BASE_URL}/actions/chrome-profiles/${encodeURIComponent(profileName)}/focus`, {});
+  }
+
+  closeChromeProfile(profileName: string): Observable<ChromeProfilesStatus> {
+    return this.http.post<ChromeProfilesStatus>(`${API_BASE_URL}/actions/chrome-profiles/${encodeURIComponent(profileName)}/close`, {});
+  }
+
+  restartChromeProfile(profileName: string, url: string): Observable<ChromeProfilesStatus> {
+    return this.http.post<ChromeProfilesStatus>(
+      `${API_BASE_URL}/actions/chrome-profiles/${encodeURIComponent(profileName)}/restart`,
+      { url }
+    );
+  }
+
+  openChromeProfileLogin(profileName: string): Observable<ChromeProfilesStatus> {
+    return this.http.post<ChromeProfilesStatus>(`${API_BASE_URL}/actions/chrome-profiles/${encodeURIComponent(profileName)}/login`, {});
+  }
+
+  getDesktopUpdateStatus(): Observable<DesktopUpdateStatus> {
+    return this.http.get<DesktopUpdateStatus>('/desktop/update-status');
   }
 }

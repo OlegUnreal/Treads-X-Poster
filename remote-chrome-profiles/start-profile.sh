@@ -52,7 +52,9 @@ else
 fi
 
 PROFILE_DIR="$BASE_DIR/data/$PROFILE_NAME"
+STATE_DIR="$BASE_DIR/state"
 mkdir -p "$PROFILE_DIR"
+mkdir -p "$STATE_DIR"
 
 URL="${LAUNCH_URL:-${START_URL:-about:blank}}"
 if [[ "$URL" == "profile-home" ]]; then
@@ -173,16 +175,8 @@ schedule_auto_click() {
 nohup "$CHROME_BIN" \
   --user-data-dir="$PROFILE_DIR" \
   --proxy-server="$PROXY" \
-  --no-sandbox \
-  --disable-dev-shm-usage \
-  --disable-background-networking \
-  --disable-background-timer-throttling \
-  --disable-renderer-backgrounding \
-  --disable-extensions \
-  --disable-sync \
   --no-first-run \
   --no-default-browser-check \
-  --disable-features=Translate,OptimizationHints,MediaRouter,WebRtcHideLocalIpsWithMdns \
   --autoplay-policy=no-user-gesture-required \
   --force-webrtc-ip-handling-policy=disable_non_proxied_udp \
   "${WINDOW_ARGS[@]}" \
@@ -190,6 +184,13 @@ nohup "$CHROME_BIN" \
   >"$BASE_DIR/${PROFILE_NAME}.log" 2>&1 &
 
 CHROME_PID="$!"
+cat >"$STATE_DIR/${PROFILE_NAME}.env" <<EOF
+PID="$CHROME_PID"
+LAST_URL="$URL"
+LAST_OPENED_AT="$(date -Iseconds)"
+PROFILE_DIR="$PROFILE_DIR"
+MODE="open"
+EOF
 echo "PID: $CHROME_PID"
 echo "Log: $BASE_DIR/${PROFILE_NAME}.log"
 

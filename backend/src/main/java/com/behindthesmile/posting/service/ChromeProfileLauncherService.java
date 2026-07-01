@@ -1,12 +1,14 @@
 package com.behindthesmile.posting.service;
 
 import com.behindthesmile.posting.api.ChromeProfilesLaunchRequest;
+import com.behindthesmile.posting.api.ChromeProfileActionRequest;
 import com.behindthesmile.posting.api.ChromeProfileLoginStatusRequest;
 import com.behindthesmile.posting.api.ChromeProfilesUrlCheckRequest;
 import org.springframework.stereotype.Service;
 
 import java.io.BufferedReader;
 import java.io.StringReader;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
@@ -17,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.HashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -50,7 +53,7 @@ public class ChromeProfileLauncherService {
                 .toList()
                 .size() : selectedProfiles.size();
         int profileCount = clampProfileCount(request == null ? null : request.profileCount(), maxProfiles);
-        String launchUrl = normalizeLaunchUrl(request == null ? null : request.url());
+        String launchUrl = launchUrlForRequest(request);
 
         ProcessBuilder processBuilder = new ProcessBuilder(
                 "bash",
@@ -94,7 +97,7 @@ public class ChromeProfileLauncherService {
                 ? Math.max(1, availableProfiles == 0 ? requestedCount : availableProfiles)
                 : selectedProfiles.size();
         int profileCount = clampProfileCount(request == null ? null : request.profileCount(), maxProfiles);
-        String launchUrl = normalizeLaunchUrl(request == null ? null : request.url());
+        String launchUrl = launchUrlForRequest(request);
 
         List<String> command = new ArrayList<>();
         command.add("powershell.exe");
@@ -109,6 +112,10 @@ public class ChromeProfileLauncherService {
         if (!launchUrl.isBlank()) {
             command.add("-Url");
             command.add(launchUrl);
+        }
+        if (Boolean.TRUE.equals(request == null ? null : request.loginMode())) {
+            command.add("-Mode");
+            command.add("login");
         }
         if (minDelay > 0 || maxDelay > 0) {
             command.add("-DelayFrom");
@@ -174,6 +181,16 @@ public class ChromeProfileLauncherService {
         Path startScript = startScript();
         Path startProfileScript = startProfileScript();
         Path envFile = envFile();
+        List<Map<String, String>> profiles = readProfiles();
+        long configuredProfiles = profiles.stream()
+                .filter(profile -> !profile.getOrDefault("proxy", "").isBlank() || !profile.getOrDefault("upstreamProxy", "").isBlank())
+                .count();
+        long loggedInProfiles = profiles.stream()
+                .filter(profile -> "true".equalsIgnoreCase(profile.getOrDefault("loggedIn", "false")))
+                .count();
+        long runningProfiles = profiles.stream()
+                .filter(profile -> "true".equalsIgnoreCase(profile.getOrDefault("running", "false")))
+                .count();
         status.put("directory", profilesDir.toString());
         status.put("script", startScript.toString());
         status.put("startProfileScript", startProfileScript.toString());
@@ -182,7 +199,11 @@ public class ChromeProfileLauncherService {
         status.put("scriptExists", Files.isRegularFile(startScript));
         status.put("startProfileScriptExists", Files.isRegularFile(startProfileScript));
         status.put("envFileExists", Files.isRegularFile(envFile));
-        status.put("profiles", readProfiles());
+        status.put("profiles", profiles);
+        status.put("chromeFound", chromeFound());
+        status.put("configuredProfileCount", configuredProfiles);
+        status.put("loggedInProfileCount", loggedInProfiles);
+        status.put("runningProfileCount", runningProfiles);
         status.put("logExists", Files.isRegularFile(logFile()));
         status.put("lastStartedAt", lastStartedAt == null ? "" : lastStartedAt.toString());
         status.put("logTail", readLogTail());
@@ -267,6 +288,65 @@ public class ChromeProfileLauncherService {
         return result;
     }
 
+    public Map<String, Object> focusProfile(String profileName) throws Exception {
+        String cleanProfileName = requireKnownProfile(profileName);
+        boolean focused = focusProfileWindow(cleanProfileName);
+        Map<String, Object> result = status();
+        result.put("message", focused ? "Focused " + cleanProfileName : cleanProfileName + " is not running.");
+        return result;
+    }
+
+    public Map<String, Object> closeProfile(String profileName) throws Exception {
+        String cleanProfileName = requireKnownProfile(profileName);
+        int closed = closeProfileProcesses(cleanProfileName);
+        Map<String, Object> result = status();
+        result.put("message", closed > 0 ? "Closed " + cleanProfileName : cleanProfileName + " was not running.");
+        return result;
+    }
+
+    public Map<String, Object> restartProfile(String profileName, ChromeProfileActionRequest request) throws Exception {
+        String cleanProfileName = requireKnownProfile(profileName);
+        closeProfileProcesses(cleanProfileName);
+        ChromeProfilesLaunchRequest launchRequest = new ChromeProfilesLaunchRequest(
+                0,
+                0,
+                1,
+                request == null ? null : request.url(),
+                List.of(cleanProfileName),
+                false
+        );
+        Map<String, Object> result = startAll(launchRequest);
+        result.put("message", "Restarted " + cleanProfileName);
+        return result;
+    }
+
+    public Map<String, Object> openLoginProfile(String profileName) throws Exception {
+        String cleanProfileName = requireKnownProfile(profileName);
+        ChromeProfilesLaunchRequest launchRequest = new ChromeProfilesLaunchRequest(
+                0,
+                0,
+                1,
+                null,
+                List.of(cleanProfileName),
+                true
+        );
+        Map<String, Object> result = startAll(launchRequest);
+        result.put("message", "Opened login mode for " + cleanProfileName);
+        return result;
+    }
+
+    private String requireKnownProfile(String profileName) throws Exception {
+        String cleanProfileName = profileName == null ? "" : profileName.trim();
+        if (cleanProfileName.isBlank() || !cleanProfileName.matches("[A-Za-z0-9_-]+")) {
+            throw new IllegalArgumentException("Invalid profile name.");
+        }
+        List<String> profileNames = List.of(readEnvFile().getOrDefault("PROFILE_NAMES", "").trim().split("\\s+"));
+        if (!profileNames.contains(cleanProfileName)) {
+            throw new IllegalArgumentException("Unknown profile: " + cleanProfileName);
+        }
+        return cleanProfileName;
+    }
+
     private int clampProfileCount(Integer value, int maxProfiles) {
         if (maxProfiles <= 0) {
             return 0;
@@ -298,6 +378,13 @@ public class ChromeProfileLauncherService {
         return selected;
     }
 
+    private String launchUrlForRequest(ChromeProfilesLaunchRequest request) {
+        if (Boolean.TRUE.equals(request == null ? null : request.loginMode())) {
+            return "https://accounts.google.com/";
+        }
+        return normalizeLaunchUrl(request == null ? null : request.url());
+    }
+
     private String normalizeLaunchUrl(String url) {
         if (url == null) {
             return "";
@@ -307,9 +394,52 @@ public class ChromeProfileLauncherService {
             return "";
         }
         if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-            return trimmed;
+            return normalizeYoutubeUrl(trimmed);
         }
         throw new IllegalArgumentException("Launch URL must start with http:// or https://");
+    }
+
+    private String normalizeYoutubeUrl(String url) {
+        try {
+            URI uri = URI.create(url);
+            String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase();
+            if ("youtu.be".equals(host) || host.endsWith(".youtu.be")) {
+                String path = uri.getPath() == null ? "" : uri.getPath();
+                String videoId = path.replaceFirst("^/", "").split("/")[0];
+                if (!videoId.isBlank()) {
+                    return "https://www.youtube.com/watch?v=" + videoId;
+                }
+            }
+            if ("youtube.com".equals(host) || host.endsWith(".youtube.com")) {
+                Map<String, String> query = parseQuery(uri.getRawQuery());
+                String videoId = query.getOrDefault("v", "");
+                if (!videoId.isBlank()) {
+                    StringBuilder normalized = new StringBuilder("https://www.youtube.com/watch?v=").append(videoId);
+                    String list = query.getOrDefault("list", "");
+                    if (!list.isBlank()) {
+                        normalized.append("&list=").append(list);
+                    }
+                    return normalized.toString();
+                }
+            }
+        } catch (Exception ignored) {
+            return url;
+        }
+        return url;
+    }
+
+    private Map<String, String> parseQuery(String rawQuery) {
+        Map<String, String> values = new LinkedHashMap<>();
+        if (rawQuery == null || rawQuery.isBlank()) {
+            return values;
+        }
+        for (String part : rawQuery.split("&")) {
+            int separator = part.indexOf('=');
+            String key = separator < 0 ? part : part.substring(0, separator);
+            String value = separator < 0 ? "" : part.substring(separator + 1);
+            values.put(key, value);
+        }
+        return values;
     }
 
     private int clampDelay(Integer value, int min, int max) {
@@ -412,14 +542,183 @@ public class ChromeProfileLauncherService {
         return trimmed.isBlank() ? "No response" : trimmed.substring(0, Math.min(160, trimmed.length()));
     }
 
+    private boolean chromeFound() {
+        if (isWindows()) {
+            return Files.isRegularFile(Path.of("C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"));
+        }
+        try {
+            Process process = new ProcessBuilder("bash", "-lc", "command -v google-chrome chromium chromium-browser").start();
+            return process.waitFor(3, TimeUnit.SECONDS) && process.exitValue() == 0;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private Map<String, String> readProfileState(String profileName) {
+        Path stateFile = profilesDir().resolve("state").resolve(profileName + ".env");
+        if (!Files.isRegularFile(stateFile)) {
+            return Map.of();
+        }
+        try {
+            Map<String, String> state = new LinkedHashMap<>();
+            for (String rawLine : Files.readAllLines(stateFile, StandardCharsets.UTF_8)) {
+                Matcher matcher = ENV_LINE.matcher(rawLine.trim());
+                if (matcher.matches()) {
+                    state.put(matcher.group(1), unquote(matcher.group(2).trim()));
+                }
+            }
+            return state;
+        } catch (Exception ignored) {
+            return Map.of();
+        }
+    }
+
+    private Map<String, List<String>> runningProfileProcesses() {
+        Map<String, List<String>> running = new HashMap<>();
+        try {
+            if (isWindows()) {
+                String output = runPowerShell("""
+$ErrorActionPreference = 'SilentlyContinue'
+Get-CimInstance Win32_Process -Filter "name = 'chrome.exe' or name = 'chrome_proxy.exe'" |
+  Where-Object { $_.CommandLine -match '--user-data-dir=' } |
+  ForEach-Object { "$($_.ProcessId)`t$($_.CommandLine)" }
+""");
+                collectRunningProfiles(running, output);
+            } else {
+                Process process = new ProcessBuilder("bash", "-lc", "ps -eo pid=,args= | grep -E 'chrome|chromium' | grep -- '--user-data-dir=' || true")
+                        .redirectErrorStream(true)
+                        .start();
+                process.waitFor(5, TimeUnit.SECONDS);
+                collectRunningProfiles(running, new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8));
+            }
+        } catch (Exception ignored) {
+            return running;
+        }
+        return running;
+    }
+
+    private void collectRunningProfiles(Map<String, List<String>> running, String output) {
+        String dataRoot = profilesDir().resolve("data").toString().toLowerCase();
+        for (String rawLine : output.split("\\R")) {
+            String line = rawLine.trim();
+            if (line.isBlank()) {
+                continue;
+            }
+            String pid = line.split("\\s+", 2)[0].trim();
+            String lowerLine = line.toLowerCase();
+            int dataIndex = lowerLine.indexOf(dataRoot.toLowerCase());
+            if (dataIndex < 0) {
+                continue;
+            }
+            String afterData = line.substring(Math.min(line.length(), dataIndex + dataRoot.length()));
+            String normalized = afterData.replace("\\", "/").replace("\"", "");
+            String[] parts = normalized.split("/");
+            if (parts.length < 2 || parts[1].isBlank()) {
+                continue;
+            }
+            String profileName = parts[1].split("[\\s\"]", 2)[0];
+            if (profileName.isBlank()) {
+                continue;
+            }
+            running.computeIfAbsent(profileName, ignored -> new ArrayList<>()).add(pid);
+        }
+    }
+
+    private boolean focusProfileWindow(String profileName) throws Exception {
+        if (!isWindows()) {
+            return false;
+        }
+        String profileDir = escapePowerShellSingleQuoted(profileDir(profileName).toString());
+        String output = runPowerShell("""
+$ErrorActionPreference = 'SilentlyContinue'
+$profileDir = '__PROFILE_DIR__'
+$procs = @(Get-CimInstance Win32_Process -Filter "name = 'chrome.exe'" | Where-Object { $_.CommandLine -like "*$profileDir*" })
+if ($procs.Count -eq 0) { 'not-running'; exit 0 }
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class WinApi {
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
+}
+"@
+foreach ($item in $procs) {
+  $process = Get-Process -Id $item.ProcessId -ErrorAction SilentlyContinue
+  if ($process -and $process.MainWindowHandle -ne 0) {
+    [WinApi]::ShowWindowAsync($process.MainWindowHandle, 9) | Out-Null
+    [WinApi]::SetForegroundWindow($process.MainWindowHandle) | Out-Null
+    'focused'
+    exit 0
+  }
+}
+'not-focused'
+""".replace("__PROFILE_DIR__", profileDir));
+        return output.contains("focused");
+    }
+
+    private int closeProfileProcesses(String profileName) throws Exception {
+        if (isWindows()) {
+            String profileDir = escapePowerShellSingleQuoted(profileDir(profileName).toString());
+            String output = runPowerShell("""
+$ErrorActionPreference = 'SilentlyContinue'
+$profileDir = '__PROFILE_DIR__'
+$procs = @(Get-CimInstance Win32_Process -Filter "name = 'chrome.exe'" | Where-Object { $_.CommandLine -like "*$profileDir*" })
+foreach ($item in $procs) { Stop-Process -Id $item.ProcessId -Force -ErrorAction SilentlyContinue }
+$procs.Count
+""".replace("__PROFILE_DIR__", profileDir));
+            return parseInt(output.trim(), 0);
+        }
+        String quoted = profileDir(profileName).toString().replace("'", "'\\''");
+        Process process = new ProcessBuilder("bash", "-lc", "pkill -f -- '--user-data-dir=" + quoted + "'; true")
+                .redirectErrorStream(true)
+                .start();
+        process.waitFor(5, TimeUnit.SECONDS);
+        return 0;
+    }
+
+    private String runPowerShell(String script) throws Exception {
+        Process process = new ProcessBuilder(
+                "powershell.exe",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                script
+        )
+                .redirectErrorStream(true)
+                .start();
+        boolean finished = process.waitFor(10, TimeUnit.SECONDS);
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        if (!finished) {
+            process.destroyForcibly();
+            throw new IllegalStateException("PowerShell command timed out.");
+        }
+        return output;
+    }
+
+    private int parseInt(String value, int fallback) {
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
+    private String escapePowerShellSingleQuoted(String value) {
+        return value.replace("'", "''");
+    }
+
     private List<Map<String, String>> readProfiles() throws Exception {
         Map<String, String> env = readEnvFile();
         String[] profileNames = env.getOrDefault("PROFILE_NAMES", "").trim().split("\\s+");
+        Map<String, List<String>> runningProcesses = runningProfileProcesses();
         List<Map<String, String>> profiles = new ArrayList<>();
         for (String profileName : profileNames) {
             if (profileName.isBlank()) {
                 continue;
             }
+            Map<String, String> state = readProfileState(profileName);
+            List<String> pids = runningProcesses.getOrDefault(profileName, List.of());
             Map<String, String> profile = new LinkedHashMap<>();
             profile.put("name", profileName);
             profile.put("label", env.getOrDefault("PROFILE_LABEL_" + profileName, profileName));
@@ -428,6 +727,12 @@ public class ChromeProfileLauncherService {
             profile.put("loggedIn", String.valueOf("logged_in".equalsIgnoreCase(loginStatus)));
             profile.put("proxy", maskProxy(env.getOrDefault("PROXY_" + profileName, "")));
             profile.put("upstreamProxy", maskProxy(env.getOrDefault("UPSTREAM_PROXY_" + profileName, "")));
+            profile.put("profileDir", profileDir(profileName).toString());
+            profile.put("running", String.valueOf(!pids.isEmpty()));
+            profile.put("pid", String.join(",", pids));
+            profile.put("lastUrl", state.getOrDefault("LAST_URL", ""));
+            profile.put("lastOpenedAt", state.getOrDefault("LAST_OPENED_AT", ""));
+            profile.put("lastMode", state.getOrDefault("MODE", ""));
             profiles.add(profile);
         }
         return profiles;
@@ -543,6 +848,10 @@ public class ChromeProfileLauncherService {
 
     private Path envFile() {
         return profilesDir().resolve("profiles.env");
+    }
+
+    private Path profileDir(String profileName) {
+        return profilesDir().resolve("data").resolve(profileName).toAbsolutePath().normalize();
     }
 
     private Path logFile() {

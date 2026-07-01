@@ -268,6 +268,29 @@ public class DashboardController {
         return chromeProfileLauncherService.updateLoginStatus(profileName, request);
     }
 
+    @PostMapping("/actions/chrome-profiles/{profileName}/focus")
+    public Map<String, Object> focusChromeProfile(@PathVariable String profileName) throws Exception {
+        return chromeProfileLauncherService.focusProfile(profileName);
+    }
+
+    @PostMapping("/actions/chrome-profiles/{profileName}/close")
+    public Map<String, Object> closeChromeProfile(@PathVariable String profileName) throws Exception {
+        return chromeProfileLauncherService.closeProfile(profileName);
+    }
+
+    @PostMapping("/actions/chrome-profiles/{profileName}/restart")
+    public Map<String, Object> restartChromeProfile(
+            @PathVariable String profileName,
+            @RequestBody(required = false) ChromeProfileActionRequest request
+    ) throws Exception {
+        return chromeProfileLauncherService.restartProfile(profileName, request);
+    }
+
+    @PostMapping("/actions/chrome-profiles/{profileName}/login")
+    public Map<String, Object> openChromeProfileLogin(@PathVariable String profileName) throws Exception {
+        return chromeProfileLauncherService.openLoginProfile(profileName);
+    }
+
     @PostMapping("/actions/attach-open-images")
     public ActionResult attachOpenImages() {
         return socialPostingService.attachImagesToReadyQueue();

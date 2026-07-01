@@ -163,6 +163,10 @@ export interface ChromeProfilesStatus {
   profileNames?: string[];
   url?: string;
   message?: string;
+  chromeFound?: boolean;
+  configuredProfileCount?: number;
+  loggedInProfileCount?: number;
+  runningProfileCount?: number;
 }
 
 export interface ChromeProfileSummary {
@@ -172,6 +176,12 @@ export interface ChromeProfileSummary {
   loggedIn?: boolean | string;
   proxy: string;
   upstreamProxy: string;
+  profileDir?: string;
+  running?: boolean | string;
+  pid?: string;
+  lastUrl?: string;
+  lastOpenedAt?: string;
+  lastMode?: string;
 }
 
 export interface ChromeProfilesLaunchRequest {
@@ -180,6 +190,7 @@ export interface ChromeProfilesLaunchRequest {
   profileCount?: number;
   url?: string;
   profileNames?: string[];
+  loginMode?: boolean;
 }
 
 export interface ChromeProfilesUrlCheckRequest {
@@ -202,6 +213,15 @@ export interface ChromeProfilesUrlCheckResult {
   location: string;
   redirectMarker: string;
   reason: string;
+}
+
+export interface DesktopUpdateStatus {
+  currentVersion: string;
+  latestVersion: string;
+  updateAvailable: boolean;
+  releaseUrl: string;
+  downloadUrl: string;
+  error?: string;
 }
 
 export interface PostingJobStatus {
