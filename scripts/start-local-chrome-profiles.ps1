@@ -37,13 +37,29 @@ function Read-EnvFile {
 }
 
 function Get-PythonPath {
-    foreach ($name in @("python.exe", "python3.exe", "py.exe")) {
+    $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+    $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+    foreach ($pathPart in (($machinePath + ";" + $userPath) -split ";")) {
+        if ($pathPart -and ($env:Path -notlike "*$pathPart*")) {
+            $env:Path = $env:Path + ";" + $pathPart
+        }
+    }
+
+    foreach ($name in @("py.exe", "python.exe", "python3.exe")) {
         $cmd = Get-Command $name -ErrorAction SilentlyContinue
-        if ($cmd) {
+        if (-not $cmd) {
+            continue
+        }
+        if ($cmd.Source -like "*\Microsoft\WindowsApps\python*.exe") {
+            continue
+        }
+
+        $versionOutput = & $cmd.Source --version 2>&1
+        if ($LASTEXITCODE -eq 0 -and ($versionOutput -join " ") -match "Python\s+3\.") {
             return $cmd.Source
         }
     }
-    throw "Python was not found on PATH."
+    throw "Python 3 was not found. Install Python 3 from python.org or run: winget install --id Python.Python.3.12 --source winget"
 }
 
 function Get-DopplerPath {
