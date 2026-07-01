@@ -26,6 +26,7 @@ const profilesEnvSyncToken = process.env.BTS_PROFILES_ENV_SYNC_TOKEN || '';
 const profilesRuntimeDir = path.join(app.getPath('home'), 'chrome-proxy-profiles');
 const profilesEnvFile = path.join(profilesRuntimeDir, 'profiles.env');
 const appRuntimeRoot = path.join(profilesRuntimeDir, 'app');
+const backendPidFile = path.join(profilesRuntimeDir, 'behind-the-smile-backend.pid');
 
 let backendProcess = null;
 let staticServer = null;
@@ -148,6 +149,39 @@ function startBackend() {
   backendProcess = childProcess.spawn(javaExecutable, ['-jar', backendJar], {
     cwd: backendDir,
     env,
+    stdio: 'ignore',
+    windowsHide: true
+  });
+  fs.mkdirSync(path.dirname(backendPidFile), { recursive: true });
+  fs.writeFileSync(backendPidFile, String(backendProcess.pid), 'utf8');
+}
+
+function stopOldWindowsProcesses() {
+  if (!app.isPackaged || process.platform !== 'win32') {
+    return;
+  }
+  const script = `
+$ErrorActionPreference = 'SilentlyContinue'
+$ports = @(${backendPort}, ${frontendPort}) | Select-Object -Unique
+foreach ($port in $ports) {
+  Get-NetTCPConnection -LocalAddress '127.0.0.1' -LocalPort $port -State Listen |
+    Where-Object { $_.OwningProcess -and $_.OwningProcess -ne $PID } |
+    ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+}
+$pidFile = '${backendPidFile.replace(/'/g, "''")}'
+if (Test-Path -LiteralPath $pidFile) {
+  $oldPid = 0
+  [void][int]::TryParse((Get-Content -LiteralPath $pidFile -Raw).Trim(), [ref]$oldPid)
+  if ($oldPid -gt 0 -and $oldPid -ne $PID) {
+    Stop-Process -Id $oldPid -Force
+  }
+}
+Get-CimInstance Win32_Process -Filter "name = 'java.exe' or name = 'javaw.exe'" |
+  Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -match '\\\\backend\\\\app\\.jar' } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+Start-Sleep -Milliseconds 700
+`;
+  childProcess.execFileSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
     stdio: 'ignore',
     windowsHide: true
   });
@@ -334,6 +368,7 @@ async function createWindow() {
   await syncProfilesEnv();
   startProfilesEnvWatcher();
   prepareAppRuntimeFiles();
+  stopOldWindowsProcesses();
   startBackend();
   await Promise.all([waitForPort(backendPort), startStaticServer()]);
 
