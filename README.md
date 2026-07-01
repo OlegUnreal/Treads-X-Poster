@@ -110,11 +110,13 @@ For many WebShare proxies, use `WEBSHARE_API_TOKEN` in Doppler so production dep
 python .\remote-chrome-profiles\import-webshare-proxies.py "$env:USERPROFILE\chrome-proxy-profiles\webshare-proxies.txt" --env "$env:USERPROFILE\chrome-proxy-profiles\profiles.env"
 ```
 
-The local launcher can also refresh from Doppler/WebShare before starting profiles:
+The local launcher refreshes WebShare proxies automatically before starting profiles. Daily use only needs count and URL:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\start-local-chrome-profiles.ps1 -SyncWebShareProxies -Count 3 -DelayFrom 45 -DelayTo 180 -Url profile-home
+powershell -ExecutionPolicy Bypass -File .\scripts\start-profiles.ps1 3 profile-home
 ```
+
+Use the full `start-local-chrome-profiles.ps1 -SkipWebShareSync` command only when you intentionally want to reuse the existing local `profiles.env`.
 
 Start one or more local profiles:
 

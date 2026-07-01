@@ -7,6 +7,7 @@ param(
     [string]$RuntimeDir = "$env:USERPROFILE\chrome-proxy-profiles",
     [string]$ChromePath = "C:\Program Files\Google\Chrome\Application\chrome.exe",
     [switch]$SyncWebShareProxies,
+    [switch]$SkipWebShareSync,
     [string]$DopplerProject = "behind-the-smile",
     [string]$DopplerConfig = "prd"
 )
@@ -261,7 +262,8 @@ if (Test-Path -LiteralPath $importerSource) {
     Copy-Item -LiteralPath $importerSource -Destination (Join-Path $RuntimeDir "import-webshare-proxies.py") -Force
 }
 
-if ($SyncWebShareProxies) {
+$shouldSyncWebShare = -not $SkipWebShareSync
+if ($shouldSyncWebShare) {
     Sync-WebShareProfiles `
         -ImporterPath (Join-Path $RuntimeDir "import-webshare-proxies.py") `
         -EnvPath $envFile `
@@ -297,7 +299,7 @@ $selectedProfiles = $profileNames | Select-Object -First $Count
 
 $DelayFrom = [Math]::Max(0, $DelayFrom)
 $DelayTo = [Math]::Max($DelayFrom, $DelayTo)
-if ($SyncWebShareProxies -and $selectedProfiles.Count -gt 1 -and $DelayTo -eq 0) {
+if ($shouldSyncWebShare -and $selectedProfiles.Count -gt 1 -and $DelayTo -eq 0) {
     $DelayFrom = 30
     $DelayTo = 120
     Write-Host "Using default WebShare launch stagger: $DelayFrom-$DelayTo seconds."
