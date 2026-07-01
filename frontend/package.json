@@ -5,7 +5,8 @@
   "scripts": {
     "start": "ng serve --host 0.0.0.0 --port 4200",
     "build": "ng build",
-    "watch": "ng build --watch --configuration development"
+    "watch": "ng build --watch --configuration development",
+    "desktop": "electron electron/main.js"
   },
   "dependencies": {
     "@angular/animations": "^18.2.0",
@@ -25,6 +26,7 @@
     "@angular/cli": "^18.2.0",
     "@angular/compiler-cli": "^18.2.0",
     "@types/node": "^22.10.1",
+    "electron": "^31.7.7",
     "typescript": "^5.5.4"
   }
 }

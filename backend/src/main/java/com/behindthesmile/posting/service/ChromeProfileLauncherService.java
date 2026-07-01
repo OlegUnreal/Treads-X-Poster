@@ -20,21 +20,22 @@ import java.util.regex.Pattern;
 
 @Service
 public class ChromeProfileLauncherService {
-    private static final Path PROFILES_DIR = Path.of("/root/chrome-proxy-profiles");
-    private static final Path START_SCRIPT = PROFILES_DIR.resolve("start-all.sh");
-    private static final Path START_PROFILE_SCRIPT = PROFILES_DIR.resolve("start-profile.sh");
-    private static final Path ENV_FILE = PROFILES_DIR.resolve("profiles.env");
-    private static final Path LOG_FILE = PROFILES_DIR.resolve("start-all.log");
     private static final Pattern ENV_LINE = Pattern.compile("^([A-Za-z_][A-Za-z0-9_]*)=(.*)$");
 
     private Instant lastStartedAt;
 
     public Map<String, Object> startAll(ChromeProfilesLaunchRequest request) throws Exception {
-        if (!Files.isDirectory(PROFILES_DIR)) {
-            throw new IllegalStateException("Chrome proxy profiles directory is missing: " + PROFILES_DIR);
+        if (isWindows()) {
+            return startWindowsProfiles(request);
         }
-        if (!Files.isRegularFile(START_SCRIPT)) {
-            throw new IllegalStateException("Chrome proxy launcher script is missing: " + START_SCRIPT);
+
+        Path profilesDir = profilesDir();
+        Path startScript = startScript();
+        if (!Files.isDirectory(profilesDir)) {
+            throw new IllegalStateException("Chrome proxy profiles directory is missing: " + profilesDir);
+        }
+        if (!Files.isRegularFile(startScript)) {
+            throw new IllegalStateException("Chrome proxy launcher script is missing: " + startScript);
         }
 
         int minDelay = clampDelay(request == null ? null : request.minDelaySeconds(), 0, 3600);
@@ -53,7 +54,7 @@ public class ChromeProfileLauncherService {
                 "-lc",
                 "chmod +x ./start-all.sh && nohup ./start-all.sh > ./start-all.log 2>&1 & echo started"
         )
-                .directory(PROFILES_DIR.toFile())
+                .directory(profilesDir.toFile())
                 .redirectErrorStream(true);
         processBuilder.environment().put("STAGGER_MIN_SECONDS", String.valueOf(minDelay));
         processBuilder.environment().put("STAGGER_MAX_SECONDS", String.valueOf(maxDelay));
@@ -67,6 +68,69 @@ public class ChromeProfileLauncherService {
 
         Process process = processBuilder.start();
         return waitForStart(process, minDelay, maxDelay, profileCount, launchUrl, selectedProfiles);
+    }
+
+    private Map<String, Object> startWindowsProfiles(ChromeProfilesLaunchRequest request) throws Exception {
+        Path profilesDir = profilesDir();
+        Path startScript = startScript();
+        if (!Files.isRegularFile(startScript)) {
+            throw new IllegalStateException("Windows Chrome profile launcher script is missing: " + startScript);
+        }
+
+        Files.createDirectories(profilesDir);
+        int minDelay = clampDelay(request == null ? null : request.minDelaySeconds(), 0, 3600);
+        int maxDelay = clampDelay(request == null ? null : request.maxDelaySeconds(), minDelay, 3600);
+        List<Map<String, String>> allProfiles = readProfiles();
+        List<String> selectedProfiles = selectedProfiles(request == null ? null : request.profileNames(), allProfiles);
+        int maxProfiles = selectedProfiles.isEmpty()
+                ? Math.max(1, allProfiles.stream()
+                .filter(profile -> !profile.getOrDefault("proxy", "").isBlank() || !profile.getOrDefault("upstreamProxy", "").isBlank())
+                .toList()
+                .size())
+                : selectedProfiles.size();
+        int profileCount = clampProfileCount(request == null ? null : request.profileCount(), maxProfiles);
+        String launchUrl = normalizeLaunchUrl(request == null ? null : request.url());
+
+        List<String> command = new ArrayList<>();
+        command.add("powershell.exe");
+        command.add("-NoProfile");
+        command.add("-ExecutionPolicy");
+        command.add("Bypass");
+        command.add("-File");
+        command.add(startScript.toString());
+        command.add("-Count");
+        command.add(String.valueOf(profileCount));
+        if (!launchUrl.isBlank()) {
+            command.add("-Url");
+            command.add(launchUrl);
+        }
+        if (minDelay > 0 || maxDelay > 0) {
+            command.add("-DelayFrom");
+            command.add(String.valueOf(minDelay));
+            command.add("-DelayTo");
+            command.add(String.valueOf(maxDelay));
+        }
+        if (!selectedProfiles.isEmpty()) {
+            command.add("-Profiles");
+            command.addAll(selectedProfiles);
+        }
+
+        Path logFile = logFile();
+        ProcessBuilder processBuilder = new ProcessBuilder(command)
+                .directory(repoRoot().toFile())
+                .redirectOutput(logFile.toFile())
+                .redirectErrorStream(true);
+        processBuilder.start();
+
+        lastStartedAt = Instant.now();
+        Map<String, Object> result = status();
+        result.put("message", "started");
+        result.put("minDelaySeconds", minDelay);
+        result.put("maxDelaySeconds", maxDelay);
+        result.put("profileCount", profileCount);
+        result.put("url", launchUrl);
+        result.put("profileNames", selectedProfiles);
+        return result;
     }
 
     private Map<String, Object> waitForStart(
@@ -100,16 +164,20 @@ public class ChromeProfileLauncherService {
 
     public Map<String, Object> status() throws Exception {
         Map<String, Object> status = new LinkedHashMap<>();
-        status.put("directory", PROFILES_DIR.toString());
-        status.put("script", START_SCRIPT.toString());
-        status.put("startProfileScript", START_PROFILE_SCRIPT.toString());
-        status.put("envFile", ENV_FILE.toString());
-        status.put("directoryExists", Files.isDirectory(PROFILES_DIR));
-        status.put("scriptExists", Files.isRegularFile(START_SCRIPT));
-        status.put("startProfileScriptExists", Files.isRegularFile(START_PROFILE_SCRIPT));
-        status.put("envFileExists", Files.isRegularFile(ENV_FILE));
+        Path profilesDir = profilesDir();
+        Path startScript = startScript();
+        Path startProfileScript = startProfileScript();
+        Path envFile = envFile();
+        status.put("directory", profilesDir.toString());
+        status.put("script", startScript.toString());
+        status.put("startProfileScript", startProfileScript.toString());
+        status.put("envFile", envFile.toString());
+        status.put("directoryExists", Files.isDirectory(profilesDir));
+        status.put("scriptExists", Files.isRegularFile(startScript));
+        status.put("startProfileScriptExists", Files.isRegularFile(startProfileScript));
+        status.put("envFileExists", Files.isRegularFile(envFile));
         status.put("profiles", readProfiles());
-        status.put("logExists", Files.isRegularFile(LOG_FILE));
+        status.put("logExists", Files.isRegularFile(logFile()));
         status.put("lastStartedAt", lastStartedAt == null ? "" : lastStartedAt.toString());
         status.put("logTail", readLogTail());
         return status;
@@ -309,10 +377,11 @@ public class ChromeProfileLauncherService {
 
     private Map<String, String> readEnvFile() throws Exception {
         Map<String, String> values = new LinkedHashMap<>();
-        if (!Files.isRegularFile(ENV_FILE)) {
+        Path envFile = envFile();
+        if (!Files.isRegularFile(envFile)) {
             return values;
         }
-        try (BufferedReader reader = new BufferedReader(new StringReader(Files.readString(ENV_FILE, StandardCharsets.UTF_8)))) {
+        try (BufferedReader reader = new BufferedReader(new StringReader(Files.readString(envFile, StandardCharsets.UTF_8)))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 String trimmed = line.trim();
@@ -344,11 +413,57 @@ public class ChromeProfileLauncherService {
     }
 
     private String readLogTail() throws Exception {
-        if (!Files.isRegularFile(LOG_FILE)) {
+        Path logFile = logFile();
+        if (!Files.isRegularFile(logFile)) {
             return "";
         }
-        byte[] bytes = Files.readAllBytes(LOG_FILE);
+        byte[] bytes = Files.readAllBytes(logFile);
         int start = Math.max(0, bytes.length - 4000);
         return new String(bytes, start, bytes.length - start, StandardCharsets.UTF_8);
+    }
+
+    private boolean isWindows() {
+        return System.getProperty("os.name", "").toLowerCase().contains("win");
+    }
+
+    private Path profilesDir() {
+        if (isWindows()) {
+            return Path.of(System.getProperty("user.home"), "chrome-proxy-profiles").toAbsolutePath().normalize();
+        }
+        return Path.of("/root/chrome-proxy-profiles");
+    }
+
+    private Path startScript() {
+        if (isWindows()) {
+            return repoRoot().resolve("scripts").resolve("start-local-chrome-profiles.ps1").normalize();
+        }
+        return profilesDir().resolve("start-all.sh");
+    }
+
+    private Path startProfileScript() {
+        if (isWindows()) {
+            return repoRoot().resolve("scripts").resolve("start-profiles.ps1").normalize();
+        }
+        return profilesDir().resolve("start-profile.sh");
+    }
+
+    private Path envFile() {
+        return profilesDir().resolve("profiles.env");
+    }
+
+    private Path logFile() {
+        return profilesDir().resolve(isWindows() ? "start-local.log" : "start-all.log");
+    }
+
+    private Path repoRoot() {
+        String configured = System.getenv("APP_REPO_DIR");
+        if (configured != null && !configured.isBlank()) {
+            return Path.of(configured).toAbsolutePath().normalize();
+        }
+        Path current = Path.of("").toAbsolutePath().normalize();
+        if (current.getFileName() != null && "backend".equalsIgnoreCase(current.getFileName().toString())) {
+            return current.getParent();
+        }
+        return current;
     }
 }

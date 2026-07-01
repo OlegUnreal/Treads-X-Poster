@@ -92,6 +92,26 @@ npx ng serve
 
 The Angular dev server proxies `/api` requests to `http://localhost:8080`, so start the Spring Boot backend first.
 
+### Windows Playback App
+
+Use this when you want the Playback UI as a local Windows application instead of the hosted admin page. It builds the Spring Boot backend, builds the Angular UI, starts the backend on `127.0.0.1:8081`, serves the UI locally, and opens the Playback screen in Electron.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\start-windows-app.ps1
+```
+
+After the first successful build, a faster local launch can reuse the existing build:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\start-windows-app.ps1 -SkipBuild
+```
+
+The app uses the same WebShare/Doppler profile sync as the local scripts and stores Chrome profile runtime files under:
+
+```text
+C:\Users\<you>\chrome-proxy-profiles\
+```
+
 ### Local Proxy Chrome Profiles
 
 Use this when you want to run the same isolated Chrome proxy profiles on the Windows workstation instead of the remote VNC server.
