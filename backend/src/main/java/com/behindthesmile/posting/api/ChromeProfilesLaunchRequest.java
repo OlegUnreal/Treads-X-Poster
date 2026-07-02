@@ -8,6 +8,8 @@ public record ChromeProfilesLaunchRequest(
         Integer profileCount,
         String url,
         List<String> profileNames,
-        Boolean loginMode
+        Boolean loginMode,
+        String referer,
+        String videoQuality
 ) {
 }

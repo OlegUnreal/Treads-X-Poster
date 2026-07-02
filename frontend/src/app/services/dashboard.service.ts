@@ -183,10 +183,10 @@ export class DashboardService {
     return this.http.post<ChromeProfilesStatus>(`${API_BASE_URL}/actions/chrome-profiles/${encodeURIComponent(profileName)}/close`, {});
   }
 
-  restartChromeProfile(profileName: string, url: string): Observable<ChromeProfilesStatus> {
+  restartChromeProfile(profileName: string, url: string, referer = '', videoQuality = 'auto'): Observable<ChromeProfilesStatus> {
     return this.http.post<ChromeProfilesStatus>(
       `${API_BASE_URL}/actions/chrome-profiles/${encodeURIComponent(profileName)}/restart`,
-      { url }
+      { url, referer, videoQuality }
     );
   }
 

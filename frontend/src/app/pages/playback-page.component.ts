@@ -32,6 +32,19 @@ import { DashboardService } from '../services/dashboard.service';
           <input class="form-control form-control-sm percent-input" [(ngModel)]="percent" type="number" min="0" max="100" />
         </div>
 
+        <div class="settings-grid">
+          <label class="field">
+            <span>Referer header</span>
+            <input class="form-control form-control-sm" [(ngModel)]="refererHeader" placeholder="https://youtube.com/" />
+          </label>
+          <label class="field">
+            <span>Video quality</span>
+            <select class="form-select form-select-sm" [(ngModel)]="videoQuality">
+              <option *ngFor="let option of videoQualityOptions" [ngValue]="option.value">{{ option.label }}</option>
+            </select>
+          </label>
+        </div>
+
         <div class="actions">
           <button class="btn btn-primary btn-sm" type="button" [disabled]="busy" (click)="play()">
             {{ busy ? 'Opening...' : 'Open and play' }}
@@ -241,6 +254,7 @@ import { DashboardService } from '../services/dashboard.service';
     }
     .field { display: grid; gap: 4px; }
     .slider-row { display: grid; grid-template-columns: minmax(0, 1fr) 92px; gap: 10px; align-items: end; margin-top: 12px; }
+    .settings-grid { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: 10px; align-items: end; margin-top: 12px; }
     .percent-input { text-align: center; }
     .actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
     .profile-launcher { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #dde3ea; }
@@ -287,11 +301,12 @@ import { DashboardService } from '../services/dashboard.service';
     .profile-meta { display: block; margin-top: 2px; color: #475569; font-weight: 700; }
     .profile-row-actions { display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
     .log-tail { margin: 12px 0 0; max-height: 220px; overflow: auto; padding: 10px; border-radius: 10px; background: #0f172a; color: #dbeafe; font: 600 12px/1.45 Consolas, monospace; white-space: pre-wrap; }
-    @media (max-width: 760px) { .page-head, .slider-row, .status, .profile-row, .desktop-status { grid-template-columns: 1fr; display: grid; } .actions button, .profiles-actions button { width: 100%; } }
+    @media (max-width: 760px) { .page-head, .slider-row, .settings-grid, .status, .profile-row, .desktop-status { grid-template-columns: 1fr; display: grid; } .actions button, .profiles-actions button { width: 100%; } }
   `]
 })
 export class PlaybackPageComponent implements OnInit {
   private readonly dashboardService = inject(DashboardService);
+  private readonly launchSettingsStorageKey = 'bts-playback-launch-settings';
 
   protected url = '';
   protected percent = 100;
@@ -316,8 +331,22 @@ export class PlaybackPageComponent implements OnInit {
   protected updateMessage = '';
   protected updateError = false;
   protected updateStatus: DesktopUpdateStatus | null = null;
+  protected refererHeader = '';
+  protected videoQuality = 'auto';
+  protected readonly videoQualityOptions = [
+    { value: 'auto', label: 'Auto' },
+    { value: 'large', label: '480p' },
+    { value: 'hd720', label: '720p' },
+    { value: 'hd1080', label: '1080p' },
+    { value: 'hd1440', label: '1440p' },
+    { value: 'highres', label: 'Best available' },
+    { value: 'medium', label: '360p' },
+    { value: 'small', label: '240p' },
+    { value: 'tiny', label: '144p' }
+  ];
 
   ngOnInit(): void {
+    this.loadLaunchSettings();
     this.refreshProfilesStatus(false);
   }
 
@@ -335,7 +364,8 @@ export class PlaybackPageComponent implements OnInit {
       minDelaySeconds: this.normalizedDelay(this.profilesMinDelay, 0),
       maxDelaySeconds: this.normalizedDelay(this.profilesMaxDelay, this.normalizedDelay(this.profilesMinDelay, 0)),
       profileCount: this.normalizedProfileCount(),
-      url: cleanUrl
+      url: cleanUrl,
+      ...this.launchOptions()
     }).subscribe({
       next: (status) => {
         this.profilesStatus = status;
@@ -385,7 +415,8 @@ export class PlaybackPageComponent implements OnInit {
     this.dashboardService.startAllChromeProfiles({
       minDelaySeconds: this.normalizedDelay(this.profilesMinDelay, 0),
       maxDelaySeconds: this.normalizedDelay(this.profilesMaxDelay, this.normalizedDelay(this.profilesMinDelay, 0)),
-      profileCount: this.normalizedProfileCount()
+      profileCount: this.normalizedProfileCount(),
+      ...this.launchOptions()
     }).subscribe({
       next: (status) => {
         this.profilesStatus = status;
@@ -451,7 +482,8 @@ export class PlaybackPageComponent implements OnInit {
       maxDelaySeconds: this.normalizedDelay(this.profilesMaxDelay, this.normalizedDelay(this.profilesMinDelay, 0)),
       profileCount: this.normalizedProfileCount(),
       profileNames,
-      url: cleanUrl
+      url: cleanUrl,
+      ...this.launchOptions()
     }).subscribe({
       next: (status) => {
         this.profilesStatus = status;
@@ -479,7 +511,8 @@ export class PlaybackPageComponent implements OnInit {
       maxDelaySeconds: 0,
       profileCount: 1,
       profileNames: [profileName],
-      url: cleanUrl
+      url: cleanUrl,
+      ...this.launchOptions()
     }).subscribe({
       next: (status) => {
         this.profilesStatus = status;
@@ -507,7 +540,12 @@ export class PlaybackPageComponent implements OnInit {
 
   protected restartProfile(profileName: string): void {
     const cleanUrl = this.normalizedUrl() || 'https://www.youtube.com/';
-    this.runProfileAction(profileName, 'Restarting', () => this.dashboardService.restartChromeProfile(profileName, cleanUrl));
+    this.runProfileAction(profileName, 'Restarting', () => this.dashboardService.restartChromeProfile(
+      profileName,
+      cleanUrl,
+      this.normalizedReferer(),
+      this.videoQuality
+    ));
   }
 
   protected openLoginProfile(profileName: string): void {
@@ -729,6 +767,46 @@ export class PlaybackPageComponent implements OnInit {
       return value;
     }
     return value;
+  }
+
+  private normalizedReferer(): string {
+    return this.refererHeader.trim();
+  }
+
+  private launchOptions(): { referer: string; videoQuality: string } {
+    this.saveLaunchSettings();
+    return {
+      referer: this.normalizedReferer(),
+      videoQuality: this.videoQuality
+    };
+  }
+
+  private loadLaunchSettings(): void {
+    try {
+      const raw = window.localStorage.getItem(this.launchSettingsStorageKey);
+      if (!raw) {
+        return;
+      }
+      const settings = JSON.parse(raw) as { refererHeader?: string; videoQuality?: string };
+      this.refererHeader = settings.refererHeader ?? '';
+      if (settings.videoQuality && this.videoQualityOptions.some((option) => option.value === settings.videoQuality)) {
+        this.videoQuality = settings.videoQuality;
+      }
+    } catch {
+      this.refererHeader = '';
+      this.videoQuality = 'auto';
+    }
+  }
+
+  private saveLaunchSettings(): void {
+    try {
+      window.localStorage.setItem(this.launchSettingsStorageKey, JSON.stringify({
+        refererHeader: this.normalizedReferer(),
+        videoQuality: this.videoQuality
+      }));
+    } catch {
+      // Local persistence is optional.
+    }
   }
 
   private runProfileAction(profileName: string, verb: string, action: () => ReturnType<DashboardService['focusChromeProfile']>): void {

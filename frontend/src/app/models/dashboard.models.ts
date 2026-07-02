@@ -193,6 +193,8 @@ export interface ChromeProfilesLaunchRequest {
   url?: string;
   profileNames?: string[];
   loginMode?: boolean;
+  referer?: string;
+  videoQuality?: string;
 }
 
 export interface ChromeProfilesUrlCheckRequest {

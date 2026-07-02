@@ -108,6 +108,113 @@ is_youtube_url() {
   [[ "$value" == *"youtube.com"* || "$value" == *"youtu.be"* ]]
 }
 
+add_youtube_quality_params() {
+  local value="$1"
+  local quality="${VIDEO_QUALITY:-auto}"
+  if [[ "$quality" == "auto" ]] || ! is_youtube_url "$value"; then
+    echo "$value"
+    return 0
+  fi
+  python3 - "$value" "$quality" <<'PY'
+import sys
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+url, quality = sys.argv[1], sys.argv[2]
+parts = urlsplit(url)
+query = dict(parse_qsl(parts.query, keep_blank_values=True))
+query["vq"] = quality
+if quality not in {"tiny", "small"}:
+    query["hd"] = "1"
+print(urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment)))
+PY
+}
+
+create_playback_extension() {
+  local extension_dir="$BASE_DIR/extensions/$PROFILE_NAME"
+  local referer="${LAUNCH_REFERER:-}"
+  local quality="${VIDEO_QUALITY:-auto}"
+  if [[ -z "$referer" && "$quality" == "auto" ]]; then
+    return 1
+  fi
+
+  mkdir -p "$extension_dir"
+  python3 - "$extension_dir" "$referer" "$quality" <<'PY'
+import json
+import os
+import sys
+
+extension_dir, referer, quality = sys.argv[1], sys.argv[2], sys.argv[3]
+manifest = {
+    "manifest_version": 3,
+    "name": "Behind The Smile Playback Controls",
+    "version": "1.0.0",
+    "host_permissions": ["<all_urls>"],
+}
+permissions = []
+if referer:
+    permissions.append("declarativeNetRequest")
+    manifest["declarative_net_request"] = {
+        "rule_resources": [{
+            "id": "referer_rules",
+            "enabled": True,
+            "path": "rules.json",
+        }]
+    }
+    rules = [{
+        "id": 1,
+        "priority": 1,
+        "action": {
+            "type": "modifyHeaders",
+            "requestHeaders": [{
+                "header": "Referer",
+                "operation": "set",
+                "value": referer,
+            }],
+        },
+        "condition": {
+            "urlFilter": "|http",
+            "resourceTypes": ["main_frame", "sub_frame", "xmlhttprequest", "media"],
+        },
+    }]
+    with open(os.path.join(extension_dir, "rules.json"), "w", encoding="utf-8") as file:
+        json.dump(rules, file)
+if quality != "auto":
+    manifest["content_scripts"] = [{
+        "matches": ["*://*.youtube.com/*", "*://youtube.com/*"],
+        "js": ["youtube-quality.js"],
+        "run_at": "document_idle",
+    }]
+    with open(os.path.join(extension_dir, "youtube-quality.js"), "w", encoding="utf-8") as file:
+        file.write(f"""(() => {{
+  const quality = {json.dumps(quality)};
+  let attempts = 0;
+  const applyQuality = () => {{
+    attempts += 1;
+    const player = document.getElementById('movie_player');
+    try {{
+      if (player && typeof player.setPlaybackQualityRange === 'function') {{
+        player.setPlaybackQualityRange(quality);
+      }}
+      if (player && typeof player.setPlaybackQuality === 'function') {{
+        player.setPlaybackQuality(quality);
+      }}
+      localStorage.setItem('yt-player-quality', quality);
+    }} catch (_) {{}}
+    if (attempts < 30) {{
+      setTimeout(applyQuality, 1500);
+    }}
+  }};
+  applyQuality();
+}})();
+""")
+if permissions:
+    manifest["permissions"] = permissions
+with open(os.path.join(extension_dir, "manifest.json"), "w", encoding="utf-8") as file:
+    json.dump(manifest, file)
+PY
+  echo "$extension_dir"
+}
+
 should_use_incognito() {
   local value="$1"
   if is_youtube_url "$value"; then
@@ -133,6 +240,14 @@ if [[ -n "$WINDOW_POSITION" ]]; then
 fi
 if should_use_incognito "$URL"; then
   WINDOW_ARGS+=(--incognito)
+fi
+if [[ "$URL" != file://* ]]; then
+  URL="$(add_youtube_quality_params "$URL")"
+fi
+PLAYBACK_EXTENSION="$(create_playback_extension || true)"
+if [[ -n "$PLAYBACK_EXTENSION" ]]; then
+  WINDOW_ARGS+=(--load-extension="$PLAYBACK_EXTENSION")
+  WINDOW_ARGS+=(--disable-extensions-except="$PLAYBACK_EXTENSION")
 fi
 
 should_auto_click() {
@@ -198,6 +313,8 @@ LAST_URL="$URL"
 LAST_OPENED_AT="$(date -Iseconds)"
 PROFILE_DIR="$PROFILE_DIR"
 MODE="open"
+REFERER="${LAUNCH_REFERER:-}"
+VIDEO_QUALITY="${VIDEO_QUALITY:-auto}"
 EOF
 echo "PID: $CHROME_PID"
 echo "Log: $BASE_DIR/${PROFILE_NAME}.log"

@@ -6,6 +6,9 @@ param(
     [int]$DelayTo = 0,
     [string]$RuntimeDir = "$env:USERPROFILE\chrome-proxy-profiles",
     [string]$ChromePath = "C:\Program Files\Google\Chrome\Application\chrome.exe",
+    [string]$Referer = "",
+    [ValidateSet("auto", "tiny", "small", "medium", "large", "hd720", "hd1080", "hd1440", "highres")]
+    [string]$VideoQuality = "auto",
     [switch]$SyncWebShareProxies,
     [switch]$SkipWebShareSync,
     [ValidateSet("open", "login")]
@@ -269,13 +272,145 @@ function Test-IsYouTubeUrl {
     }
 }
 
+function Add-YouTubeQualityParams {
+    param(
+        [string]$Value,
+        [string]$Quality
+    )
+    if ($Quality -eq "auto" -or -not (Test-IsYouTubeUrl -Value $Value)) {
+        return $Value
+    }
+    try {
+        $builder = [System.UriBuilder]::new($Value)
+        $params = @{}
+        $queryText = $builder.Query.TrimStart("?")
+        if ($queryText) {
+            foreach ($part in ($queryText -split "&")) {
+                if (-not $part) {
+                    continue
+                }
+                $separator = $part.IndexOf("=")
+                if ($separator -lt 0) {
+                    $params[[Uri]::UnescapeDataString($part)] = ""
+                } else {
+                    $key = [Uri]::UnescapeDataString($part.Substring(0, $separator))
+                    $valuePart = $part.Substring($separator + 1)
+                    $params[$key] = [Uri]::UnescapeDataString($valuePart)
+                }
+            }
+        }
+        $params["vq"] = $Quality
+        if ($Quality -ne "tiny" -and $Quality -ne "small") {
+            $params["hd"] = "1"
+        }
+        $encoded = @()
+        foreach ($key in $params.Keys) {
+            $encodedKey = [Uri]::EscapeDataString([string]$key)
+            $encodedValue = [Uri]::EscapeDataString([string]$params[$key])
+            $encoded += "$encodedKey=$encodedValue"
+        }
+        $builder.Query = ($encoded -join "&")
+        return $builder.Uri.AbsoluteUri
+    } catch {
+        return $Value
+    }
+}
+
+function New-PlaybackExtension {
+    param(
+        [string]$ExtensionDir,
+        [string]$RefererValue,
+        [string]$Quality
+    )
+    if (-not $RefererValue -and $Quality -eq "auto") {
+        return ""
+    }
+
+    New-Item -ItemType Directory -Force -Path $ExtensionDir | Out-Null
+    $manifest = [ordered]@{
+        manifest_version = 3
+        name = "Behind The Smile Playback Controls"
+        version = "1.0.0"
+        host_permissions = @("<all_urls>")
+    }
+    $permissions = @()
+    if ($RefererValue) {
+        $permissions += "declarativeNetRequest"
+        $manifest.declarative_net_request = @{
+            rule_resources = @(@{
+                id = "referer_rules"
+                enabled = $true
+                path = "rules.json"
+            })
+        }
+        @(
+            @{
+                id = 1
+                priority = 1
+                action = @{
+                    type = "modifyHeaders"
+                    requestHeaders = @(@{
+                        header = "Referer"
+                        operation = "set"
+                        value = $RefererValue
+                    })
+                }
+                condition = @{
+                    urlFilter = "|http"
+                    resourceTypes = @("main_frame", "sub_frame", "xmlhttprequest", "media")
+                }
+            }
+        ) | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $ExtensionDir "rules.json") -Encoding UTF8
+    }
+    if ($Quality -ne "auto") {
+        $manifest.content_scripts = @(@{
+            matches = @("*://*.youtube.com/*", "*://youtube.com/*")
+            js = @("youtube-quality.js")
+            run_at = "document_idle"
+        })
+        $qualityJson = $Quality | ConvertTo-Json -Compress
+        @"
+(() => {
+  const quality = $qualityJson;
+  let attempts = 0;
+  const applyQuality = () => {
+    attempts += 1;
+    const player = document.getElementById('movie_player');
+    try {
+      if (player && typeof player.setPlaybackQualityRange === 'function') {
+        player.setPlaybackQualityRange(quality);
+      }
+      if (player && typeof player.setPlaybackQuality === 'function') {
+        player.setPlaybackQuality(quality);
+      }
+      localStorage.setItem('yt-player-quality', quality);
+    } catch (_) {
+      // YouTube can change these internals; retry quietly.
+    }
+    if (attempts < 30) {
+      setTimeout(applyQuality, 1500);
+    }
+  };
+  applyQuality();
+})();
+"@ | Set-Content -LiteralPath (Join-Path $ExtensionDir "youtube-quality.js") -Encoding UTF8
+    }
+    if ($permissions.Count -gt 0) {
+        $manifest.permissions = $permissions
+    }
+    $manifest | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $ExtensionDir "manifest.json") -Encoding UTF8
+    return $ExtensionDir
+}
+
 function Write-ProfileState {
     param(
         [string]$ProfileName,
         [string]$LaunchUrl,
         [string]$ProfileDir,
         [int]$ProcessId,
-        [string]$Mode
+        [string]$Mode,
+        [string]$RefererValue,
+        [string]$Quality
     )
     $stateDir = Join-Path $RuntimeDir "state"
     New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
@@ -288,6 +423,8 @@ LAST_URL="$escapedUrl"
 LAST_OPENED_AT="$(Get-Date -Format o)"
 PROFILE_DIR="$escapedProfileDir"
 MODE="$Mode"
+REFERER="$($RefererValue.Replace('\', '\\').Replace('"', '\"'))"
+VIDEO_QUALITY="$Quality"
 "@ | Set-Content -LiteralPath $statePath -Encoding UTF8
 }
 
@@ -378,7 +515,13 @@ foreach ($profileName in $selectedProfiles) {
     $launchUrl = if ($Mode -eq "login") { "https://accounts.google.com/" } else { $Url }
     if ($launchUrl -eq "profile-home") {
         $launchUrl = New-ProfileHome -ProfileName $profileName -Proxy $proxy -Upstream $upstream
+    } else {
+        $launchUrl = Add-YouTubeQualityParams -Value $launchUrl -Quality $VideoQuality
     }
+    $extensionDir = New-PlaybackExtension `
+        -ExtensionDir (Join-Path $RuntimeDir "extensions\$profileName") `
+        -RefererValue $Referer `
+        -Quality $VideoQuality
 
     $position = $profileEnv["WINDOW_POSITION_$profileName"]
     $chromeArgs = @(
@@ -395,12 +538,15 @@ foreach ($profileName in $selectedProfiles) {
     if ($position) {
         $chromeArgs = @("--window-position=$position") + $chromeArgs
     }
+    if ($extensionDir) {
+        $chromeArgs = @("--load-extension=$extensionDir", "--disable-extensions-except=$extensionDir") + $chromeArgs
+    }
     if (Should-UseIncognito -Env $profileEnv -LaunchUrl $launchUrl) {
         $chromeArgs = @("--incognito") + $chromeArgs
     }
 
     $process = Start-Process -FilePath $ChromePath -ArgumentList $chromeArgs -PassThru
-    Write-ProfileState -ProfileName $profileName -LaunchUrl $launchUrl -ProfileDir $profileDir -ProcessId $process.Id -Mode $Mode
+    Write-ProfileState -ProfileName $profileName -LaunchUrl $launchUrl -ProfileDir $profileDir -ProcessId $process.Id -Mode $Mode -RefererValue $Referer -Quality $VideoQuality
     $started++
     Write-Host "Started $profileName through $proxy"
 

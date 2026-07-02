@@ -73,6 +73,11 @@ public class ChromeProfileLauncherService {
         if (!launchUrl.isBlank()) {
             processBuilder.environment().put("LAUNCH_URL", launchUrl);
         }
+        String referer = cleanReferer(request == null ? null : request.referer());
+        if (!referer.isBlank()) {
+            processBuilder.environment().put("LAUNCH_REFERER", referer);
+        }
+        processBuilder.environment().put("VIDEO_QUALITY", cleanVideoQuality(request == null ? null : request.videoQuality()));
 
         Process process = processBuilder.start();
         return waitForStart(process, minDelay, maxDelay, profileCount, launchUrl, selectedProfiles);
@@ -115,6 +120,13 @@ public class ChromeProfileLauncherService {
             command.add("-Url");
             command.add(launchUrl);
         }
+        String referer = cleanReferer(request == null ? null : request.referer());
+        if (!referer.isBlank()) {
+            command.add("-Referer");
+            command.add(referer);
+        }
+        command.add("-VideoQuality");
+        command.add(cleanVideoQuality(request == null ? null : request.videoQuality()));
         if (Boolean.TRUE.equals(request == null ? null : request.loginMode())) {
             command.add("-Mode");
             command.add("login");
@@ -315,7 +327,9 @@ public class ChromeProfileLauncherService {
                 1,
                 request == null ? null : request.url(),
                 List.of(cleanProfileName),
-                false
+                false,
+                cleanReferer(request == null ? null : request.referer()),
+                cleanVideoQuality(request == null ? null : request.videoQuality())
         );
         Map<String, Object> result = startAll(launchRequest);
         result.put("message", "Restarted " + cleanProfileName);
@@ -330,7 +344,9 @@ public class ChromeProfileLauncherService {
                 1,
                 null,
                 List.of(cleanProfileName),
-                true
+                true,
+                "",
+                "auto"
         );
         Map<String, Object> result = startAll(launchRequest);
         result.put("message", "Opened login mode for " + cleanProfileName);
@@ -399,6 +415,31 @@ public class ChromeProfileLauncherService {
             return normalizeYoutubeUrl(trimmed);
         }
         throw new IllegalArgumentException("Launch URL must start with http:// or https://");
+    }
+
+    private String cleanReferer(String referer) {
+        if (referer == null) {
+            return "";
+        }
+        String trimmed = referer.trim();
+        if (trimmed.isBlank()) {
+            return "";
+        }
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+            return trimmed;
+        }
+        throw new IllegalArgumentException("Referer must start with http:// or https://");
+    }
+
+    private String cleanVideoQuality(String quality) {
+        if (quality == null || quality.isBlank()) {
+            return "auto";
+        }
+        String normalized = quality.trim().toLowerCase();
+        return switch (normalized) {
+            case "auto", "tiny", "small", "medium", "large", "hd720", "hd1080", "hd1440", "highres" -> normalized;
+            default -> throw new IllegalArgumentException("Unsupported video quality: " + quality);
+        };
     }
 
     private String normalizeYoutubeUrl(String url) {
