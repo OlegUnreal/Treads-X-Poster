@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, shell } = require('electron');
 const childProcess = require('child_process');
 const fs = require('fs');
 const http = require('http');
@@ -220,6 +220,7 @@ function loadingHtml() {
 }
 
 async function createMainWindow() {
+  Menu.setApplicationMenu(null);
   mainWindow = new BrowserWindow({
     width: 1120,
     height: 820,

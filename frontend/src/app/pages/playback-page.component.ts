@@ -13,7 +13,7 @@ import { DashboardService } from '../services/dashboard.service';
       <header class="page-head">
         <div>
           <p class="eyebrow">Playback</p>
-          <h1>Remote Playback</h1>
+          <h1>Profiles</h1>
         </div>
         <span class="mode-pill">{{ isYoutubeUrl() ? 'YouTube' : 'Website' }}</span>
       </header>
@@ -173,9 +173,9 @@ import { DashboardService } from '../services/dashboard.service';
               {{ isLoggedIn(profile) ? 'Logged in' : 'Not logged in' }}
             </span>
             <span>
-              {{ profile.proxy || profile.upstreamProxy || 'Proxy not set' }}
+              {{ accountLabel(profile) }}
               <small class="profile-meta">
-                {{ isRunning(profile) ? 'Running' : 'Stopped' }}{{ profile.lastUrl ? ' · ' + compactUrl(profile.lastUrl) : '' }}
+                {{ proxyLabel(profile) }} | {{ isRunning(profile) ? 'Running' : 'Stopped' }}{{ profile.lastUrl ? ' | ' + compactUrl(profile.lastUrl) : '' }}
               </small>
             </span>
             <div class="profile-row-actions">
@@ -636,8 +636,8 @@ export class PlaybackPageComponent implements OnInit {
     return this.urlCheckStatus.results.filter((result) => result.ok).map((result) => result.name);
   }
 
-  protected isLoggedIn(profile: { loggedIn?: boolean | string; loginStatus?: string }): boolean {
-    return profile.loggedIn === true || profile.loggedIn === 'true' || profile.loginStatus === 'logged_in';
+  protected isLoggedIn(profile: { googleAccount?: string; loggedIn?: boolean | string; loginStatus?: string }): boolean {
+    return Boolean(profile.googleAccount?.trim()) || profile.loggedIn === true || profile.loggedIn === 'true' || profile.loginStatus === 'logged_in';
   }
 
   protected isRunning(profile: { running?: boolean | string }): boolean {
@@ -654,6 +654,19 @@ export class PlaybackPageComponent implements OnInit {
     } catch {
       return value.length > 42 ? `${value.slice(0, 39)}...` : value;
     }
+  }
+
+  protected accountLabel(profile: { googleAccount?: string; googleAccountName?: string }): string {
+    const email = profile.googleAccount?.trim();
+    const name = profile.googleAccountName?.trim();
+    if (email && name && name !== email) {
+      return `${name} (${email})`;
+    }
+    return email || 'Google account not detected';
+  }
+
+  protected proxyLabel(profile: { proxy?: string; upstreamProxy?: string }): string {
+    return profile.proxy || profile.upstreamProxy || 'Proxy not set';
   }
 
   private normalizedPercent(): number {

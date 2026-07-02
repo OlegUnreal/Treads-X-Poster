@@ -27,6 +27,8 @@ import java.util.regex.Pattern;
 @Service
 public class ChromeProfileLauncherService {
     private static final Pattern ENV_LINE = Pattern.compile("^([A-Za-z_][A-Za-z0-9_]*)=(.*)$");
+    private static final Pattern EMAIL = Pattern.compile("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", Pattern.CASE_INSENSITIVE);
+    private static final Pattern FULL_NAME = Pattern.compile("\"(?:full_name|given_name|display_name)\"\\s*:\\s*\"([^\"]+)\"", Pattern.CASE_INSENSITIVE);
 
     private Instant lastStartedAt;
 
@@ -718,13 +720,19 @@ $procs.Count
                 continue;
             }
             Map<String, String> state = readProfileState(profileName);
+            Map<String, String> googleAccount = readGoogleAccount(profileName);
             List<String> pids = runningProcesses.getOrDefault(profileName, List.of());
             Map<String, String> profile = new LinkedHashMap<>();
             profile.put("name", profileName);
             profile.put("label", env.getOrDefault("PROFILE_LABEL_" + profileName, profileName));
-            String loginStatus = env.getOrDefault("LOGIN_STATUS_" + profileName, "not_logged_in");
+            String googleEmail = googleAccount.getOrDefault("email", "");
+            String loginStatus = googleEmail.isBlank()
+                    ? env.getOrDefault("LOGIN_STATUS_" + profileName, "not_logged_in")
+                    : "logged_in";
+            profile.put("googleAccount", googleEmail);
+            profile.put("googleAccountName", googleAccount.getOrDefault("name", ""));
             profile.put("loginStatus", loginStatus);
-            profile.put("loggedIn", String.valueOf("logged_in".equalsIgnoreCase(loginStatus)));
+            profile.put("loggedIn", String.valueOf(!googleEmail.isBlank() || "logged_in".equalsIgnoreCase(loginStatus)));
             profile.put("proxy", maskProxy(env.getOrDefault("PROXY_" + profileName, "")));
             profile.put("upstreamProxy", maskProxy(env.getOrDefault("UPSTREAM_PROXY_" + profileName, "")));
             profile.put("profileDir", profileDir(profileName).toString());
@@ -736,6 +744,96 @@ $procs.Count
             profiles.add(profile);
         }
         return profiles;
+    }
+
+    private Map<String, String> readGoogleAccount(String profileName) {
+        Path profileRoot = profileDir(profileName);
+        List<Path> candidates = List.of(
+                profileRoot.resolve("Default").resolve("Preferences"),
+                profileRoot.resolve("Local State")
+        );
+        for (Path candidate : candidates) {
+            Map<String, String> account = readGoogleAccountFromFile(candidate);
+            if (!account.getOrDefault("email", "").isBlank()) {
+                return account;
+            }
+        }
+        return Map.of();
+    }
+
+    private Map<String, String> readGoogleAccountFromFile(Path file) {
+        if (!Files.isRegularFile(file)) {
+            return Map.of();
+        }
+        try {
+            String content = Files.readString(file, StandardCharsets.UTF_8);
+            String email = bestGoogleEmail(content);
+            if (email.isBlank()) {
+                return Map.of();
+            }
+            Map<String, String> account = new LinkedHashMap<>();
+            account.put("email", email);
+            String name = bestGoogleName(content, email);
+            if (!name.isBlank()) {
+                account.put("name", name);
+            }
+            return account;
+        } catch (Exception ignored) {
+            return Map.of();
+        }
+    }
+
+    private String bestGoogleEmail(String content) {
+        Matcher matcher = EMAIL.matcher(content);
+        String firstEmail = "";
+        while (matcher.find()) {
+            String email = matcher.group();
+            if (firstEmail.isBlank()) {
+                firstEmail = email;
+            }
+            int start = Math.max(0, matcher.start() - 160);
+            int end = Math.min(content.length(), matcher.end() + 160);
+            String context = content.substring(start, end).toLowerCase();
+            if (context.contains("account") || context.contains("signin") || context.contains("gaia") || context.contains("google")) {
+                return email;
+            }
+        }
+        return firstEmail;
+    }
+
+    private String bestGoogleName(String content, String email) {
+        int emailIndex = content.indexOf(email);
+        if (emailIndex >= 0) {
+            int start = Math.max(0, emailIndex - 600);
+            int end = Math.min(content.length(), emailIndex + 600);
+            String nearEmail = content.substring(start, end);
+            String name = firstJsonName(nearEmail);
+            if (!name.isBlank()) {
+                return name;
+            }
+        }
+        return firstJsonName(content);
+    }
+
+    private String firstJsonName(String content) {
+        Matcher matcher = FULL_NAME.matcher(content);
+        while (matcher.find()) {
+            String value = unescapeJsonString(matcher.group(1)).trim();
+            if (!value.isBlank() && !EMAIL.matcher(value).matches()) {
+                return value;
+            }
+        }
+        return "";
+    }
+
+    private String unescapeJsonString(String value) {
+        return value
+                .replace("\\\"", "\"")
+                .replace("\\\\", "\\")
+                .replace("\\/", "/")
+                .replace("\\n", "\n")
+                .replace("\\r", "\r")
+                .replace("\\t", "\t");
     }
 
     private Map<String, String> readEnvFile() throws Exception {

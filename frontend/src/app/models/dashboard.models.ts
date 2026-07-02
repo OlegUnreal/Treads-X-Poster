@@ -172,6 +172,8 @@ export interface ChromeProfilesStatus {
 export interface ChromeProfileSummary {
   name: string;
   label?: string;
+  googleAccount?: string;
+  googleAccountName?: string;
   loginStatus?: string;
   loggedIn?: boolean | string;
   proxy: string;
