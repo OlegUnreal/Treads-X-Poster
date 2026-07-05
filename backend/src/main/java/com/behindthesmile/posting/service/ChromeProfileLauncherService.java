@@ -762,7 +762,10 @@ $procs.Count
             }
             Map<String, String> state = readProfileState(profileName);
             Map<String, String> googleAccount = readGoogleAccount(profileName);
-            List<String> pids = runningProcesses.getOrDefault(profileName, List.of());
+            List<String> pids = new ArrayList<>(runningProcesses.getOrDefault(profileName, List.of()));
+            if (pids.isEmpty()) {
+                pids.addAll(liveStatePids(state));
+            }
             Map<String, String> profile = new LinkedHashMap<>();
             profile.put("name", profileName);
             profile.put("label", env.getOrDefault("PROFILE_LABEL_" + profileName, profileName));
@@ -785,6 +788,30 @@ $procs.Count
             profiles.add(profile);
         }
         return profiles;
+    }
+
+    private List<String> liveStatePids(Map<String, String> state) {
+        String pidValue = state.getOrDefault("PID", "");
+        if (pidValue.isBlank()) {
+            return List.of();
+        }
+
+        List<String> livePids = new ArrayList<>();
+        for (String rawPid : pidValue.split(",")) {
+            String pid = rawPid.trim();
+            if (pid.isBlank()) {
+                continue;
+            }
+            try {
+                long numericPid = Long.parseLong(pid);
+                if (ProcessHandle.of(numericPid).map(ProcessHandle::isAlive).orElse(false)) {
+                    livePids.add(pid);
+                }
+            } catch (NumberFormatException ignored) {
+                // Ignore stale or malformed state from older launches.
+            }
+        }
+        return livePids;
     }
 
     private Map<String, String> readGoogleAccount(String profileName) {
