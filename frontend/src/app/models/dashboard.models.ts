@@ -181,6 +181,7 @@ export interface ChromeProfileSummary {
   profileDir?: string;
   running?: boolean | string;
   pid?: string;
+  debugPort?: string;
   lastUrl?: string;
   lastOpenedAt?: string;
   lastMode?: string;

@@ -408,6 +408,7 @@ function Write-ProfileState {
         [string]$LaunchUrl,
         [string]$ProfileDir,
         [int]$ProcessId,
+        [int]$DebugPort,
         [string]$Mode,
         [string]$RefererValue,
         [string]$Quality
@@ -419,6 +420,7 @@ function Write-ProfileState {
     $escapedProfileDir = $ProfileDir.Replace('\', '\\').Replace('"', '\"')
     @"
 PID="$ProcessId"
+DEBUG_PORT="$DebugPort"
 LAST_URL="$escapedUrl"
 LAST_OPENED_AT="$(Get-Date -Format o)"
 PROFILE_DIR="$escapedProfileDir"
@@ -426,6 +428,17 @@ MODE="$Mode"
 REFERER="$($RefererValue.Replace('\', '\\').Replace('"', '\"'))"
 VIDEO_QUALITY="$Quality"
 "@ | Set-Content -LiteralPath $statePath -Encoding UTF8
+}
+
+function Get-ProfileDebugPort {
+    param(
+        [string]$ProfileName,
+        [int]$FallbackIndex
+    )
+    if ($ProfileName -match '(\d+)$') {
+        return 12000 + [int]$Matches[1]
+    }
+    return 12000 + $FallbackIndex
 }
 
 if (-not (Test-Path -LiteralPath $ChromePath)) {
@@ -511,6 +524,7 @@ foreach ($profileName in $selectedProfiles) {
 
     $profileDir = Join-Path $RuntimeDir "data\$profileName"
     New-Item -ItemType Directory -Force -Path $profileDir | Out-Null
+    $debugPort = Get-ProfileDebugPort -ProfileName $profileName -FallbackIndex ($started + 1)
 
     $launchUrl = if ($Mode -eq "login") { "https://accounts.google.com/" } else { $Url }
     if ($launchUrl -eq "profile-home") {
@@ -527,6 +541,8 @@ foreach ($profileName in $selectedProfiles) {
     $chromeArgs = @(
         "--user-data-dir=$profileDir",
         "--proxy-server=$proxy",
+        "--remote-debugging-address=127.0.0.1",
+        "--remote-debugging-port=$debugPort",
         "--no-first-run",
         "--no-default-browser-check",
         "--autoplay-policy=no-user-gesture-required",
@@ -546,7 +562,7 @@ foreach ($profileName in $selectedProfiles) {
     }
 
     $process = Start-Process -FilePath $ChromePath -ArgumentList $chromeArgs -PassThru
-    Write-ProfileState -ProfileName $profileName -LaunchUrl $launchUrl -ProfileDir $profileDir -ProcessId $process.Id -Mode $Mode -RefererValue $Referer -Quality $VideoQuality
+    Write-ProfileState -ProfileName $profileName -LaunchUrl $launchUrl -ProfileDir $profileDir -ProcessId $process.Id -DebugPort $debugPort -Mode $Mode -RefererValue $Referer -Quality $VideoQuality
     $started++
     Write-Host "Started $profileName through $proxy"
 

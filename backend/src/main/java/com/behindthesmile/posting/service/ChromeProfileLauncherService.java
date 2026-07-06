@@ -9,11 +9,15 @@ import org.springframework.stereotype.Service;
 import java.io.BufferedReader;
 import java.io.StringReader;
 import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,6 +33,10 @@ public class ChromeProfileLauncherService {
     private static final Pattern ENV_LINE = Pattern.compile("^([A-Za-z_][A-Za-z0-9_]*)=(.*)$");
     private static final Pattern EMAIL = Pattern.compile("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", Pattern.CASE_INSENSITIVE);
     private static final Pattern FULL_NAME = Pattern.compile("\"(?:full_name|given_name|display_name)\"\\s*:\\s*\"([^\"]+)\"", Pattern.CASE_INSENSITIVE);
+    private static final Duration DEVTOOLS_STATUS_TIMEOUT = Duration.ofMillis(700);
+    private final HttpClient httpClient = HttpClient.newBuilder()
+            .connectTimeout(DEVTOOLS_STATUS_TIMEOUT)
+            .build();
 
     private Instant lastStartedAt;
 
@@ -801,6 +809,10 @@ $procs.Count
             if (pids.isEmpty()) {
                 pids.addAll(liveStatePids(state));
             }
+            String debugPort = state.getOrDefault("DEBUG_PORT", "");
+            if (pids.isEmpty() && devToolsPortAlive(debugPort)) {
+                pids.add("debug:" + debugPort);
+            }
             Map<String, String> profile = new LinkedHashMap<>();
             profile.put("name", profileName);
             profile.put("label", env.getOrDefault("PROFILE_LABEL_" + profileName, profileName));
@@ -817,6 +829,7 @@ $procs.Count
             profile.put("profileDir", profileDir(profileName).toString());
             profile.put("running", String.valueOf(!pids.isEmpty()));
             profile.put("pid", String.join(",", pids));
+            profile.put("debugPort", debugPort);
             profile.put("lastUrl", state.getOrDefault("LAST_URL", ""));
             profile.put("lastOpenedAt", state.getOrDefault("LAST_OPENED_AT", ""));
             profile.put("lastMode", state.getOrDefault("MODE", ""));
@@ -847,6 +860,26 @@ $procs.Count
             }
         }
         return livePids;
+    }
+
+    private boolean devToolsPortAlive(String portValue) {
+        int port = parseInt(portValue, 0);
+        if (port <= 0 || port > 65535) {
+            return false;
+        }
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("http://127.0.0.1:" + port + "/json/version"))
+                    .timeout(DEVTOOLS_STATUS_TIMEOUT)
+                    .GET()
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            return response.statusCode() >= 200 && response.statusCode() < 300
+                    && response.body() != null
+                    && response.body().toLowerCase().contains("chrome");
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     private Map<String, String> readGoogleAccount(String profileName) {
