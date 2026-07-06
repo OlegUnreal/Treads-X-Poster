@@ -534,7 +534,7 @@ if (-not (Test-Path -LiteralPath $envFile)) {
 $profileEnv = Read-EnvFile -Path $envFile
 $profileNames = @()
 if ($Profiles.Count -gt 0) {
-    $profileNames = $Profiles
+    $profileNames = ($Profiles -join " " -split '[,\s]+' | Where-Object { $_ })
 } else {
     $profileNamesValue = ""
     if ($profileEnv.ContainsKey("PROFILE_NAMES")) {

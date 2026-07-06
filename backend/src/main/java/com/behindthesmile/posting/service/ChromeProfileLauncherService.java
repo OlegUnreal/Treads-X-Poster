@@ -147,7 +147,7 @@ public class ChromeProfileLauncherService {
         }
         if (!selectedProfiles.isEmpty()) {
             command.add("-Profiles");
-            command.addAll(selectedProfiles);
+            command.add(String.join(",", selectedProfiles));
         }
 
         Path logFile = logFile();
