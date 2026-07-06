@@ -260,6 +260,16 @@ public class DashboardController {
         return chromeProfileLauncherService.checkUrl(request);
     }
 
+    @PostMapping("/actions/chrome-profiles/check-url/start")
+    public Map<String, Object> startChromeProfilesUrlCheck(@RequestBody(required = false) ChromeProfilesUrlCheckRequest request) throws Exception {
+        return chromeProfileLauncherService.startUrlCheck(request);
+    }
+
+    @GetMapping("/actions/chrome-profiles/check-url/status")
+    public Map<String, Object> chromeProfilesUrlCheckStatus() {
+        return chromeProfileLauncherService.currentUrlCheckStatus();
+    }
+
     @PostMapping("/actions/chrome-profiles/bulk")
     public Map<String, Object> bulkChromeProfiles(@RequestBody(required = false) ChromeProfilesBulkActionRequest request) throws Exception {
         return chromeProfileLauncherService.bulkAction(request);

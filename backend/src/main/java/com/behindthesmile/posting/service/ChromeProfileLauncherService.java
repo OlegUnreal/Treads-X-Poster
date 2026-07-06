@@ -29,6 +29,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.CompletionService;
+import java.util.concurrent.ExecutorCompletionService;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -41,8 +43,18 @@ public class ChromeProfileLauncherService {
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(DEVTOOLS_STATUS_TIMEOUT)
             .build();
+    private final Object urlCheckLock = new Object();
 
     private Instant lastStartedAt;
+    private Map<String, Object> latestUrlCheckStatus = Map.of(
+            "url", "",
+            "checking", false,
+            "okCount", 0,
+            "completedCount", 0,
+            "totalCount", 0,
+            "results", List.of()
+    );
+    private ExecutorService activeUrlCheckExecutor;
 
     public Map<String, Object> startAll(ChromeProfilesLaunchRequest request) throws Exception {
         if (isWindows()) {
@@ -260,6 +272,49 @@ public class ChromeProfileLauncherService {
         return response;
     }
 
+    public Map<String, Object> startUrlCheck(ChromeProfilesUrlCheckRequest request) throws Exception {
+        String url = normalizeLaunchUrl(request == null ? null : request.url());
+        if (url.isBlank()) {
+            throw new IllegalArgumentException("URL is required.");
+        }
+        Map<String, String> env = readEnvFile();
+        List<Map<String, String>> profiles = readProfiles();
+        List<Map<String, Object>> initialResults = new ArrayList<>();
+        for (Map<String, String> profile : profiles) {
+            String profileName = profile.getOrDefault("name", "");
+            Map<String, Object> pending = new LinkedHashMap<>();
+            pending.put("name", profileName);
+            pending.put("proxy", profile.getOrDefault("upstreamProxy", profile.getOrDefault("proxy", "")));
+            pending.put("ok", false);
+            pending.put("status", "Pending");
+            pending.put("statusCode", 0);
+            pending.put("location", "");
+            pending.put("redirectMarker", "");
+            pending.put("reason", "Pending");
+            initialResults.add(pending);
+        }
+
+        ExecutorService executor = Executors.newFixedThreadPool(checkConcurrency());
+        synchronized (urlCheckLock) {
+            if (activeUrlCheckExecutor != null) {
+                activeUrlCheckExecutor.shutdownNow();
+            }
+            activeUrlCheckExecutor = executor;
+            latestUrlCheckStatus = urlCheckStatus(url, true, 0, 0, profiles.size(), initialResults);
+        }
+
+        Thread worker = new Thread(() -> runUrlCheckJob(executor, env, profiles, url), "chrome-profile-url-check");
+        worker.setDaemon(true);
+        worker.start();
+        return currentUrlCheckStatus();
+    }
+
+    public Map<String, Object> currentUrlCheckStatus() {
+        synchronized (urlCheckLock) {
+            return copyUrlCheckStatus(latestUrlCheckStatus);
+        }
+    }
+
     public Map<String, Object> bulkAction(ChromeProfilesBulkActionRequest request) throws Exception {
         if (request == null) {
             throw new IllegalArgumentException("Bulk action request is required.");
@@ -362,6 +417,130 @@ public class ChromeProfileLauncherService {
         } finally {
             executor.shutdownNow();
         }
+    }
+
+    private void runUrlCheckJob(ExecutorService executor, Map<String, String> env, List<Map<String, String>> profiles, String url) {
+        int completedCount = 0;
+        int okCount = 0;
+        try {
+            CompletionService<Map<String, Object>> completion = new ExecutorCompletionService<>(executor);
+            for (Map<String, String> profile : profiles) {
+                completion.submit(() -> {
+                    String profileName = profile.getOrDefault("name", "");
+                    String upstreamProxy = env.getOrDefault("UPSTREAM_PROXY_" + profileName, "");
+                    String proxy = upstreamProxy.isBlank() ? env.getOrDefault("PROXY_" + profileName, "") : upstreamProxy;
+                    return checkUrlWithProxy(profileName, proxy, url);
+                });
+            }
+
+            for (int index = 0; index < profiles.size(); index++) {
+                Map<String, Object> result = completion.take().get();
+                completedCount++;
+                if (Boolean.TRUE.equals(result.get("ok"))) {
+                    okCount++;
+                }
+                updateUrlCheckProgress(executor, url, true, okCount, completedCount, profiles.size(), result);
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        } catch (Exception exception) {
+            Map<String, Object> failed = new LinkedHashMap<>();
+            failed.put("name", "");
+            failed.put("proxy", "");
+            failed.put("ok", false);
+            failed.put("status", "Error");
+            failed.put("statusCode", 0);
+            failed.put("location", "");
+            failed.put("redirectMarker", "");
+            failed.put("reason", exception.getMessage() == null ? "Check failed" : exception.getMessage());
+            updateUrlCheckProgress(executor, url, true, okCount, completedCount, profiles.size(), failed);
+        } finally {
+            synchronized (urlCheckLock) {
+                if (activeUrlCheckExecutor != executor) {
+                    executor.shutdownNow();
+                    return;
+                }
+                Map<String, Object> current = copyUrlCheckStatus(latestUrlCheckStatus);
+                latestUrlCheckStatus = urlCheckStatus(
+                        url,
+                        false,
+                        parseInt(String.valueOf(current.getOrDefault("okCount", okCount)), okCount),
+                        parseInt(String.valueOf(current.getOrDefault("completedCount", completedCount)), completedCount),
+                        profiles.size(),
+                        currentResults(current)
+                );
+                if (activeUrlCheckExecutor == executor) {
+                    activeUrlCheckExecutor = null;
+                }
+            }
+            executor.shutdownNow();
+        }
+    }
+
+    private void updateUrlCheckProgress(ExecutorService executor, String url, boolean checking, int okCount, int completedCount, int totalCount, Map<String, Object> result) {
+        synchronized (urlCheckLock) {
+            if (activeUrlCheckExecutor != executor) {
+                return;
+            }
+            Map<String, Object> current = copyUrlCheckStatus(latestUrlCheckStatus);
+            List<Map<String, Object>> results = currentResults(current);
+            String resultName = String.valueOf(result.getOrDefault("name", ""));
+            if (!resultName.isBlank()) {
+                boolean replaced = false;
+                for (int index = 0; index < results.size(); index++) {
+                    if (resultName.equals(String.valueOf(results.get(index).getOrDefault("name", "")))) {
+                        results.set(index, new LinkedHashMap<>(result));
+                        replaced = true;
+                        break;
+                    }
+                }
+                if (!replaced) {
+                    results.add(new LinkedHashMap<>(result));
+                }
+            }
+            latestUrlCheckStatus = urlCheckStatus(url, checking, okCount, completedCount, totalCount, results);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> currentResults(Map<String, Object> status) {
+        Object rawResults = status.get("results");
+        if (!(rawResults instanceof List<?> rawList)) {
+            return new ArrayList<>();
+        }
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (Object item : rawList) {
+            if (item instanceof Map<?, ?> rawMap) {
+                Map<String, Object> result = new LinkedHashMap<>();
+                for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+                    result.put(String.valueOf(entry.getKey()), entry.getValue());
+                }
+                results.add(result);
+            }
+        }
+        return results;
+    }
+
+    private Map<String, Object> urlCheckStatus(String url, boolean checking, int okCount, int completedCount, int totalCount, List<Map<String, Object>> results) {
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("url", url);
+        status.put("checking", checking);
+        status.put("okCount", okCount);
+        status.put("completedCount", completedCount);
+        status.put("totalCount", totalCount);
+        status.put("results", new ArrayList<>(results));
+        return status;
+    }
+
+    private Map<String, Object> copyUrlCheckStatus(Map<String, Object> status) {
+        return urlCheckStatus(
+                String.valueOf(status.getOrDefault("url", "")),
+                Boolean.TRUE.equals(status.get("checking")),
+                parseInt(String.valueOf(status.getOrDefault("okCount", "0")), 0),
+                parseInt(String.valueOf(status.getOrDefault("completedCount", "0")), 0),
+                parseInt(String.valueOf(status.getOrDefault("totalCount", "0")), 0),
+                currentResults(status)
+        );
     }
 
     private int checkConcurrency() {
@@ -899,6 +1078,15 @@ $procs.Count
         }
     }
 
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return "";
+    }
+
     private String escapePowerShellSingleQuoted(String value) {
         return value.replace("'", "''");
     }
@@ -941,6 +1129,11 @@ $procs.Count
             profile.put("loggedIn", String.valueOf(!googleEmail.isBlank() || "logged_in".equalsIgnoreCase(loginStatus)));
             profile.put("proxy", maskProxy(env.getOrDefault("PROXY_" + profileName, "")));
             profile.put("upstreamProxy", maskProxy(env.getOrDefault("UPSTREAM_PROXY_" + profileName, "")));
+            profile.put("proxyCountry", env.getOrDefault("PROXY_COUNTRY_" + profileName, ""));
+            profile.put("proxyCity", env.getOrDefault("PROXY_CITY_" + profileName, ""));
+            profile.put("timezone", firstNonBlank(env.getOrDefault("TIMEZONE_" + profileName, ""), env.getOrDefault("TIMEZONE", ""), state.getOrDefault("TIMEZONE", "")));
+            profile.put("language", firstNonBlank(env.getOrDefault("LANGUAGE_" + profileName, ""), env.getOrDefault("LANGUAGE", ""), state.getOrDefault("LANGUAGE", "")));
+            profile.put("windowSize", firstNonBlank(env.getOrDefault("WINDOW_SIZE_" + profileName, ""), env.getOrDefault("WINDOW_SIZE", ""), state.getOrDefault("WINDOW_SIZE", "")));
             profile.put("profileDir", profileDir(profileName).toString());
             profile.put("running", String.valueOf(!pids.isEmpty()));
             profile.put("pid", String.join(",", pids));

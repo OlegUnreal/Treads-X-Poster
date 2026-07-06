@@ -179,6 +179,11 @@ export interface ChromeProfileSummary {
   loggedIn?: boolean | string;
   proxy: string;
   upstreamProxy: string;
+  proxyCountry?: string;
+  proxyCity?: string;
+  timezone?: string;
+  language?: string;
+  windowSize?: string;
   profileDir?: string;
   running?: boolean | string;
   pid?: string;
@@ -221,7 +226,9 @@ export interface ChromeProfilesUrlCheckRequest {
 
 export interface ChromeProfilesUrlCheckStatus {
   url: string;
+  checking?: boolean;
   okCount: number;
+  completedCount?: number;
   totalCount: number;
   results: ChromeProfilesUrlCheckResult[];
 }

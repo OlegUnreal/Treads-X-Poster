@@ -169,6 +169,14 @@ export class DashboardService {
     return this.http.post<ChromeProfilesUrlCheckStatus>(`${API_BASE_URL}/actions/chrome-profiles/check-url`, request);
   }
 
+  startChromeProfilesUrlCheck(request: ChromeProfilesUrlCheckRequest): Observable<ChromeProfilesUrlCheckStatus> {
+    return this.http.post<ChromeProfilesUrlCheckStatus>(`${API_BASE_URL}/actions/chrome-profiles/check-url/start`, request);
+  }
+
+  getChromeProfilesUrlCheckStatus(): Observable<ChromeProfilesUrlCheckStatus> {
+    return this.http.get<ChromeProfilesUrlCheckStatus>(`${API_BASE_URL}/actions/chrome-profiles/check-url/status`);
+  }
+
   bulkChromeProfiles(request: ChromeProfilesBulkActionRequest): Observable<ChromeProfilesStatus> {
     return this.http.post<ChromeProfilesStatus>(`${API_BASE_URL}/actions/chrome-profiles/bulk`, request);
   }

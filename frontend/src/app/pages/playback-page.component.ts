@@ -179,7 +179,8 @@ import { DashboardService } from '../services/dashboard.service';
             class="profile-row"
             *ngFor="let profile of profilesStatus?.profiles"
             [class.check-ok]="checkResultFor(profile.name)?.ok"
-            [class.check-bad]="checkResultFor(profile.name) && !checkResultFor(profile.name)?.ok"
+            [class.check-pending]="checkResultFor(profile.name)?.reason === 'Pending'"
+            [class.check-bad]="checkResultFor(profile.name) && !checkResultFor(profile.name)?.ok && checkResultFor(profile.name)?.reason !== 'Pending'"
             [class.bulk-ok]="isBulkOk(bulkResultFor(profile.name)?.status || '')"
             [class.bulk-skip]="isBulkSkip(bulkResultFor(profile.name)?.status || '')"
           >
@@ -194,6 +195,9 @@ import { DashboardService } from '../services/dashboard.service';
               {{ accountLabel(profile) }}
               <small class="profile-meta">
                 {{ proxyLabel(profile) }} | {{ isRunning(profile) ? 'Running' : 'Stopped' }}{{ profile.lastUrl ? ' | ' + compactUrl(profile.lastUrl) : '' }}
+              </small>
+              <small class="profile-geo" *ngIf="profileGeo(profile)">
+                {{ profileGeo(profile) }}
               </small>
               <small class="profile-check" *ngIf="checkResultFor(profile.name)">
                 Check: {{ checkResultFor(profile.name)?.ok ? 'OK' : checkResultFor(profile.name)?.reason }}
@@ -297,6 +301,7 @@ import { DashboardService } from '../services/dashboard.service';
     .profile-list { display: grid; gap: 6px; margin: 12px 0 0; }
     .profile-row { display: grid; grid-template-columns: 140px 104px minmax(0, 1fr) 360px; gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid #dde3ea; border-radius: 10px; background: #f8fafc; color: #17212b; font: 700 12px/1.3 "Segoe UI", sans-serif; }
     .profile-row.check-ok { border-color: #86efac; background: #f0fdf4; }
+    .profile-row.check-pending { border-color: #bfdbfe; background: #eff6ff; }
     .profile-row.check-bad { border-color: #fecdd3; background: #fff1f2; }
     .profile-row.bulk-ok { box-shadow: inset 4px 0 0 #22c55e; }
     .profile-row.bulk-skip { box-shadow: inset 4px 0 0 #f59e0b; }
@@ -308,6 +313,7 @@ import { DashboardService } from '../services/dashboard.service';
     .login-pill.not-logged-in { border-color: #fecdd3; background: #fff1f2; color: #be123c; }
     .profile-row > span:not(.login-pill) { color: #64748b; overflow-wrap: anywhere; }
     .profile-meta { display: block; margin-top: 2px; color: #475569; font-weight: 700; }
+    .profile-geo { display: block; margin-top: 2px; color: #475569; font-weight: 700; overflow-wrap: anywhere; }
     .profile-check { display: block; margin-top: 2px; color: #334155; font-weight: 800; }
     .profile-row-actions { display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
     .log-tail { margin: 12px 0 0; max-height: 220px; overflow: auto; padding: 10px; border-radius: 10px; background: #0f172a; color: #dbeafe; font: 600 12px/1.45 Consolas, monospace; white-space: pre-wrap; }
@@ -344,6 +350,7 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
   protected refererHeader = '';
   protected videoQuality = 'auto';
   private bulkProgressTimer: ReturnType<typeof setTimeout> | null = null;
+  private checkProgressTimer: ReturnType<typeof setTimeout> | null = null;
   protected readonly videoQualityOptions = [
     { value: 'auto', label: 'Auto' },
     { value: 'large', label: '480p' },
@@ -363,6 +370,7 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.stopBulkProgress();
+    this.stopCheckProgress();
   }
 
   protected play(): void {
@@ -459,12 +467,13 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
     this.checkBusy = true;
     this.checkError = false;
     this.checkMessage = 'Checking URL through proxy profiles...';
-    this.dashboardService.checkChromeProfilesUrl({ url: cleanUrl }).subscribe({
+    this.stopCheckProgress();
+    this.dashboardService.startChromeProfilesUrlCheck({ url: cleanUrl }).subscribe({
       next: (status) => {
-        this.urlCheckStatus = status;
-        this.checkMessage = `URL check: ${status.okCount}/${status.totalCount} profile(s) OK.`;
-        this.checkError = status.okCount === 0;
-        this.checkBusy = false;
+        this.applyUrlCheckStatus(status);
+        if (status.checking) {
+          this.startCheckProgress();
+        }
       },
       error: (error) => {
         this.checkMessage = this.errorMessage(error, 'Could not check URL.');
@@ -792,6 +801,54 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
 
   protected proxyLabel(profile: { proxy?: string; upstreamProxy?: string }): string {
     return profile.proxy || profile.upstreamProxy || 'Proxy not set';
+  }
+
+  protected profileGeo(profile: { proxyCountry?: string; proxyCity?: string; timezone?: string; language?: string; windowSize?: string }): string {
+    const location = [profile.proxyCity?.trim(), profile.proxyCountry?.trim()].filter(Boolean).join(', ');
+    const details = [profile.timezone?.trim(), profile.language?.trim(), profile.windowSize?.trim()].filter(Boolean).join(' | ');
+    return [location, details].filter(Boolean).join(' | ');
+  }
+
+  private startCheckProgress(): void {
+    this.stopCheckProgress();
+    this.checkProgressTimer = setTimeout(() => {
+      this.dashboardService.getChromeProfilesUrlCheckStatus().subscribe({
+        next: (status) => {
+          this.applyUrlCheckStatus(status);
+          if (status.checking) {
+            this.startCheckProgress();
+          }
+        },
+        error: (error) => {
+          this.checkMessage = this.errorMessage(error, 'Could not read URL check progress.');
+          this.checkError = true;
+          this.checkBusy = false;
+          this.stopCheckProgress();
+        }
+      });
+    }, 1000);
+  }
+
+  private stopCheckProgress(): void {
+    if (this.checkProgressTimer) {
+      clearTimeout(this.checkProgressTimer);
+      this.checkProgressTimer = null;
+    }
+  }
+
+  private applyUrlCheckStatus(status: ChromeProfilesUrlCheckStatus): void {
+    this.urlCheckStatus = status;
+    const completedCount = status.completedCount ?? status.results.filter((result) => result.reason !== 'Pending').length;
+    if (status.checking) {
+      this.checkMessage = `Checking URL: ${completedCount}/${status.totalCount}, OK ${status.okCount}.`;
+      this.checkError = false;
+      this.checkBusy = true;
+      return;
+    }
+    this.checkMessage = `URL check: ${status.okCount}/${status.totalCount} profile(s) OK.`;
+    this.checkError = status.okCount === 0;
+    this.checkBusy = false;
+    this.stopCheckProgress();
   }
 
   private normalizedPercent(): number {
