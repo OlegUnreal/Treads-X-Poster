@@ -616,7 +616,7 @@ public class ChromeProfileLauncherService {
         }
     }
 
-    private Map<String, List<String>> runningProfileProcesses() {
+    private Map<String, List<String>> runningProfileProcesses(List<String> profileNames) {
         Map<String, List<String>> running = new HashMap<>();
         try {
             if (isWindows()) {
@@ -626,45 +626,74 @@ Get-CimInstance Win32_Process -Filter "name = 'chrome.exe' or name = 'chrome_pro
   Where-Object { $_.CommandLine -match '--user-data-dir=' } |
   ForEach-Object { "$($_.ProcessId)`t$($_.CommandLine)" }
 """);
-                collectRunningProfiles(running, output);
+                collectRunningProfiles(running, profileNames, output);
             } else {
                 Process process = new ProcessBuilder("bash", "-lc", "ps -eo pid=,args= | grep -E 'chrome|chromium' | grep -- '--user-data-dir=' || true")
                         .redirectErrorStream(true)
                         .start();
                 process.waitFor(5, TimeUnit.SECONDS);
-                collectRunningProfiles(running, new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8));
+                collectRunningProfiles(running, profileNames, new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8));
             }
         } catch (Exception ignored) {
-            return running;
+            // Keep going with the JVM process list fallback below.
         }
+        collectRunningProfilesFromProcessHandles(running, profileNames);
         return running;
     }
 
-    private void collectRunningProfiles(Map<String, List<String>> running, String output) {
-        String dataRoot = profilesDir().resolve("data").toString().toLowerCase();
+    private void collectRunningProfiles(Map<String, List<String>> running, List<String> profileNames, String output) {
         for (String rawLine : output.split("\\R")) {
             String line = rawLine.trim();
             if (line.isBlank()) {
                 continue;
             }
-            String pid = line.split("\\s+", 2)[0].trim();
-            String lowerLine = line.toLowerCase();
-            int dataIndex = lowerLine.indexOf(dataRoot.toLowerCase());
-            if (dataIndex < 0) {
+            String[] parts = line.split("\\s+", 2);
+            if (parts.length < 2) {
                 continue;
             }
-            String afterData = line.substring(Math.min(line.length(), dataIndex + dataRoot.length()));
-            String normalized = afterData.replace("\\", "/").replace("\"", "");
-            String[] parts = normalized.split("/");
-            if (parts.length < 2 || parts[1].isBlank()) {
-                continue;
-            }
-            String profileName = parts[1].split("[\\s\"]", 2)[0];
-            if (profileName.isBlank()) {
-                continue;
-            }
-            running.computeIfAbsent(profileName, ignored -> new ArrayList<>()).add(pid);
+            collectRunningProfile(running, profileNames, parts[0].trim(), parts[1]);
         }
+    }
+
+    private void collectRunningProfilesFromProcessHandles(Map<String, List<String>> running, List<String> profileNames) {
+        ProcessHandle.allProcesses().forEach(process -> {
+            ProcessHandle.Info info = process.info();
+            String commandLine = info.commandLine().orElse("");
+            if (commandLine.isBlank() || !commandLine.toLowerCase().contains("--user-data-dir=")) {
+                return;
+            }
+            collectRunningProfile(running, profileNames, String.valueOf(process.pid()), commandLine);
+        });
+    }
+
+    private void collectRunningProfile(Map<String, List<String>> running, List<String> profileNames, String pid, String commandLine) {
+        for (String profileName : profileNames) {
+            if (profileName.isBlank() || !commandReferencesProfile(commandLine, profileDir(profileName))) {
+                continue;
+            }
+            List<String> pids = running.computeIfAbsent(profileName, ignored -> new ArrayList<>());
+            if (!pids.contains(pid)) {
+                pids.add(pid);
+            }
+        }
+    }
+
+    private boolean commandReferencesProfile(String commandLine, Path profileDir) {
+        String normalizedCommand = commandLine.replace("\\", "/").replace("\"", "").toLowerCase();
+        String normalizedProfileDir = profileDir.toString().replace("\\", "/").replace("\"", "").toLowerCase();
+        int index = normalizedCommand.indexOf(normalizedProfileDir);
+        while (index >= 0) {
+            int after = index + normalizedProfileDir.length();
+            if (after >= normalizedCommand.length()) {
+                return true;
+            }
+            char next = normalizedCommand.charAt(after);
+            if (Character.isWhitespace(next) || next == '/' || next == '\'' || next == ';') {
+                return true;
+            }
+            index = normalizedCommand.indexOf(normalizedProfileDir, after);
+        }
+        return false;
     }
 
     private boolean focusProfileWindow(String profileName) throws Exception {
@@ -754,7 +783,13 @@ $procs.Count
     private List<Map<String, String>> readProfiles() throws Exception {
         Map<String, String> env = readEnvFile();
         String[] profileNames = env.getOrDefault("PROFILE_NAMES", "").trim().split("\\s+");
-        Map<String, List<String>> runningProcesses = runningProfileProcesses();
+        List<String> configuredProfileNames = new ArrayList<>();
+        for (String profileName : profileNames) {
+            if (!profileName.isBlank()) {
+                configuredProfileNames.add(profileName);
+            }
+        }
+        Map<String, List<String>> runningProcesses = runningProfileProcesses(configuredProfileNames);
         List<Map<String, String>> profiles = new ArrayList<>();
         for (String profileName : profileNames) {
             if (profileName.isBlank()) {
