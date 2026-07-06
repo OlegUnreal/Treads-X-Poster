@@ -11,13 +11,17 @@ param(
     [string]$VideoQuality = "auto",
     [switch]$SyncWebShareProxies,
     [switch]$SkipWebShareSync,
-    [ValidateSet("open", "login")]
+    [ValidateSet("open", "login", "play")]
     [string]$Mode = "open",
     [string]$DopplerProject = "behind-the-smile",
     [string]$DopplerConfig = "prd"
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($Mode -eq "play") {
+    $Mode = "open"
+}
 
 function Read-EnvFile {
     param([string]$Path)
