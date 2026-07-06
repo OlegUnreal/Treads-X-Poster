@@ -11,7 +11,6 @@ param(
     [string]$VideoQuality = "auto",
     [switch]$SyncWebShareProxies,
     [switch]$SkipWebShareSync,
-    [ValidateSet("open", "login", "play")]
     [string]$Mode = "open",
     [string]$DopplerProject = "behind-the-smile",
     [string]$DopplerConfig = "prd"
@@ -19,7 +18,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-if ($Mode -eq "play") {
+if (-not $Mode) {
+    $Mode = "open"
+}
+$Mode = $Mode.Trim().ToLowerInvariant()
+if ($Mode -eq "play" -or $Mode -notin @("open", "login")) {
     $Mode = "open"
 }
 
