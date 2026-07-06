@@ -6,6 +6,7 @@ import json
 import os
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -27,6 +28,7 @@ PROFILE_SETTINGS_KEYS = {
     "ACCEPT_LANGUAGE",
     "TIMEZONE",
     "USER_AGENT",
+    "AUTO_BROWSER_PROFILE",
 }
 PROFILE_SETTINGS_PREFIXES = (
     "WINDOW_POSITION_",
@@ -35,6 +37,65 @@ PROFILE_SETTINGS_PREFIXES = (
     "ACCEPT_LANGUAGE_",
     "TIMEZONE_",
     "USER_AGENT_",
+)
+AUTO_BROWSER_PROFILE_PREFIXES = (
+    "WINDOW_SIZE_",
+    "LANGUAGE_",
+    "ACCEPT_LANGUAGE_",
+    "TIMEZONE_",
+)
+
+
+@dataclass(frozen=True)
+class ProxyRecord:
+    proxy: str
+    country_code: str = ""
+    city_name: str = ""
+
+
+COUNTRY_BROWSER_PROFILES = {
+    "US": ("en-US", "en-US,en;q=0.9", "America/New_York"),
+    "GB": ("en-GB", "en-GB,en;q=0.9", "Europe/London"),
+    "IE": ("en-IE", "en-IE,en;q=0.9", "Europe/Dublin"),
+    "CA": ("en-CA", "en-CA,en;q=0.9,fr-CA;q=0.7", "America/Toronto"),
+    "AU": ("en-AU", "en-AU,en;q=0.9", "Australia/Sydney"),
+    "NZ": ("en-NZ", "en-NZ,en;q=0.9", "Pacific/Auckland"),
+    "ES": ("es-ES", "es-ES,es;q=0.9,en;q=0.7", "Europe/Madrid"),
+    "MX": ("es-MX", "es-MX,es;q=0.9,en;q=0.7", "America/Mexico_City"),
+    "AR": ("es-AR", "es-AR,es;q=0.9,en;q=0.7", "America/Argentina/Buenos_Aires"),
+    "CL": ("es-CL", "es-CL,es;q=0.9,en;q=0.7", "America/Santiago"),
+    "CO": ("es-CO", "es-CO,es;q=0.9,en;q=0.7", "America/Bogota"),
+    "DE": ("de-DE", "de-DE,de;q=0.9,en;q=0.7", "Europe/Berlin"),
+    "AT": ("de-AT", "de-AT,de;q=0.9,en;q=0.7", "Europe/Vienna"),
+    "CH": ("de-CH", "de-CH,de;q=0.9,fr;q=0.7,en;q=0.6", "Europe/Zurich"),
+    "FR": ("fr-FR", "fr-FR,fr;q=0.9,en;q=0.7", "Europe/Paris"),
+    "BE": ("nl-BE", "nl-BE,nl;q=0.9,fr;q=0.8,en;q=0.6", "Europe/Brussels"),
+    "NL": ("nl-NL", "nl-NL,nl;q=0.9,en;q=0.7", "Europe/Amsterdam"),
+    "IT": ("it-IT", "it-IT,it;q=0.9,en;q=0.7", "Europe/Rome"),
+    "PT": ("pt-PT", "pt-PT,pt;q=0.9,en;q=0.7", "Europe/Lisbon"),
+    "BR": ("pt-BR", "pt-BR,pt;q=0.9,en;q=0.7", "America/Sao_Paulo"),
+    "PL": ("pl-PL", "pl-PL,pl;q=0.9,en;q=0.7", "Europe/Warsaw"),
+    "CZ": ("cs-CZ", "cs-CZ,cs;q=0.9,en;q=0.7", "Europe/Prague"),
+    "RO": ("ro-RO", "ro-RO,ro;q=0.9,en;q=0.7", "Europe/Bucharest"),
+    "UA": ("uk-UA", "uk-UA,uk;q=0.9,en;q=0.7", "Europe/Kyiv"),
+    "SE": ("sv-SE", "sv-SE,sv;q=0.9,en;q=0.7", "Europe/Stockholm"),
+    "NO": ("nb-NO", "nb-NO,nb;q=0.9,no;q=0.8,en;q=0.7", "Europe/Oslo"),
+    "DK": ("da-DK", "da-DK,da;q=0.9,en;q=0.7", "Europe/Copenhagen"),
+    "FI": ("fi-FI", "fi-FI,fi;q=0.9,en;q=0.7", "Europe/Helsinki"),
+    "JP": ("ja-JP", "ja-JP,ja;q=0.9,en;q=0.7", "Asia/Tokyo"),
+    "KR": ("ko-KR", "ko-KR,ko;q=0.9,en;q=0.7", "Asia/Seoul"),
+    "SG": ("en-SG", "en-SG,en;q=0.9", "Asia/Singapore"),
+    "IN": ("en-IN", "en-IN,en;q=0.9,hi;q=0.7", "Asia/Kolkata"),
+}
+
+WINDOW_SIZE_ROTATION = (
+    "1366,768",
+    "1440,900",
+    "1536,864",
+    "1600,900",
+    "1280,800",
+    "1680,1050",
+    "1920,1080",
 )
 
 
@@ -91,7 +152,7 @@ def normalize_proxy(scheme: str, host: str, port: str, username: str, password: 
     return f"{scheme}://{auth}{host}:{port}"
 
 
-def parse_csv(text: str) -> list[str]:
+def parse_csv(text: str) -> list[ProxyRecord]:
     sample = text[:4096]
     try:
         dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
@@ -104,7 +165,7 @@ def parse_csv(text: str) -> list[str]:
         return []
 
     rows = csv.DictReader(io.StringIO(text), dialect=dialect)
-    proxies: list[str] = []
+    proxies: list[ProxyRecord] = []
     for row in rows:
         normalized = {normalize_header(key): (value or "").strip() for key, value in row.items() if key}
         host = first_present(normalized, "proxy_address", "proxyaddress", "address", "host", "ip")
@@ -114,7 +175,11 @@ def parse_csv(text: str) -> list[str]:
         scheme = first_present(normalized, "scheme", "type", "protocol") or "http"
         proxy = normalize_proxy(scheme, host, port, username, password)
         if proxy:
-            proxies.append(proxy)
+            proxies.append(ProxyRecord(
+                proxy=proxy,
+                country_code=normalize_country_code(first_present(normalized, "country_code", "countrycode", "country", "code")),
+                city_name=first_present(normalized, "city_name", "city", "location"),
+            ))
     return proxies
 
 
@@ -130,25 +195,30 @@ def first_present(row: dict[str, str], *keys: str) -> str:
     return ""
 
 
-def parse_proxy_file(path: Path) -> list[str]:
+def normalize_country_code(value: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z]", "", value or "").upper()
+    return cleaned if len(cleaned) == 2 else ""
+
+
+def parse_proxy_file(path: Path) -> list[ProxyRecord]:
     text = path.read_text(encoding="utf-8-sig")
     proxies = parse_csv(text)
     if not proxies:
-        proxies = [proxy for proxy in (parse_proxy_line(line) for line in text.splitlines()) if proxy]
+        proxies = [ProxyRecord(proxy=proxy) for proxy in (parse_proxy_line(line) for line in text.splitlines()) if proxy]
 
     seen: set[str] = set()
-    unique: list[str] = []
-    for proxy in proxies:
-        target = proxy_target(proxy)
+    unique: list[ProxyRecord] = []
+    for record in proxies:
+        target = proxy_target(record.proxy)
         if not target or target in seen:
             continue
         seen.add(target)
-        unique.append(proxy)
+        unique.append(record)
     return unique
 
 
-def fetch_webshare_proxies(api_token: str, mode: str, page_size: int, include_invalid: bool) -> list[str]:
-    proxies: list[str] = []
+def fetch_webshare_proxies(api_token: str, mode: str, page_size: int, include_invalid: bool) -> list[ProxyRecord]:
+    proxies: list[ProxyRecord] = []
     page = 1
     while True:
         params = {
@@ -182,7 +252,11 @@ def fetch_webshare_proxies(api_token: str, mode: str, page_size: int, include_in
                 str(item.get("password") or ""),
             )
             if proxy:
-                proxies.append(proxy)
+                proxies.append(ProxyRecord(
+                    proxy=proxy,
+                    country_code=normalize_country_code(str(item.get("country_code") or "")),
+                    city_name=str(item.get("city_name") or ""),
+                ))
 
         if not payload.get("next"):
             break
@@ -261,17 +335,17 @@ def profile_sort_key(name: str) -> tuple[int, str]:
     return sys.maxsize, name
 
 
-def preserve_existing_proxy_order(proxies: list[str], existing_targets: list[str]) -> list[str]:
-    fresh_by_target: dict[str, str] = {}
+def preserve_existing_proxy_order(proxies: list[ProxyRecord], existing_targets: list[str]) -> list[ProxyRecord]:
+    fresh_by_target: dict[str, ProxyRecord] = {}
     fresh_order: list[str] = []
-    for proxy in proxies:
-        target = proxy_target(proxy)
+    for record in proxies:
+        target = proxy_target(record.proxy)
         if not target or target in fresh_by_target:
             continue
-        fresh_by_target[target] = proxy
+        fresh_by_target[target] = record
         fresh_order.append(target)
 
-    ordered: list[str] = []
+    ordered: list[ProxyRecord] = []
     used: set[str] = set()
     for target in existing_targets:
         proxy = fresh_by_target.get(target)
@@ -291,7 +365,24 @@ def unquote(value: str) -> str:
     return value
 
 
-def write_profiles_env(env_path: Path, proxies: list[str], start_port: int, settings: dict[str, str]) -> None:
+def truthy(value: str) -> bool:
+    return value.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def browser_profile_for_country(country_code: str, index: int) -> dict[str, str]:
+    language, accept_language, timezone = COUNTRY_BROWSER_PROFILES.get(
+        country_code.upper(),
+        ("en-US", "en-US,en;q=0.9", "UTC"),
+    )
+    return {
+        "LANGUAGE": language,
+        "ACCEPT_LANGUAGE": accept_language,
+        "TIMEZONE": timezone,
+        "WINDOW_SIZE": WINDOW_SIZE_ROTATION[(index - 1) % len(WINDOW_SIZE_ROTATION)],
+    }
+
+
+def write_profiles_env(env_path: Path, proxies: list[ProxyRecord], start_port: int, settings: dict[str, str]) -> None:
     lines: list[str] = [
         "# Generated by import-webshare-proxies.py.",
         "# Edit the source proxy export, then re-run the importer instead of editing profile rows by hand.",
@@ -309,8 +400,12 @@ def write_profiles_env(env_path: Path, proxies: list[str], start_port: int, sett
         lines.append(f"PROXY_{name}={shell_quote(f'http://127.0.0.1:{start_port + index}')}")
     lines.append("")
 
-    for name, proxy in zip(names, proxies):
-        lines.append(f"UPSTREAM_PROXY_{name}={shell_quote(proxy)}")
+    for name, record in zip(names, proxies):
+        lines.append(f"UPSTREAM_PROXY_{name}={shell_quote(record.proxy)}")
+        if record.country_code:
+            lines.append(f"PROXY_COUNTRY_{name}={shell_quote(record.country_code)}")
+        if record.city_name:
+            lines.append(f"PROXY_CITY_{name}={shell_quote(record.city_name)}")
     lines.append("")
 
     default_settings = {
@@ -325,10 +420,26 @@ def write_profiles_env(env_path: Path, proxies: list[str], start_port: int, sett
         "ACCEPT_LANGUAGE": "",
         "TIMEZONE": "",
         "USER_AGENT": "",
+        "AUTO_BROWSER_PROFILE": "true",
     }
-    default_settings.update(settings)
+    auto_browser_profile = truthy(settings.get("AUTO_BROWSER_PROFILE", "true"))
+    preserved_settings = {
+        key: value
+        for key, value in settings.items()
+        if not (auto_browser_profile and key.startswith(AUTO_BROWSER_PROFILE_PREFIXES))
+    }
+    default_settings.update(preserved_settings)
     for key, value in default_settings.items():
         lines.append(f"{key}={shell_quote(value)}")
+
+    if auto_browser_profile:
+        lines.append("")
+        lines.append("# Auto-generated from proxy country. Set AUTO_BROWSER_PROFILE=\"false\" to manage these manually.")
+        for index, (name, record) in enumerate(zip(names, proxies), start=1):
+            generated = browser_profile_for_country(record.country_code, index)
+            for key, value in generated.items():
+                lines.append(f"{key}_{name}={shell_quote(value)}")
+            lines.append("")
 
     lines.append("")
     env_path.write_text("\n".join(lines), encoding="utf-8")
