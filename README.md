@@ -96,6 +96,44 @@ The Angular dev server proxies `/api` requests to `http://localhost:8080`, so st
 
 Use this when you want the Playback UI as a local Windows application instead of the hosted admin page. It builds the Spring Boot backend, builds the Angular UI, starts the backend on `127.0.0.1:8081`, serves the UI locally, and opens the Playback screen in Electron.
 
+Install or update the project on another Windows computer:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-or-update-local.ps1
+```
+
+From a fresh machine, you can run the same script from a downloaded repository checkout. It clones or updates the `windows` branch into:
+
+```text
+C:\Users\<you>\Documents\BTS-Twitter-Treads
+```
+
+If you already have a `profiles.env`, copy it during setup:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-or-update-local.ps1 -ProfilesEnvSource "D:\backup\profiles.env"
+```
+
+Or download it from the server endpoint:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-or-update-local.ps1 -ProfilesEnvUrl "http://167.233.93.6/api/actions/chrome-profiles/profiles-env"
+```
+
+The script leaves Chrome runtime profiles under `C:\Users\<you>\chrome-proxy-profiles\` untouched.
+
+Update an existing local checkout:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\update-local.ps1
+```
+
+Rebuild the packaged `.exe` during update:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\update-local.ps1 -BuildExe
+```
+
 Build the `.exe`:
 
 ```powershell
