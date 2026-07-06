@@ -34,6 +34,16 @@ PROFILE_LABEL_VAR="PROFILE_LABEL_${PROFILE_NAME}"
 PROFILE_LABEL="${!PROFILE_LABEL_VAR:-$PROFILE_NAME}"
 WINDOW_POSITION_VAR="WINDOW_POSITION_${PROFILE_NAME}"
 WINDOW_POSITION="${!WINDOW_POSITION_VAR:-}"
+WINDOW_SIZE_VAR="WINDOW_SIZE_${PROFILE_NAME}"
+PROFILE_WINDOW_SIZE="${!WINDOW_SIZE_VAR:-${WINDOW_SIZE:-}}"
+LANGUAGE_VAR="LANGUAGE_${PROFILE_NAME}"
+PROFILE_LANGUAGE="${!LANGUAGE_VAR:-${LANGUAGE:-}}"
+ACCEPT_LANGUAGE_VAR="ACCEPT_LANGUAGE_${PROFILE_NAME}"
+PROFILE_ACCEPT_LANGUAGE="${!ACCEPT_LANGUAGE_VAR:-${ACCEPT_LANGUAGE:-$PROFILE_LANGUAGE}}"
+TIMEZONE_VAR="TIMEZONE_${PROFILE_NAME}"
+PROFILE_TIMEZONE="${!TIMEZONE_VAR:-${TIMEZONE:-}}"
+USER_AGENT_VAR="USER_AGENT_${PROFILE_NAME}"
+PROFILE_USER_AGENT="${!USER_AGENT_VAR:-${USER_AGENT:-}}"
 
 if [[ -z "$PROXY" ]]; then
   echo "Missing proxy variable $PROXY_VAR in $ENV_FILE" >&2
@@ -133,17 +143,18 @@ create_playback_extension() {
   local extension_dir="$BASE_DIR/extensions/$PROFILE_NAME"
   local referer="${LAUNCH_REFERER:-}"
   local quality="${VIDEO_QUALITY:-auto}"
-  if [[ -z "$referer" && "$quality" == "auto" ]]; then
+  local accept_language="${PROFILE_ACCEPT_LANGUAGE:-}"
+  if [[ -z "$referer" && "$quality" == "auto" && -z "$accept_language" ]]; then
     return 1
   fi
 
   mkdir -p "$extension_dir"
-  python3 - "$extension_dir" "$referer" "$quality" <<'PY'
+  python3 - "$extension_dir" "$referer" "$quality" "$accept_language" <<'PY'
 import json
 import os
 import sys
 
-extension_dir, referer, quality = sys.argv[1], sys.argv[2], sys.argv[3]
+extension_dir, referer, quality, accept_language = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 manifest = {
     "manifest_version": 3,
     "name": "Behind The Smile Playback Controls",
@@ -151,7 +162,8 @@ manifest = {
     "host_permissions": ["<all_urls>"],
 }
 permissions = []
-if referer:
+rules = []
+if referer or accept_language:
     permissions.append("declarativeNetRequest")
     manifest["declarative_net_request"] = {
         "rule_resources": [{
@@ -160,8 +172,10 @@ if referer:
             "path": "rules.json",
         }]
     }
-    rules = [{
-        "id": 1,
+    rule_id = 1
+    if referer:
+        rules.append({
+        "id": rule_id,
         "priority": 1,
         "action": {
             "type": "modifyHeaders",
@@ -175,7 +189,25 @@ if referer:
             "urlFilter": "|http",
             "resourceTypes": ["main_frame", "sub_frame", "xmlhttprequest", "media"],
         },
-    }]
+    })
+        rule_id += 1
+    if accept_language:
+        rules.append({
+        "id": rule_id,
+        "priority": 1,
+        "action": {
+            "type": "modifyHeaders",
+            "requestHeaders": [{
+                "header": "Accept-Language",
+                "operation": "set",
+                "value": accept_language,
+            }],
+        },
+        "condition": {
+            "urlFilter": "|http",
+            "resourceTypes": ["main_frame", "sub_frame", "xmlhttprequest", "media"],
+        },
+    })
     with open(os.path.join(extension_dir, "rules.json"), "w", encoding="utf-8") as file:
         json.dump(rules, file)
 if quality != "auto":
@@ -232,11 +264,23 @@ should_use_incognito() {
 }
 
 WINDOW_ARGS=()
-if [[ -n "${WINDOW_SIZE:-}" ]]; then
-  WINDOW_ARGS+=(--window-size="$WINDOW_SIZE")
+if [[ -n "$PROFILE_WINDOW_SIZE" ]]; then
+  WINDOW_ARGS+=(--window-size="$PROFILE_WINDOW_SIZE")
 fi
 if [[ -n "$WINDOW_POSITION" ]]; then
   WINDOW_ARGS+=(--window-position="$WINDOW_POSITION")
+fi
+if [[ -n "$PROFILE_LANGUAGE" ]]; then
+  WINDOW_ARGS+=(--lang="$PROFILE_LANGUAGE")
+fi
+if [[ -n "$PROFILE_ACCEPT_LANGUAGE" ]]; then
+  WINDOW_ARGS+=(--accept-lang="$PROFILE_ACCEPT_LANGUAGE")
+fi
+if [[ -n "$PROFILE_TIMEZONE" ]]; then
+  WINDOW_ARGS+=(--force-time-zone-for-testing="$PROFILE_TIMEZONE")
+fi
+if [[ -n "$PROFILE_USER_AGENT" ]]; then
+  WINDOW_ARGS+=(--user-agent="$PROFILE_USER_AGENT")
 fi
 if should_use_incognito "$URL"; then
   WINDOW_ARGS+=(--incognito)

@@ -42,6 +42,23 @@ function Read-EnvFile {
     return $values
 }
 
+function Get-ProfileSetting {
+    param(
+        [hashtable]$EnvValues,
+        [string]$ProfileName,
+        [string]$Key,
+        [string]$DefaultValue = ""
+    )
+    $profileKey = "${Key}_${ProfileName}"
+    if ($EnvValues.ContainsKey($profileKey) -and $EnvValues[$profileKey]) {
+        return $EnvValues[$profileKey]
+    }
+    if ($EnvValues.ContainsKey($Key) -and $EnvValues[$Key]) {
+        return $EnvValues[$Key]
+    }
+    return $DefaultValue
+}
+
 function Get-PythonPath {
     if ($env:APP_PYTHON_EXE -and (Test-Path -LiteralPath $env:APP_PYTHON_EXE)) {
         $versionOutput = & $env:APP_PYTHON_EXE --version 2>&1
@@ -320,9 +337,10 @@ function New-PlaybackExtension {
     param(
         [string]$ExtensionDir,
         [string]$RefererValue,
-        [string]$Quality
+        [string]$Quality,
+        [string]$AcceptLanguage
     )
-    if (-not $RefererValue -and $Quality -eq "auto") {
+    if (-not $RefererValue -and $Quality -eq "auto" -and -not $AcceptLanguage) {
         return ""
     }
 
@@ -334,7 +352,8 @@ function New-PlaybackExtension {
         host_permissions = @("<all_urls>")
     }
     $permissions = @()
-    if ($RefererValue) {
+    $rules = @()
+    if ($RefererValue -or $AcceptLanguage) {
         $permissions += "declarativeNetRequest"
         $manifest.declarative_net_request = @{
             rule_resources = @(@{
@@ -343,8 +362,9 @@ function New-PlaybackExtension {
                 path = "rules.json"
             })
         }
-        @(
-            @{
+        $ruleId = 1
+        if ($RefererValue) {
+            $rules += @{
                 id = 1
                 priority = 1
                 action = @{
@@ -360,7 +380,27 @@ function New-PlaybackExtension {
                     resourceTypes = @("main_frame", "sub_frame", "xmlhttprequest", "media")
                 }
             }
-        ) | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $ExtensionDir "rules.json") -Encoding UTF8
+            $ruleId++
+        }
+        if ($AcceptLanguage) {
+            $rules += @{
+                id = $ruleId
+                priority = 1
+                action = @{
+                    type = "modifyHeaders"
+                    requestHeaders = @(@{
+                        header = "Accept-Language"
+                        operation = "set"
+                        value = $AcceptLanguage
+                    })
+                }
+                condition = @{
+                    urlFilter = "|http"
+                    resourceTypes = @("main_frame", "sub_frame", "xmlhttprequest", "media")
+                }
+            }
+        }
+        ConvertTo-Json -InputObject @($rules) -Depth 12 | Set-Content -LiteralPath (Join-Path $ExtensionDir "rules.json") -Encoding UTF8
     }
     if ($Quality -ne "auto") {
         $manifest.content_scripts = @(@{
@@ -411,7 +451,12 @@ function Write-ProfileState {
         [int]$DebugPort,
         [string]$Mode,
         [string]$RefererValue,
-        [string]$Quality
+        [string]$Quality,
+        [string]$Language,
+        [string]$AcceptLanguage,
+        [string]$Timezone,
+        [string]$UserAgent,
+        [string]$WindowSize
     )
     $stateDir = Join-Path $RuntimeDir "state"
     New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
@@ -427,6 +472,11 @@ PROFILE_DIR="$escapedProfileDir"
 MODE="$Mode"
 REFERER="$($RefererValue.Replace('\', '\\').Replace('"', '\"'))"
 VIDEO_QUALITY="$Quality"
+LANGUAGE="$($Language.Replace('\', '\\').Replace('"', '\"'))"
+ACCEPT_LANGUAGE="$($AcceptLanguage.Replace('\', '\\').Replace('"', '\"'))"
+TIMEZONE="$($Timezone.Replace('\', '\\').Replace('"', '\"'))"
+USER_AGENT="$($UserAgent.Replace('\', '\\').Replace('"', '\"'))"
+WINDOW_SIZE="$($WindowSize.Replace('\', '\\').Replace('"', '\"'))"
 "@ | Set-Content -LiteralPath $statePath -Encoding UTF8
 }
 
@@ -506,11 +556,6 @@ if ($selectedProfiles.Count -gt 1 -and $DelayTo -eq 0) {
         Write-Host "Using default WebShare launch stagger: $DelayFrom-$DelayTo seconds."
     }
 }
-$windowSize = "1000,760"
-if ($profileEnv.ContainsKey("WINDOW_SIZE")) {
-    $windowSize = $profileEnv["WINDOW_SIZE"]
-}
-
 $started = 0
 foreach ($profileName in $selectedProfiles) {
     $proxy = $profileEnv["PROXY_$profileName"]
@@ -525,6 +570,11 @@ foreach ($profileName in $selectedProfiles) {
     $profileDir = Join-Path $RuntimeDir "data\$profileName"
     New-Item -ItemType Directory -Force -Path $profileDir | Out-Null
     $debugPort = Get-ProfileDebugPort -ProfileName $profileName -FallbackIndex ($started + 1)
+    $windowSize = Get-ProfileSetting -EnvValues $profileEnv -ProfileName $profileName -Key "WINDOW_SIZE" -DefaultValue "1000,760"
+    $language = Get-ProfileSetting -EnvValues $profileEnv -ProfileName $profileName -Key "LANGUAGE" -DefaultValue ""
+    $acceptLanguage = Get-ProfileSetting -EnvValues $profileEnv -ProfileName $profileName -Key "ACCEPT_LANGUAGE" -DefaultValue $language
+    $timezone = Get-ProfileSetting -EnvValues $profileEnv -ProfileName $profileName -Key "TIMEZONE" -DefaultValue ""
+    $userAgent = Get-ProfileSetting -EnvValues $profileEnv -ProfileName $profileName -Key "USER_AGENT" -DefaultValue ""
 
     $launchUrl = if ($Mode -eq "login") { "https://accounts.google.com/" } else { $Url }
     if ($launchUrl -eq "profile-home") {
@@ -535,7 +585,8 @@ foreach ($profileName in $selectedProfiles) {
     $extensionDir = New-PlaybackExtension `
         -ExtensionDir (Join-Path $RuntimeDir "extensions\$profileName") `
         -RefererValue $Referer `
-        -Quality $VideoQuality
+        -Quality $VideoQuality `
+        -AcceptLanguage $acceptLanguage
 
     $position = $profileEnv["WINDOW_POSITION_$profileName"]
     $chromeArgs = @(
@@ -551,6 +602,18 @@ foreach ($profileName in $selectedProfiles) {
         "--new-window",
         $launchUrl
     )
+    if ($language) {
+        $chromeArgs = @("--lang=$language") + $chromeArgs
+    }
+    if ($acceptLanguage) {
+        $chromeArgs = @("--accept-lang=$acceptLanguage") + $chromeArgs
+    }
+    if ($timezone) {
+        $chromeArgs = @("--force-time-zone-for-testing=$timezone") + $chromeArgs
+    }
+    if ($userAgent) {
+        $chromeArgs = @("--user-agent=$userAgent") + $chromeArgs
+    }
     if ($position) {
         $chromeArgs = @("--window-position=$position") + $chromeArgs
     }
@@ -562,7 +625,7 @@ foreach ($profileName in $selectedProfiles) {
     }
 
     $process = Start-Process -FilePath $ChromePath -ArgumentList $chromeArgs -PassThru
-    Write-ProfileState -ProfileName $profileName -LaunchUrl $launchUrl -ProfileDir $profileDir -ProcessId $process.Id -DebugPort $debugPort -Mode $Mode -RefererValue $Referer -Quality $VideoQuality
+    Write-ProfileState -ProfileName $profileName -LaunchUrl $launchUrl -ProfileDir $profileDir -ProcessId $process.Id -DebugPort $debugPort -Mode $Mode -RefererValue $Referer -Quality $VideoQuality -Language $language -AcceptLanguage $acceptLanguage -Timezone $timezone -UserAgent $userAgent -WindowSize $windowSize
     $started++
     Write-Host "Started $profileName through $proxy"
 

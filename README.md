@@ -202,6 +202,23 @@ powershell -ExecutionPolicy Bypass -File .\scripts\start-profiles.ps1 3 profile-
 
 The WebShare refresh keeps stable profile assignments: if a proxy still exists in the fresh provider list, it stays attached to the same `ipN` profile. Each `ipN` also keeps its own Chrome data folder, so cookies and login state survive app restarts, redeploys, and normal proxy refreshes.
 
+Optional per-profile browser settings can also live in `profiles.env`. Use global values as defaults and override only profiles that need a different browser shape:
+
+```env
+WINDOW_SIZE="1000,760"
+LANGUAGE="en-US"
+ACCEPT_LANGUAGE="en-US,en;q=0.9"
+TIMEZONE="Europe/London"
+USER_AGENT=""
+
+WINDOW_SIZE_ip1="1366,768"
+LANGUAGE_ip1="en-GB"
+ACCEPT_LANGUAGE_ip1="en-GB,en;q=0.9"
+TIMEZONE_ip1="Europe/London"
+```
+
+Keep these values consistent with the proxy country. Avoid random or conflicting combinations; a small set of realistic browser profiles is safer than aggressive fingerprint spoofing.
+
 The Windows app automatically downloads the server `profiles.env` on startup from:
 
 ```text

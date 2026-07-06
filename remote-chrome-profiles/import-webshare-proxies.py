@@ -23,7 +23,19 @@ PROFILE_SETTINGS_KEYS = {
     "AUTO_CLICK_DELAY_SECONDS",
     "START_URL",
     "WINDOW_SIZE",
+    "LANGUAGE",
+    "ACCEPT_LANGUAGE",
+    "TIMEZONE",
+    "USER_AGENT",
 }
+PROFILE_SETTINGS_PREFIXES = (
+    "WINDOW_POSITION_",
+    "WINDOW_SIZE_",
+    "LANGUAGE_",
+    "ACCEPT_LANGUAGE_",
+    "TIMEZONE_",
+    "USER_AGENT_",
+)
 
 
 def shell_quote(value: str) -> str:
@@ -201,7 +213,7 @@ def read_existing_settings(env_path: Path) -> dict[str, str]:
             continue
         key, value = stripped.split("=", 1)
         key = key.strip()
-        if key in PROFILE_SETTINGS_KEYS:
+        if key in PROFILE_SETTINGS_KEYS or key.startswith(PROFILE_SETTINGS_PREFIXES):
             settings[key] = unquote(value.strip())
     if settings.get("INCOGNITO_DOMAINS"):
         domains = [
@@ -309,6 +321,10 @@ def write_profiles_env(env_path: Path, proxies: list[str], start_port: int, sett
         "AUTO_CLICK_DELAY_SECONDS": "8",
         "START_URL": "profile-home",
         "WINDOW_SIZE": "1000,760",
+        "LANGUAGE": "",
+        "ACCEPT_LANGUAGE": "",
+        "TIMEZONE": "",
+        "USER_AGENT": "",
     }
     default_settings.update(settings)
     for key, value in default_settings.items():
