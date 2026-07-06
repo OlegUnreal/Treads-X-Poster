@@ -218,7 +218,7 @@ ACCEPT_LANGUAGE_ip1="en-GB,en;q=0.9"
 TIMEZONE_ip1="Europe/London"
 ```
 
-When profiles are generated from the WebShare API, `AUTO_BROWSER_PROFILE="true"` makes the importer set `LANGUAGE_ipN`, `ACCEPT_LANGUAGE_ipN`, `TIMEZONE_ipN`, and `WINDOW_SIZE_ipN` automatically from WebShare's `country_code`. The importer also writes `PROXY_COUNTRY_ipN` and `PROXY_CITY_ipN` when WebShare provides them. Set `AUTO_BROWSER_PROFILE="false"` only if you want to manage all per-profile browser values manually.
+When profiles are generated from the WebShare API, `AUTO_BROWSER_PROFILE="true"` makes the importer set `LANGUAGE_ipN`, `ACCEPT_LANGUAGE_ipN`, `TIMEZONE_ipN`, and `WINDOW_SIZE_ipN` automatically from WebShare's `country_code`. For countries with multiple time zones, `TIMEZONE_ipN` uses WebShare's `city_name` when it matches a known city, then falls back to the country default. The importer also writes `PROXY_COUNTRY_ipN` and `PROXY_CITY_ipN` when WebShare provides them. Set `AUTO_BROWSER_PROFILE="false"` only if you want to manage all per-profile browser values manually.
 
 Keep these values consistent with the proxy country. Avoid random or conflicting combinations; a small set of realistic browser profiles is safer than aggressive fingerprint spoofing.
 

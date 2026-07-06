@@ -88,6 +88,106 @@ COUNTRY_BROWSER_PROFILES = {
     "IN": ("en-IN", "en-IN,en;q=0.9,hi;q=0.7", "Asia/Kolkata"),
 }
 
+CITY_TIMEZONES = {
+    "US": {
+        "atlanta": "America/New_York",
+        "boston": "America/New_York",
+        "charlotte": "America/New_York",
+        "detroit": "America/Detroit",
+        "miami": "America/New_York",
+        "new york": "America/New_York",
+        "orlando": "America/New_York",
+        "philadelphia": "America/New_York",
+        "tampa": "America/New_York",
+        "washington": "America/New_York",
+        "chicago": "America/Chicago",
+        "dallas": "America/Chicago",
+        "houston": "America/Chicago",
+        "kansas city": "America/Chicago",
+        "minneapolis": "America/Chicago",
+        "nashville": "America/Chicago",
+        "new orleans": "America/Chicago",
+        "san antonio": "America/Chicago",
+        "denver": "America/Denver",
+        "phoenix": "America/Phoenix",
+        "salt lake city": "America/Denver",
+        "albuquerque": "America/Denver",
+        "las vegas": "America/Los_Angeles",
+        "los angeles": "America/Los_Angeles",
+        "portland": "America/Los_Angeles",
+        "san diego": "America/Los_Angeles",
+        "san francisco": "America/Los_Angeles",
+        "san jose": "America/Los_Angeles",
+        "seattle": "America/Los_Angeles",
+    },
+    "CA": {
+        "toronto": "America/Toronto",
+        "ottawa": "America/Toronto",
+        "montreal": "America/Toronto",
+        "quebec": "America/Toronto",
+        "winnipeg": "America/Winnipeg",
+        "calgary": "America/Edmonton",
+        "edmonton": "America/Edmonton",
+        "vancouver": "America/Vancouver",
+    },
+    "AU": {
+        "sydney": "Australia/Sydney",
+        "melbourne": "Australia/Melbourne",
+        "brisbane": "Australia/Brisbane",
+        "perth": "Australia/Perth",
+        "adelaide": "Australia/Adelaide",
+    },
+    "BR": {
+        "sao paulo": "America/Sao_Paulo",
+        "rio de janeiro": "America/Sao_Paulo",
+        "brasilia": "America/Sao_Paulo",
+        "salvador": "America/Bahia",
+        "manaus": "America/Manaus",
+    },
+    "MX": {
+        "mexico city": "America/Mexico_City",
+        "guadalajara": "America/Mexico_City",
+        "monterrey": "America/Monterrey",
+        "tijuana": "America/Tijuana",
+    },
+    "ES": {
+        "madrid": "Europe/Madrid",
+        "barcelona": "Europe/Madrid",
+        "valencia": "Europe/Madrid",
+        "sevilla": "Europe/Madrid",
+        "seville": "Europe/Madrid",
+        "malaga": "Europe/Madrid",
+        "las palmas": "Atlantic/Canary",
+        "santa cruz de tenerife": "Atlantic/Canary",
+    },
+    "PT": {
+        "lisbon": "Europe/Lisbon",
+        "porto": "Europe/Lisbon",
+        "funchal": "Atlantic/Madeira",
+    },
+    "FR": {
+        "paris": "Europe/Paris",
+        "marseille": "Europe/Paris",
+        "lyon": "Europe/Paris",
+        "toulouse": "Europe/Paris",
+        "nice": "Europe/Paris",
+    },
+    "DE": {
+        "berlin": "Europe/Berlin",
+        "frankfurt": "Europe/Berlin",
+        "hamburg": "Europe/Berlin",
+        "munich": "Europe/Berlin",
+        "dusseldorf": "Europe/Berlin",
+    },
+    "GB": {
+        "london": "Europe/London",
+        "manchester": "Europe/London",
+        "birmingham": "Europe/London",
+        "glasgow": "Europe/London",
+        "edinburgh": "Europe/London",
+    },
+}
+
 WINDOW_SIZE_ROTATION = (
     "1366,768",
     "1440,900",
@@ -369,15 +469,25 @@ def truthy(value: str) -> bool:
     return value.strip().lower() not in {"0", "false", "no", "off"}
 
 
-def browser_profile_for_country(country_code: str, index: int) -> dict[str, str]:
+def normalize_city_name(value: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+    return re.sub(r"\s+", " ", normalized)
+
+
+def timezone_for_proxy(country_code: str, city_name: str, fallback_timezone: str) -> str:
+    city_timezones = CITY_TIMEZONES.get(country_code.upper(), {})
+    return city_timezones.get(normalize_city_name(city_name), fallback_timezone)
+
+
+def browser_profile_for_proxy(record: ProxyRecord, index: int) -> dict[str, str]:
     language, accept_language, timezone = COUNTRY_BROWSER_PROFILES.get(
-        country_code.upper(),
+        record.country_code.upper(),
         ("en-US", "en-US,en;q=0.9", "UTC"),
     )
     return {
         "LANGUAGE": language,
         "ACCEPT_LANGUAGE": accept_language,
-        "TIMEZONE": timezone,
+        "TIMEZONE": timezone_for_proxy(record.country_code, record.city_name, timezone),
         "WINDOW_SIZE": WINDOW_SIZE_ROTATION[(index - 1) % len(WINDOW_SIZE_ROTATION)],
     }
 
@@ -436,7 +546,7 @@ def write_profiles_env(env_path: Path, proxies: list[ProxyRecord], start_port: i
         lines.append("")
         lines.append("# Auto-generated from proxy country. Set AUTO_BROWSER_PROFILE=\"false\" to manage these manually.")
         for index, (name, record) in enumerate(zip(names, proxies), start=1):
-            generated = browser_profile_for_country(record.country_code, index)
+            generated = browser_profile_for_proxy(record, index)
             for key, value in generated.items():
                 lines.append(f"{key}_{name}={shell_quote(value)}")
             lines.append("")
