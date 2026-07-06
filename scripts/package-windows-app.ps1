@@ -13,6 +13,42 @@ $pythonRuntimeDir = Join-Path $runtimeDir "python"
 $pythonVersion = "3.12.8"
 $pythonZip = Join-Path $runtimeDir "python-$pythonVersion-embed-amd64.zip"
 
+function Resolve-JdkHome {
+    $candidates = New-Object System.Collections.Generic.List[string]
+
+    if ($env:JAVA_HOME) {
+        $candidates.Add($env:JAVA_HOME)
+    }
+
+    foreach ($commandName in @("jlink.exe", "javac.exe", "java.exe")) {
+        $command = Get-Command $commandName -ErrorAction SilentlyContinue
+        if ($command) {
+            $binDir = Split-Path -Parent $command.Source
+            $homeDir = Split-Path -Parent $binDir
+            if ($homeDir) {
+                $candidates.Add($homeDir)
+            }
+        }
+    }
+
+    foreach ($root in @("$env:ProgramFiles\Java", "$env:ProgramFiles\Eclipse Adoptium", "$env:ProgramFiles\Microsoft", "${env:ProgramFiles(x86)}\Java")) {
+        if ($root -and (Test-Path -LiteralPath $root)) {
+            Get-ChildItem -LiteralPath $root -Directory -Recurse -ErrorAction SilentlyContinue |
+                Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName "bin\jlink.exe") } |
+                Sort-Object FullName -Descending |
+                ForEach-Object { $candidates.Add($_.FullName) }
+        }
+    }
+
+    foreach ($candidate in ($candidates | Select-Object -Unique)) {
+        if ((Test-Path -LiteralPath (Join-Path $candidate "bin\jlink.exe")) -and (Test-Path -LiteralPath (Join-Path $candidate "jmods"))) {
+            return $candidate
+        }
+    }
+
+    return $null
+}
+
 mvn -f (Join-Path $backendDir "pom.xml") package -DskipTests
 
 $jar = Get-ChildItem -Path (Join-Path $backendDir "target") -Filter "*.jar" |
@@ -38,17 +74,13 @@ try {
     if (Test-Path -LiteralPath $javaRuntimeDir) {
         Remove-Item -LiteralPath $javaRuntimeDir -Recurse -Force
     }
-    if (-not $env:JAVA_HOME) {
-        throw "JAVA_HOME is required to build a self-contained Windows app runtime."
+    $jdkHome = Resolve-JdkHome
+    if (-not $jdkHome) {
+        throw "A full JDK with jlink.exe is required to build a self-contained Windows app runtime. Install JDK 21, then either reopen PowerShell or set JAVA_HOME to the JDK folder, for example: `$env:JAVA_HOME='C:\Program Files\Eclipse Adoptium\jdk-21.x.x'."
     }
-    $jlink = Join-Path $env:JAVA_HOME "bin\jlink.exe"
-    $jmods = Join-Path $env:JAVA_HOME "jmods"
-    if (-not (Test-Path -LiteralPath $jlink)) {
-        throw "jlink.exe was not found under JAVA_HOME: $env:JAVA_HOME"
-    }
-    if (-not (Test-Path -LiteralPath $jmods)) {
-        throw "JDK jmods directory was not found under JAVA_HOME: $env:JAVA_HOME"
-    }
+    Write-Host "Using JDK: $jdkHome"
+    $jlink = Join-Path $jdkHome "bin\jlink.exe"
+    $jmods = Join-Path $jdkHome "jmods"
     & $jlink `
         --module-path $jmods `
         --add-modules ALL-MODULE-PATH `

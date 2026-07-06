@@ -140,6 +140,12 @@ Build the `.exe`:
 powershell -ExecutionPolicy Bypass -File .\scripts\package-windows-app.ps1
 ```
 
+Packaging requires a full JDK with `jlink.exe`, not only a JRE. The script tries to find it automatically from `JAVA_HOME`, `PATH`, and common `Program Files` locations. If it cannot find one, install JDK 21 and reopen PowerShell, or set `JAVA_HOME` manually:
+
+```powershell
+$env:JAVA_HOME="C:\Program Files\Eclipse Adoptium\jdk-21.x.x"
+```
+
 Run the generated app:
 
 ```powershell
