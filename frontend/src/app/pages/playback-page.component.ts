@@ -143,6 +143,15 @@ import { DashboardService } from '../services/dashboard.service';
 
         <p class="feedback" *ngIf="message" [class.error]="error">{{ message }}</p>
         <p class="feedback" *ngIf="checkMessage" [class.error]="checkError">{{ checkMessage }}</p>
+        <div class="check-progress" *ngIf="urlCheckStatus && urlCheckStatus.url === normalizedUrl()">
+          <div class="check-progress-head">
+            <span>{{ checkCompletedCount() }}/{{ checkTotalCount() }} checked</span>
+            <span>{{ urlCheckStatus.okCount }} OK</span>
+          </div>
+          <div class="check-progress-track">
+            <span [style.width.%]="checkProgressPercent()"></span>
+          </div>
+        </div>
         <p class="feedback" *ngIf="profilesMessage" [class.error]="profilesError">{{ profilesMessage }}</p>
 
         <dl class="status" *ngIf="status">
@@ -289,6 +298,10 @@ import { DashboardService } from '../services/dashboard.service';
       overflow-wrap: anywhere;
     }
     .feedback.error { background: #fff1f2; color: #be123c; }
+    .check-progress { margin: 10px 0 0; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 10px; background: #f8fafc; }
+    .check-progress-head { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 7px; color: #334155; font: 800 12px/1.2 "Segoe UI", sans-serif; }
+    .check-progress-track { height: 8px; border-radius: 999px; background: #e2e8f0; overflow: hidden; }
+    .check-progress-track span { display: block; height: 100%; min-width: 0; border-radius: inherit; background: #2563eb; transition: width 180ms ease; }
     .desktop-status { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 12px 0 0; }
     .desktop-status div { display: grid; gap: 2px; padding: 9px 10px; border: 1px solid #dde3ea; border-radius: 8px; background: #f8fafc; }
     .desktop-status div.ok { border-color: #bbf7d0; background: #f0fdf4; }
@@ -303,6 +316,9 @@ import { DashboardService } from '../services/dashboard.service';
     .profile-row.check-ok { border-color: #86efac; background: #f0fdf4; }
     .profile-row.check-pending { border-color: #bfdbfe; background: #eff6ff; }
     .profile-row.check-bad { border-color: #fecdd3; background: #fff1f2; }
+    .profile-row.check-ok .profile-id strong { color: #15803d; }
+    .profile-row.check-pending .profile-id strong { color: #1d4ed8; }
+    .profile-row.check-bad .profile-id strong { color: #be123c; }
     .profile-row.bulk-ok { box-shadow: inset 4px 0 0 #22c55e; }
     .profile-row.bulk-skip { box-shadow: inset 4px 0 0 #f59e0b; }
     .profile-id { display: grid; gap: 2px; min-width: 0; }
@@ -736,6 +752,28 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
     return this.urlCheckStatus.results.find((result) => result.name === profileName) ?? null;
   }
 
+  protected checkCompletedCount(): number {
+    if (!this.urlCheckStatus || this.urlCheckStatus.url !== this.normalizedUrl()) {
+      return 0;
+    }
+    return this.urlCheckStatus.completedCount ?? this.urlCheckStatus.results.filter((result) => result.reason !== 'Pending').length;
+  }
+
+  protected checkTotalCount(): number {
+    if (!this.urlCheckStatus || this.urlCheckStatus.url !== this.normalizedUrl()) {
+      return 0;
+    }
+    return this.urlCheckStatus.totalCount || this.urlCheckStatus.results.length;
+  }
+
+  protected checkProgressPercent(): number {
+    const totalCount = this.checkTotalCount();
+    if (!totalCount) {
+      return 0;
+    }
+    return Math.max(0, Math.min(100, Math.round((this.checkCompletedCount() / totalCount) * 100)));
+  }
+
   protected bulkResultFor(profileName: string) {
     return this.profilesStatus?.profileResults?.find((result) => result.name === profileName) ?? null;
   }
@@ -883,7 +921,7 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
     this.profileCount = this.normalizedProfileCount();
   }
 
-  private normalizedUrl(): string {
+  protected normalizedUrl(): string {
     const value = this.url.trim();
     if (!value) {
       return '';
