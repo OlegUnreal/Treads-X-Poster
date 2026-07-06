@@ -498,10 +498,6 @@ function Get-ProfileDebugPort {
     return 12000 + $FallbackIndex
 }
 
-if (-not (Test-Path -LiteralPath $ChromePath)) {
-    throw "Chrome was not found: $ChromePath"
-}
-
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $forwarderSource = Join-Path $repoRoot "remote-chrome-profiles\proxy-forwarder.py"
 $importerSource = Join-Path $repoRoot "remote-chrome-profiles\import-webshare-proxies.py"
@@ -582,6 +578,10 @@ foreach ($profileName in $selectedProfiles) {
     $acceptLanguage = Get-ProfileSetting -EnvValues $profileEnv -ProfileName $profileName -Key "ACCEPT_LANGUAGE" -DefaultValue $language
     $timezone = Get-ProfileSetting -EnvValues $profileEnv -ProfileName $profileName -Key "TIMEZONE" -DefaultValue ""
     $userAgent = Get-ProfileSetting -EnvValues $profileEnv -ProfileName $profileName -Key "USER_AGENT" -DefaultValue ""
+    $browserPath = Get-ProfileSetting -EnvValues $profileEnv -ProfileName $profileName -Key "BROWSER_PATH" -DefaultValue $ChromePath
+    if (-not (Test-Path -LiteralPath $browserPath)) {
+        throw "Browser was not found for $profileName`: $browserPath"
+    }
 
     $launchUrl = if ($Mode -eq "login") { "https://accounts.google.com/" } else { $Url }
     if ($launchUrl -eq "profile-home") {
@@ -631,7 +631,7 @@ foreach ($profileName in $selectedProfiles) {
         $chromeArgs = @("--incognito") + $chromeArgs
     }
 
-    $process = Start-Process -FilePath $ChromePath -ArgumentList $chromeArgs -PassThru
+    $process = Start-Process -FilePath $browserPath -ArgumentList $chromeArgs -PassThru
     Write-ProfileState -ProfileName $profileName -LaunchUrl $launchUrl -ProfileDir $profileDir -ProcessId $process.Id -DebugPort $debugPort -Mode $Mode -RefererValue $Referer -Quality $VideoQuality -Language $language -AcceptLanguage $acceptLanguage -Timezone $timezone -UserAgent $userAgent -WindowSize $windowSize
     $started++
     Write-Host "Started $profileName through $proxy"

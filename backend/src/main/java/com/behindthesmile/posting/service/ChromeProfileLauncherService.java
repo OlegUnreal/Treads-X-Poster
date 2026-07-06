@@ -1,6 +1,7 @@
 package com.behindthesmile.posting.service;
 
 import com.behindthesmile.posting.api.ChromeProfilesLaunchRequest;
+import com.behindthesmile.posting.api.ChromeProfilesBulkActionRequest;
 import com.behindthesmile.posting.api.ChromeProfileActionRequest;
 import com.behindthesmile.posting.api.ChromeProfileLoginStatusRequest;
 import com.behindthesmile.posting.api.ChromeProfilesUrlCheckRequest;
@@ -25,6 +26,9 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -240,18 +244,12 @@ public class ChromeProfileLauncherService {
 
         Map<String, String> env = readEnvFile();
         List<Map<String, String>> profiles = readProfiles();
-        List<Map<String, Object>> results = new ArrayList<>();
+        List<Map<String, Object>> results = checkUrlForProfiles(env, profiles, url);
         int okCount = 0;
-
-        for (Map<String, String> profile : profiles) {
-            String profileName = profile.getOrDefault("name", "");
-            String upstreamProxy = env.getOrDefault("UPSTREAM_PROXY_" + profileName, "");
-            String proxy = upstreamProxy.isBlank() ? env.getOrDefault("PROXY_" + profileName, "") : upstreamProxy;
-            Map<String, Object> result = checkUrlWithProxy(profileName, proxy, url);
+        for (Map<String, Object> result : results) {
             if (Boolean.TRUE.equals(result.get("ok"))) {
                 okCount++;
             }
-            results.add(result);
         }
 
         Map<String, Object> response = new LinkedHashMap<>();
@@ -260,6 +258,122 @@ public class ChromeProfileLauncherService {
         response.put("totalCount", results.size());
         response.put("results", results);
         return response;
+    }
+
+    public Map<String, Object> bulkAction(ChromeProfilesBulkActionRequest request) throws Exception {
+        if (request == null) {
+            throw new IllegalArgumentException("Bulk action request is required.");
+        }
+        String action = request == null || request.action() == null ? "" : request.action().trim().toLowerCase();
+        if (!List.of("open", "restart", "close").contains(action)) {
+            throw new IllegalArgumentException("Unsupported bulk action: " + action);
+        }
+
+        List<Map<String, String>> currentProfiles = readProfiles();
+        List<String> selectedProfiles = selectedProfiles(request.profileNames(), currentProfiles);
+        if (selectedProfiles.isEmpty()) {
+            throw new IllegalArgumentException("Choose at least one profile.");
+        }
+
+        List<Map<String, Object>> profileResults = new ArrayList<>();
+        List<String> profilesToOpen = new ArrayList<>();
+        Map<String, Map<String, String>> currentByName = new HashMap<>();
+        for (Map<String, String> profile : currentProfiles) {
+            currentByName.put(profile.getOrDefault("name", ""), profile);
+        }
+
+        if ("close".equals(action)) {
+            for (String profileName : selectedProfiles) {
+                int closed = closeProfileProcesses(profileName);
+                profileResults.add(profileActionResult(profileName, closed > 0 ? "closed" : "not_running", closed > 0 ? "Closed" : "Was not running"));
+            }
+            Map<String, Object> result = status();
+            result.put("message", "Closed checked profiles.");
+            result.put("profileResults", profileResults);
+            return result;
+        }
+
+        if ("restart".equals(action)) {
+            for (String profileName : selectedProfiles) {
+                int closed = closeProfileProcesses(profileName);
+                profilesToOpen.add(profileName);
+                profileResults.add(profileActionResult(profileName, "restart_queued", closed > 0 ? "Closed and queued" : "Queued"));
+            }
+        } else {
+            for (String profileName : selectedProfiles) {
+                Map<String, String> profile = currentByName.getOrDefault(profileName, Map.of());
+                if ("true".equalsIgnoreCase(profile.getOrDefault("running", "false"))) {
+                    profileResults.add(profileActionResult(profileName, "already_running", "Already running"));
+                } else {
+                    profilesToOpen.add(profileName);
+                    profileResults.add(profileActionResult(profileName, "open_queued", "Queued"));
+                }
+            }
+        }
+
+        Map<String, Object> result;
+        if (profilesToOpen.isEmpty()) {
+            result = status();
+            result.put("message", "No profiles needed opening.");
+        } else {
+            ChromeProfilesLaunchRequest launchRequest = new ChromeProfilesLaunchRequest(
+                    request.minDelaySeconds(),
+                    request.maxDelaySeconds(),
+                    profilesToOpen.size(),
+                    request.url(),
+                    profilesToOpen,
+                    false,
+                    cleanReferer(request.referer()),
+                    cleanVideoQuality(request.videoQuality())
+            );
+            result = startAll(launchRequest);
+            result.put("message", ("restart".equals(action) ? "Restarted " : "Opened ") + profilesToOpen.size() + " checked profile(s).");
+        }
+        result.put("profileResults", profileResults);
+        return result;
+    }
+
+    private Map<String, Object> profileActionResult(String profileName, String status, String message) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("name", profileName);
+        result.put("status", status);
+        result.put("message", message);
+        return result;
+    }
+
+    private List<Map<String, Object>> checkUrlForProfiles(Map<String, String> env, List<Map<String, String>> profiles, String url) throws Exception {
+        int concurrency = checkConcurrency();
+        ExecutorService executor = Executors.newFixedThreadPool(concurrency);
+        try {
+            List<Future<Map<String, Object>>> futures = new ArrayList<>();
+            for (Map<String, String> profile : profiles) {
+                futures.add(executor.submit(() -> {
+                    String profileName = profile.getOrDefault("name", "");
+                    String upstreamProxy = env.getOrDefault("UPSTREAM_PROXY_" + profileName, "");
+                    String proxy = upstreamProxy.isBlank() ? env.getOrDefault("PROXY_" + profileName, "") : upstreamProxy;
+                    return checkUrlWithProxy(profileName, proxy, url);
+                }));
+            }
+            List<Map<String, Object>> results = new ArrayList<>();
+            for (Future<Map<String, Object>> future : futures) {
+                results.add(future.get());
+            }
+            return results;
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private int checkConcurrency() {
+        String value = System.getenv("CHECK_CONCURRENCY");
+        int parsed = parseInt(value == null ? "" : value, 5);
+        return Math.max(1, Math.min(20, parsed));
+    }
+
+    private int checkTimeoutSeconds() {
+        String value = System.getenv("CHECK_TIMEOUT_SECONDS");
+        int parsed = parseInt(value == null ? "" : value, 15);
+        return Math.max(3, Math.min(60, parsed));
     }
 
     public String profilesEnvContent() throws Exception {
@@ -513,18 +627,19 @@ public class ChromeProfileLauncherService {
             return result;
         }
 
+        int timeoutSeconds = checkTimeoutSeconds();
         ProcessBuilder builder = new ProcessBuilder(
                 "curl",
                 "-sS",
                 "-I",
                 "--max-time",
-                "15",
+                String.valueOf(timeoutSeconds),
                 "-x",
                 proxy,
                 url
         ).redirectErrorStream(true);
         Process process = builder.start();
-        boolean finished = process.waitFor(20, TimeUnit.SECONDS);
+        boolean finished = process.waitFor(timeoutSeconds + 5L, TimeUnit.SECONDS);
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         if (!finished) {
             process.destroyForcibly();

@@ -28,6 +28,7 @@ PROFILE_SETTINGS_KEYS = {
     "ACCEPT_LANGUAGE",
     "TIMEZONE",
     "USER_AGENT",
+    "BROWSER_PATH",
     "AUTO_BROWSER_PROFILE",
 }
 PROFILE_SETTINGS_PREFIXES = (
@@ -37,6 +38,7 @@ PROFILE_SETTINGS_PREFIXES = (
     "ACCEPT_LANGUAGE_",
     "TIMEZONE_",
     "USER_AGENT_",
+    "BROWSER_PATH_",
 )
 AUTO_BROWSER_PROFILE_PREFIXES = (
     "WINDOW_SIZE_",
@@ -530,6 +532,7 @@ def write_profiles_env(env_path: Path, proxies: list[ProxyRecord], start_port: i
         "ACCEPT_LANGUAGE": "",
         "TIMEZONE": "",
         "USER_AGENT": "",
+        "BROWSER_PATH": "",
         "AUTO_BROWSER_PROFILE": "true",
     }
     auto_browser_profile = truthy(settings.get("AUTO_BROWSER_PROFILE", "true"))

@@ -167,6 +167,7 @@ export interface ChromeProfilesStatus {
   configuredProfileCount?: number;
   loggedInProfileCount?: number;
   runningProfileCount?: number;
+  profileResults?: ChromeProfileActionResult[];
 }
 
 export interface ChromeProfileSummary {
@@ -196,6 +197,22 @@ export interface ChromeProfilesLaunchRequest {
   loginMode?: boolean;
   referer?: string;
   videoQuality?: string;
+}
+
+export interface ChromeProfilesBulkActionRequest {
+  action: 'open' | 'restart' | 'close';
+  profileNames: string[];
+  url?: string;
+  minDelaySeconds?: number;
+  maxDelaySeconds?: number;
+  referer?: string;
+  videoQuality?: string;
+}
+
+export interface ChromeProfileActionResult {
+  name: string;
+  status: string;
+  message: string;
 }
 
 export interface ChromeProfilesUrlCheckRequest {

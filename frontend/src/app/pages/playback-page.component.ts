@@ -55,6 +55,12 @@ import { DashboardService } from '../services/dashboard.service';
           <button class="btn btn-outline-success btn-sm" type="button" [disabled]="busy || !checkedProfileNames().length" (click)="openCheckedProfiles()">
             Open checked
           </button>
+          <button class="btn btn-outline-warning btn-sm" type="button" [disabled]="busy || !checkedProfileNames().length" (click)="restartCheckedProfiles()">
+            Restart checked
+          </button>
+          <button class="btn btn-outline-danger btn-sm" type="button" [disabled]="busy || !checkedProfileNames().length" (click)="closeCheckedProfiles()">
+            Close checked
+          </button>
           <button class="btn btn-outline-secondary btn-sm" type="button" [disabled]="busy" (click)="stop()">Stop</button>
           <button class="btn btn-outline-secondary btn-sm" type="button" [disabled]="busy" (click)="refreshStatus()">Refresh</button>
           <a class="btn btn-outline-secondary btn-sm" href="/api/actions/youtube/screenshot" target="_blank" rel="noopener">Screenshot</a>
@@ -138,6 +144,13 @@ import { DashboardService } from '../services/dashboard.service';
         <p class="feedback" *ngIf="message" [class.error]="error">{{ message }}</p>
         <p class="feedback" *ngIf="checkMessage" [class.error]="checkError">{{ checkMessage }}</p>
         <p class="feedback" *ngIf="profilesMessage" [class.error]="profilesError">{{ profilesMessage }}</p>
+
+        <div class="bulk-results" *ngIf="profilesStatus?.profileResults?.length">
+          <div class="bulk-row" *ngFor="let result of profilesStatus?.profileResults" [class.ok]="isBulkOk(result.status)" [class.skip]="result.status === 'already_running' || result.status === 'not_running'">
+            <strong>{{ result.name }}</strong>
+            <span>{{ result.message || result.status }}</span>
+          </div>
+        </div>
 
         <div class="check-list" *ngIf="urlCheckStatus?.results?.length">
           <div class="check-row" *ngFor="let result of urlCheckStatus?.results" [class.ok]="result.ok" [class.bad]="!result.ok">
@@ -286,6 +299,10 @@ import { DashboardService } from '../services/dashboard.service';
     .check-row.bad { border-color: #fecdd3; background: #fff1f2; }
     .check-row span, .check-row small { overflow-wrap: anywhere; }
     .check-row small { color: #64748b; font-weight: 600; }
+    .bulk-results { display: grid; gap: 6px; margin: 12px 0 0; }
+    .bulk-row { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid #dde3ea; border-radius: 10px; background: #f8fafc; color: #17212b; font: 700 12px/1.3 "Segoe UI", sans-serif; }
+    .bulk-row.ok { border-color: #bbf7d0; background: #f0fdf4; }
+    .bulk-row.skip { border-color: #fde68a; background: #fffbeb; }
     .status { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 12px 0 0; }
     .status div { padding: 10px; border: 1px solid #dde3ea; border-radius: 10px; background: #f8fafc; }
     .status dd { margin: 0; color: #17212b; font: 800 14px/1.3 "Segoe UI", sans-serif; overflow-wrap: anywhere; }
@@ -461,9 +478,21 @@ export class PlaybackPageComponent implements OnInit {
   }
 
   protected openCheckedProfiles(): void {
+    this.runCheckedBulkAction('open');
+  }
+
+  protected restartCheckedProfiles(): void {
+    this.runCheckedBulkAction('restart');
+  }
+
+  protected closeCheckedProfiles(): void {
+    this.runCheckedBulkAction('close');
+  }
+
+  private runCheckedBulkAction(action: 'open' | 'restart' | 'close'): void {
     const cleanUrl = this.normalizedUrl();
     const profileNames = this.checkedProfileNames().slice(0, this.normalizedProfileCount());
-    if (!cleanUrl) {
+    if (action !== 'close' && !cleanUrl) {
       this.message = 'Add a video or website URL first.';
       this.error = true;
       return;
@@ -476,24 +505,25 @@ export class PlaybackPageComponent implements OnInit {
 
     this.busy = true;
     this.error = false;
-    this.message = `Opening ${profileNames.length} checked profile(s)...`;
-    this.dashboardService.startAllChromeProfiles({
+    const actionLabel = action === 'restart' ? 'Restarting' : action === 'close' ? 'Closing' : 'Opening';
+    this.message = `${actionLabel} ${profileNames.length} checked profile(s)...`;
+    this.dashboardService.bulkChromeProfiles({
+      action,
       minDelaySeconds: this.normalizedDelay(this.profilesMinDelay, 0),
       maxDelaySeconds: this.normalizedDelay(this.profilesMaxDelay, this.normalizedDelay(this.profilesMinDelay, 0)),
-      profileCount: this.normalizedProfileCount(),
       profileNames,
-      url: cleanUrl,
+      url: cleanUrl || undefined,
       ...this.launchOptions()
     }).subscribe({
       next: (status) => {
         this.profilesStatus = status;
         this.profileCount = profileNames.length;
-        this.message = status.message || `Opened ${profileNames.length} checked profile(s).`;
+        this.message = status.message || `${actionLabel} checked profile(s).`;
         this.error = false;
         this.busy = false;
       },
       error: (error) => {
-        this.message = this.errorMessage(error, 'Could not open checked profiles.');
+        this.message = this.errorMessage(error, `Could not ${action} checked profiles.`);
         this.error = true;
         this.busy = false;
         this.loadProfilesDiagnostics('message', this.message);
@@ -680,6 +710,10 @@ export class PlaybackPageComponent implements OnInit {
 
   protected isRunning(profile: { running?: boolean | string }): boolean {
     return profile.running === true || profile.running === 'true';
+  }
+
+  protected isBulkOk(status: string): boolean {
+    return ['open_queued', 'restart_queued', 'closed'].includes(status);
   }
 
   protected compactUrl(value: string): string {

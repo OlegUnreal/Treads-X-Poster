@@ -260,6 +260,11 @@ public class DashboardController {
         return chromeProfileLauncherService.checkUrl(request);
     }
 
+    @PostMapping("/actions/chrome-profiles/bulk")
+    public Map<String, Object> bulkChromeProfiles(@RequestBody(required = false) ChromeProfilesBulkActionRequest request) throws Exception {
+        return chromeProfileLauncherService.bulkAction(request);
+    }
+
     @PutMapping("/actions/chrome-profiles/{profileName}/login-status")
     public Map<String, Object> updateChromeProfileLoginStatus(
             @PathVariable String profileName,

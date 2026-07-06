@@ -210,6 +210,7 @@ LANGUAGE="en-US"
 ACCEPT_LANGUAGE="en-US,en;q=0.9"
 TIMEZONE="Europe/London"
 USER_AGENT=""
+BROWSER_PATH=""
 AUTO_BROWSER_PROFILE="true"
 
 WINDOW_SIZE_ip1="1366,768"
@@ -221,6 +222,20 @@ TIMEZONE_ip1="Europe/London"
 When profiles are generated from the WebShare API, `AUTO_BROWSER_PROFILE="true"` makes the importer set `LANGUAGE_ipN`, `ACCEPT_LANGUAGE_ipN`, `TIMEZONE_ipN`, and `WINDOW_SIZE_ipN` automatically from WebShare's `country_code`. For countries with multiple time zones, `TIMEZONE_ipN` uses WebShare's `city_name` when it matches a known city, then falls back to the country default. The importer also writes `PROXY_COUNTRY_ipN` and `PROXY_CITY_ipN` when WebShare provides them. Set `AUTO_BROWSER_PROFILE="false"` only if you want to manage all per-profile browser values manually.
 
 Keep these values consistent with the proxy country. Avoid random or conflicting combinations; a small set of realistic browser profiles is safer than aggressive fingerprint spoofing.
+
+Use `BROWSER_PATH` when you want to test another Chromium-based browser without changing the app code:
+
+```env
+BROWSER_PATH="C:\Program Files\Google\Chrome\Application\chrome.exe"
+BROWSER_PATH_ip5="C:\Path\To\Chromium.exe"
+```
+
+`Check URL` runs proxy checks in parallel. Tune it with:
+
+```env
+CHECK_CONCURRENCY=5
+CHECK_TIMEOUT_SECONDS=15
+```
 
 The Windows app automatically downloads the server `profiles.env` on startup from:
 

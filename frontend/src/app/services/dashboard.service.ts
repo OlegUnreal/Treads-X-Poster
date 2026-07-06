@@ -6,6 +6,7 @@ import {
   ActionResult,
   BrowserXPublishRequest,
   ChromeProfilesLaunchRequest,
+  ChromeProfilesBulkActionRequest,
   ChromeProfilesStatus,
   ChromeProfilesUrlCheckRequest,
   ChromeProfilesUrlCheckStatus,
@@ -166,6 +167,10 @@ export class DashboardService {
 
   checkChromeProfilesUrl(request: ChromeProfilesUrlCheckRequest): Observable<ChromeProfilesUrlCheckStatus> {
     return this.http.post<ChromeProfilesUrlCheckStatus>(`${API_BASE_URL}/actions/chrome-profiles/check-url`, request);
+  }
+
+  bulkChromeProfiles(request: ChromeProfilesBulkActionRequest): Observable<ChromeProfilesStatus> {
+    return this.http.post<ChromeProfilesStatus>(`${API_BASE_URL}/actions/chrome-profiles/bulk`, request);
   }
 
   updateChromeProfileLoginStatus(profileName: string, loggedIn: boolean): Observable<ChromeProfilesStatus> {
