@@ -1,5 +1,5 @@
 import { DecimalPipe, NgFor, NgIf } from '@angular/common';
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ChromeProfilesStatus, ChromeProfilesUrlCheckStatus, DesktopUpdateStatus, YoutubePlaybackStatus } from '../models/dashboard.models';
 import { DashboardService } from '../services/dashboard.service';
@@ -145,21 +145,6 @@ import { DashboardService } from '../services/dashboard.service';
         <p class="feedback" *ngIf="checkMessage" [class.error]="checkError">{{ checkMessage }}</p>
         <p class="feedback" *ngIf="profilesMessage" [class.error]="profilesError">{{ profilesMessage }}</p>
 
-        <div class="bulk-results" *ngIf="profilesStatus?.profileResults?.length">
-          <div class="bulk-row" *ngFor="let result of profilesStatus?.profileResults" [class.ok]="isBulkOk(result.status)" [class.skip]="result.status === 'already_running' || result.status === 'not_running'">
-            <strong>{{ result.name }}</strong>
-            <span>{{ result.message || result.status }}</span>
-          </div>
-        </div>
-
-        <div class="check-list" *ngIf="urlCheckStatus?.results?.length">
-          <div class="check-row" *ngFor="let result of urlCheckStatus?.results" [class.ok]="result.ok" [class.bad]="!result.ok">
-            <strong>{{ result.name }}</strong>
-            <span>{{ result.ok ? 'OK' : result.reason }}</span>
-            <small>{{ result.status || 'No status' }}{{ result.location ? ' -> ' + result.location : '' }}</small>
-          </div>
-        </div>
-
         <dl class="status" *ngIf="status">
           <div>
             <dt>Status</dt>
@@ -190,7 +175,14 @@ import { DashboardService } from '../services/dashboard.service';
         <pre class="log-tail" *ngIf="status?.logTail">{{ status?.logTail }}</pre>
 
         <div class="profile-list" *ngIf="profilesStatus?.profiles?.length">
-          <div class="profile-row" *ngFor="let profile of profilesStatus?.profiles">
+          <div
+            class="profile-row"
+            *ngFor="let profile of profilesStatus?.profiles"
+            [class.check-ok]="checkResultFor(profile.name)?.ok"
+            [class.check-bad]="checkResultFor(profile.name) && !checkResultFor(profile.name)?.ok"
+            [class.bulk-ok]="isBulkOk(bulkResultFor(profile.name)?.status || '')"
+            [class.bulk-skip]="isBulkSkip(bulkResultFor(profile.name)?.status || '')"
+          >
             <div class="profile-id">
               <strong>{{ profile.name }}</strong>
               <small *ngIf="profile.label && profile.label !== profile.name">{{ profile.label }}</small>
@@ -202,6 +194,12 @@ import { DashboardService } from '../services/dashboard.service';
               {{ accountLabel(profile) }}
               <small class="profile-meta">
                 {{ proxyLabel(profile) }} | {{ isRunning(profile) ? 'Running' : 'Stopped' }}{{ profile.lastUrl ? ' | ' + compactUrl(profile.lastUrl) : '' }}
+              </small>
+              <small class="profile-check" *ngIf="checkResultFor(profile.name)">
+                Check: {{ checkResultFor(profile.name)?.ok ? 'OK' : checkResultFor(profile.name)?.reason }}
+              </small>
+              <small class="profile-check" *ngIf="bulkResultFor(profile.name)">
+                Action: {{ bulkResultFor(profile.name)?.message || bulkResultFor(profile.name)?.status }}
               </small>
             </span>
             <div class="profile-row-actions">
@@ -293,21 +291,15 @@ import { DashboardService } from '../services/dashboard.service';
     .desktop-status div.bad { border-color: #fecdd3; background: #fff1f2; }
     .desktop-status strong { font: 800 11px/1.2 "Segoe UI", sans-serif; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; }
     .desktop-status span { font: 800 13px/1.2 "Segoe UI", sans-serif; color: #17212b; overflow-wrap: anywhere; }
-    .check-list { display: grid; gap: 6px; margin: 12px 0 0; }
-    .check-row { display: grid; grid-template-columns: 70px minmax(0, 1fr) minmax(180px, 1.2fr); gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid #dde3ea; border-radius: 10px; background: #f8fafc; color: #17212b; font: 700 12px/1.3 "Segoe UI", sans-serif; }
-    .check-row.ok { border-color: #bbf7d0; background: #f0fdf4; }
-    .check-row.bad { border-color: #fecdd3; background: #fff1f2; }
-    .check-row span, .check-row small { overflow-wrap: anywhere; }
-    .check-row small { color: #64748b; font-weight: 600; }
-    .bulk-results { display: grid; gap: 6px; margin: 12px 0 0; }
-    .bulk-row { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid #dde3ea; border-radius: 10px; background: #f8fafc; color: #17212b; font: 700 12px/1.3 "Segoe UI", sans-serif; }
-    .bulk-row.ok { border-color: #bbf7d0; background: #f0fdf4; }
-    .bulk-row.skip { border-color: #fde68a; background: #fffbeb; }
     .status { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 12px 0 0; }
     .status div { padding: 10px; border: 1px solid #dde3ea; border-radius: 10px; background: #f8fafc; }
     .status dd { margin: 0; color: #17212b; font: 800 14px/1.3 "Segoe UI", sans-serif; overflow-wrap: anywhere; }
     .profile-list { display: grid; gap: 6px; margin: 12px 0 0; }
     .profile-row { display: grid; grid-template-columns: 140px 104px minmax(0, 1fr) 360px; gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid #dde3ea; border-radius: 10px; background: #f8fafc; color: #17212b; font: 700 12px/1.3 "Segoe UI", sans-serif; }
+    .profile-row.check-ok { border-color: #86efac; background: #f0fdf4; }
+    .profile-row.check-bad { border-color: #fecdd3; background: #fff1f2; }
+    .profile-row.bulk-ok { box-shadow: inset 4px 0 0 #22c55e; }
+    .profile-row.bulk-skip { box-shadow: inset 4px 0 0 #f59e0b; }
     .profile-id { display: grid; gap: 2px; min-width: 0; }
     .profile-id strong, .profile-id small { overflow-wrap: anywhere; }
     .profile-id small { color: #64748b; font-weight: 700; }
@@ -316,12 +308,13 @@ import { DashboardService } from '../services/dashboard.service';
     .login-pill.not-logged-in { border-color: #fecdd3; background: #fff1f2; color: #be123c; }
     .profile-row > span:not(.login-pill) { color: #64748b; overflow-wrap: anywhere; }
     .profile-meta { display: block; margin-top: 2px; color: #475569; font-weight: 700; }
+    .profile-check { display: block; margin-top: 2px; color: #334155; font-weight: 800; }
     .profile-row-actions { display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
     .log-tail { margin: 12px 0 0; max-height: 220px; overflow: auto; padding: 10px; border-radius: 10px; background: #0f172a; color: #dbeafe; font: 600 12px/1.45 Consolas, monospace; white-space: pre-wrap; }
     @media (max-width: 760px) { .page-head, .slider-row, .settings-grid, .status, .profile-row, .desktop-status { grid-template-columns: 1fr; display: grid; } .actions button, .profiles-actions button { width: 100%; } }
   `]
 })
-export class PlaybackPageComponent implements OnInit {
+export class PlaybackPageComponent implements OnInit, OnDestroy {
   private readonly dashboardService = inject(DashboardService);
   private readonly launchSettingsStorageKey = 'bts-playback-launch-settings';
 
@@ -350,6 +343,7 @@ export class PlaybackPageComponent implements OnInit {
   protected updateStatus: DesktopUpdateStatus | null = null;
   protected refererHeader = '';
   protected videoQuality = 'auto';
+  private bulkProgressTimer: ReturnType<typeof setTimeout> | null = null;
   protected readonly videoQualityOptions = [
     { value: 'auto', label: 'Auto' },
     { value: 'large', label: '480p' },
@@ -365,6 +359,10 @@ export class PlaybackPageComponent implements OnInit {
   ngOnInit(): void {
     this.loadLaunchSettings();
     this.refreshProfilesStatus(false);
+  }
+
+  ngOnDestroy(): void {
+    this.stopBulkProgress();
   }
 
   protected play(): void {
@@ -503,6 +501,7 @@ export class PlaybackPageComponent implements OnInit {
       return;
     }
 
+    this.stopBulkProgress();
     this.busy = true;
     this.error = false;
     const actionLabel = action === 'restart' ? 'Restarting' : action === 'close' ? 'Closing' : 'Opening';
@@ -518,9 +517,10 @@ export class PlaybackPageComponent implements OnInit {
       next: (status) => {
         this.profilesStatus = status;
         this.profileCount = profileNames.length;
-        this.message = status.message || `${actionLabel} checked profile(s).`;
+        this.message = `${status.message || `${actionLabel} checked profile(s).`} Progress: 0/${profileNames.length}.`;
         this.error = false;
         this.busy = false;
+        this.startBulkProgress(profileNames, action, actionLabel, 0);
       },
       error: (error) => {
         this.message = this.errorMessage(error, `Could not ${action} checked profiles.`);
@@ -714,6 +714,59 @@ export class PlaybackPageComponent implements OnInit {
 
   protected isBulkOk(status: string): boolean {
     return ['open_queued', 'restart_queued', 'closed'].includes(status);
+  }
+
+  protected isBulkSkip(status: string): boolean {
+    return ['already_running', 'not_running'].includes(status);
+  }
+
+  protected checkResultFor(profileName: string) {
+    if (!this.urlCheckStatus || this.urlCheckStatus.url !== this.normalizedUrl()) {
+      return null;
+    }
+    return this.urlCheckStatus.results.find((result) => result.name === profileName) ?? null;
+  }
+
+  protected bulkResultFor(profileName: string) {
+    return this.profilesStatus?.profileResults?.find((result) => result.name === profileName) ?? null;
+  }
+
+  private startBulkProgress(profileNames: string[], action: 'open' | 'restart' | 'close', actionLabel: string, attempt: number): void {
+    this.stopBulkProgress();
+    this.bulkProgressTimer = setTimeout(() => {
+      this.dashboardService.getChromeProfilesStatus().subscribe({
+        next: (status) => {
+          this.profilesStatus = {
+            ...status,
+            profileResults: this.profilesStatus?.profileResults
+          };
+          const completeCount = this.bulkProgressCount(profileNames, action, status);
+          this.message = `${actionLabel} checked profile(s)... Progress: ${completeCount}/${profileNames.length}.`;
+          if (completeCount >= profileNames.length || attempt >= 30) {
+            this.stopBulkProgress();
+            return;
+          }
+          this.startBulkProgress(profileNames, action, actionLabel, attempt + 1);
+        },
+        error: () => this.stopBulkProgress()
+      });
+    }, 2000);
+  }
+
+  private stopBulkProgress(): void {
+    if (this.bulkProgressTimer) {
+      clearTimeout(this.bulkProgressTimer);
+      this.bulkProgressTimer = null;
+    }
+  }
+
+  private bulkProgressCount(profileNames: string[], action: 'open' | 'restart' | 'close', status: ChromeProfilesStatus): number {
+    const profiles = status.profiles ?? [];
+    return profileNames.filter((name) => {
+      const profile = profiles.find((candidate) => candidate.name === name);
+      const running = profile ? this.isRunning(profile) : false;
+      return action === 'close' ? !running : running;
+    }).length;
   }
 
   protected compactUrl(value: string): string {
