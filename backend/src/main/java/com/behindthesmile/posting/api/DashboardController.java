@@ -317,6 +317,11 @@ public class DashboardController {
         return chromeProfileLauncherService.status();
     }
 
+    @GetMapping("/actions/chrome-profiles/runtime")
+    public Map<String, Object> chromeProfileRuntimeStatus() {
+        return chromeProfileLauncherService.runtimeStatus();
+    }
+
     @GetMapping(value = "/actions/chrome-profiles/profiles-env", produces = MediaType.TEXT_PLAIN_VALUE)
     public ResponseEntity<String> chromeProfilesEnv(
             @RequestHeader(value = "X-Profiles-Env-Token", required = false) String token

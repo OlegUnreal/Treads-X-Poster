@@ -254,6 +254,25 @@ public class ChromeProfileLauncherService {
         return status;
     }
 
+    public Map<String, Object> runtimeStatus() {
+        Map<String, Object> status = new LinkedHashMap<>();
+        Path profilesDir = profilesDir();
+        Path startScript = startScript();
+        Path startProfileScript = startProfileScript();
+        Path envFile = envFile();
+        status.put("directory", profilesDir.toString());
+        status.put("script", startScript.toString());
+        status.put("startProfileScript", startProfileScript.toString());
+        status.put("envFile", envFile.toString());
+        status.put("directoryExists", Files.isDirectory(profilesDir));
+        status.put("scriptExists", Files.isRegularFile(startScript));
+        status.put("startProfileScriptExists", Files.isRegularFile(startProfileScript));
+        status.put("envFileExists", Files.isRegularFile(envFile));
+        status.put("chromeFound", chromeFound());
+        status.put("lastStartedAt", lastStartedAt == null ? "" : lastStartedAt.toString());
+        return status;
+    }
+
     public Map<String, Object> checkUrl(ChromeProfilesUrlCheckRequest request) throws Exception {
         String url = normalizeLaunchUrl(request == null ? null : request.url());
         if (url.isBlank()) {

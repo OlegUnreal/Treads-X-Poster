@@ -28,6 +28,8 @@ const profilesEnvFile = path.join(profilesRuntimeDir, 'profiles.env');
 const appRuntimeRoot = path.join(profilesRuntimeDir, 'app');
 const backendPidFile = path.join(profilesRuntimeDir, 'behind-the-smile-backend.pid');
 const startupLogFile = path.join(profilesRuntimeDir, 'behind-the-smile-startup.log');
+const backendStdoutLogFile = path.join(profilesRuntimeDir, 'behind-the-smile-backend.out.log');
+const backendStderrLogFile = path.join(profilesRuntimeDir, 'behind-the-smile-backend.err.log');
 const versionFile = path.join(__dirname, 'version.txt');
 const currentDesktopVersion = fs.existsSync(versionFile) ? fs.readFileSync(versionFile, 'utf8').trim() : 'local';
 
@@ -61,13 +63,46 @@ function waitForPort(port, timeoutMs = 60000) {
   });
 }
 
-function requestBackendJson(pathname) {
+function waitForBackendPort(timeoutMs = 90000) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const cleanup = () => {
+      if (backendProcess) {
+        backendProcess.off('exit', onExit);
+        backendProcess.off('error', onError);
+      }
+    };
+    const finish = (callback, value) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      callback(value);
+    };
+    const onExit = (code, signal) => {
+      finish(reject, new Error(`Backend exited before opening port ${backendPort}. Exit code: ${code ?? 'unknown'}, signal: ${signal || 'none'}.\n${startupDiagnostics()}`));
+    };
+    const onError = (error) => {
+      finish(reject, new Error(`Backend process could not start: ${error.message}\n${startupDiagnostics()}`));
+    };
+    if (backendProcess) {
+      backendProcess.once('exit', onExit);
+      backendProcess.once('error', onError);
+    }
+    waitForPort(backendPort, timeoutMs)
+      .then(() => finish(resolve))
+      .catch((error) => finish(reject, new Error(`${error.message}\n${startupDiagnostics()}`)));
+  });
+}
+
+function requestBackendJson(pathname, timeoutMs = 20000) {
   return new Promise((resolve, reject) => {
     const request = http.get({
       hostname: '127.0.0.1',
       port: backendPort,
       path: pathname,
-      timeout: 10000
+      timeout: timeoutMs
     }, (response) => {
       const chunks = [];
       response.on('data', (chunk) => chunks.push(chunk));
@@ -90,7 +125,7 @@ function requestBackendJson(pathname) {
 }
 
 async function verifyBackendRuntime() {
-  const status = await requestBackendJson('/api/actions/chrome-profiles/status');
+  const status = await requestBackendJson('/api/actions/chrome-profiles/runtime', 20000);
   const expectedRoot = path.normalize(appRuntimeRoot).toLowerCase();
   const launcherScript = path.normalize(status.script || '').toLowerCase();
   if (!launcherScript.startsWith(expectedRoot) || !status.scriptExists) {
@@ -422,11 +457,23 @@ function startBackend() {
     PUBLIC_BASE_URL: `http://127.0.0.1:${frontendPort}`
   };
 
+  fs.mkdirSync(profilesRuntimeDir, { recursive: true });
+  const stdoutFd = fs.openSync(backendStdoutLogFile, 'a');
+  const stderrFd = fs.openSync(backendStderrLogFile, 'a');
+  fs.appendFileSync(backendStdoutLogFile, `\n${new Date().toISOString()} Starting backend with ${javaExecutable}\n`, 'utf8');
+  fs.appendFileSync(backendStderrLogFile, `\n${new Date().toISOString()} Starting backend with ${javaExecutable}\n`, 'utf8');
+
   backendProcess = childProcess.spawn(javaExecutable, ['-jar', backendJar], {
     cwd: backendDir,
     env,
-    stdio: 'ignore',
+    stdio: ['ignore', stdoutFd, stderrFd],
     windowsHide: true
+  });
+  backendProcess.on('exit', (code, signal) => {
+    appendStartupLog(`Backend process exited. code=${code ?? 'unknown'} signal=${signal || 'none'}`);
+  });
+  backendProcess.on('error', (error) => {
+    appendStartupLog(`Backend process error: ${error.message}`);
   });
   fs.mkdirSync(path.dirname(backendPidFile), { recursive: true });
   fs.writeFileSync(backendPidFile, String(backendProcess.pid), 'utf8');
@@ -439,6 +486,40 @@ function appendStartupLog(message) {
   } catch {
     // Startup logging must never block the app.
   }
+}
+
+function readFileTail(filePath, maxBytes = 5000) {
+  try {
+    if (!fs.existsSync(filePath)) {
+      return '';
+    }
+    const stat = fs.statSync(filePath);
+    const start = Math.max(0, stat.size - maxBytes);
+    const fd = fs.openSync(filePath, 'r');
+    try {
+      const buffer = Buffer.alloc(stat.size - start);
+      fs.readSync(fd, buffer, 0, buffer.length, start);
+      return buffer.toString('utf8').trim();
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch (error) {
+    return `Could not read ${filePath}: ${error.message}`;
+  }
+}
+
+function startupDiagnostics() {
+  const details = [
+    `Backend jar: ${backendJar} (${fs.existsSync(backendJar) ? 'exists' : 'missing'})`,
+    `Bundled Java: ${bundledJava} (${fs.existsSync(bundledJava) ? 'exists' : 'missing'})`,
+    `Backend port: ${backendPort}`,
+    `Startup log: ${startupLogFile}`,
+    `Backend stderr: ${backendStderrLogFile}`,
+    readFileTail(backendStderrLogFile),
+    `Backend stdout: ${backendStdoutLogFile}`,
+    readFileTail(backendStdoutLogFile)
+  ].filter(Boolean);
+  return details.join('\n');
 }
 
 function killProcessTree(pid, reason) {
@@ -537,7 +618,7 @@ async function startVerifiedBackend() {
     setStartupStatus('Starting local playback backend...');
     startBackend();
     setStartupStatus('Waiting for local backend...');
-    await waitForPort(backendPort);
+    await waitForBackendPort();
     try {
       setStartupStatus('Checking local backend...');
       await verifyBackendRuntime();
@@ -552,7 +633,7 @@ async function startVerifiedBackend() {
       stopOldWindowsProcesses();
     }
   }
-  throw lastError || new Error('Could not start verified local backend.');
+  throw new Error(`${lastError?.message || 'Could not start verified local backend.'}\n${startupDiagnostics()}`);
 }
 
 function copyRequiredFile(source, destination) {
