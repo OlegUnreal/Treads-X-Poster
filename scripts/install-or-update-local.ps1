@@ -36,6 +36,12 @@ function Sync-ProfilesEnv {
 
     New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
     $target = Join-Path $RuntimeDir "profiles.env"
+    $capabilitiesTarget = Join-Path $RuntimeDir "proxy-capabilities.tsv"
+    $capabilitiesSource = Join-Path $InstallDir "remote-chrome-profiles\proxy-capabilities.tsv"
+    if ((-not (Test-Path -LiteralPath $capabilitiesTarget)) -and (Test-Path -LiteralPath $capabilitiesSource)) {
+        Copy-Item -LiteralPath $capabilitiesSource -Destination $capabilitiesTarget -Force
+        Write-Host "Seeded proxy-capabilities.tsv"
+    }
 
     if ($ProfilesEnvSource) {
         if (-not (Test-Path -LiteralPath $ProfilesEnvSource)) {

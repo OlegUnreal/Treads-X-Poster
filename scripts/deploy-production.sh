@@ -72,6 +72,9 @@ if [ -d "${APP_DIR}/remote-chrome-profiles" ]; then
       cp "${APP_DIR}/remote-chrome-profiles/${file}" "${CHROME_PROFILES_DIR}/${file}"
     fi
   done
+  if [ ! -f "${CHROME_PROFILES_DIR}/proxy-capabilities.tsv" ] && [ -f "${APP_DIR}/remote-chrome-profiles/proxy-capabilities.tsv" ]; then
+    cp "${APP_DIR}/remote-chrome-profiles/proxy-capabilities.tsv" "${CHROME_PROFILES_DIR}/proxy-capabilities.tsv"
+  fi
   chmod +x "${CHROME_PROFILES_DIR}/check-deps.sh" "${CHROME_PROFILES_DIR}/start-all.sh" "${CHROME_PROFILES_DIR}/start-profile.sh" "${CHROME_PROFILES_DIR}/stop-all.sh" || true
   if [ -n "${WEBSHARE_API_TOKEN:-}" ] && [ -f "${CHROME_PROFILES_DIR}/import-webshare-proxies.py" ]; then
     python3 "${CHROME_PROFILES_DIR}/import-webshare-proxies.py" \
