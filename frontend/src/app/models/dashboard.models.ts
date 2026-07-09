@@ -42,6 +42,78 @@ export interface AccountSelectionResponse {
   accounts: PublisherAccountOption[];
 }
 
+export interface AccountWorkspaceSummary {
+  activeAccountId: string;
+  totalReady: number;
+  totalFailed: number;
+  totalPublished: number;
+  accounts: AccountWorkspaceAccount[];
+}
+
+export interface AccountWorkspaceAccount {
+  id: string;
+  label: string;
+  prompt: string;
+  language: string;
+  defaultPostCount: number;
+  xAccountLabel: string;
+  xModeLabel: string;
+  xConfigured: boolean;
+  xReady: number;
+  xFailed: number;
+  threadsAccountLabel: string;
+  threadsConfigured: boolean;
+  threadsReady: number;
+  threadsFailed: number;
+  mediaAttached: number;
+  textOnly: number;
+  published: number;
+}
+
+export interface AccountConfig {
+  id: string;
+  label: string;
+  source: 'env' | 'ui' | string;
+  prompt: string;
+  language: string;
+  defaultPostCount: number;
+  xPrompt: string;
+  xLanguage: string;
+  xDefaultPostCount: number;
+  xAccountLabel: string;
+  xAccessToken: string;
+  xClientId: string;
+  xClientSecret: string;
+  xRedirectUri: string;
+  xScopes: string;
+  xApiKey: string;
+  xApiSecret: string;
+  xAccessTokenSecret: string;
+  xRefreshToken: string;
+  xPublishMode: string;
+  xBrowser: string;
+  xBrowserProfileDir: string;
+  xBrowserHeadless: boolean;
+  threadsPrompt: string;
+  threadsLanguage: string;
+  threadsDefaultPostCount: number;
+  threadsAccountLabel: string;
+  threadsAccessToken: string;
+  threadsUserId: string;
+  threadsAppId: string;
+  threadsAppSecret: string;
+  threadsRedirectUri: string;
+}
+
+export type AccountConfigRequest = Omit<AccountConfig, 'source'>;
+
+export interface ThreadsProfileLookupResponse {
+  username: string;
+  name: string;
+  label: string;
+  profilePictureUrl: string;
+}
+
 export interface QueuePost {
   id: string;
   accountId?: string;
@@ -57,7 +129,6 @@ export interface QueuePost {
   platforms: string[];
   createdAt: string;
   language?: string;
-  tone?: string;
   published?: Record<string, {
     at: string;
     result: unknown;
@@ -83,13 +154,11 @@ export interface QueuePostUpsertRequest {
   accountIds?: string[];
   targetProfiles?: string[];
   language: string;
-  tone: string;
 }
 
 export interface GeneratePromptRequest {
   prompt: string;
   topic: string;
-  tone: string;
   language: string;
   count: number;
   platforms: string[];
@@ -179,6 +248,9 @@ export interface ChromeProfileSummary {
   loggedIn?: boolean | string;
   proxy: string;
   upstreamProxy: string;
+  proxyKey?: string;
+  supportsYoutube?: boolean | string;
+  supportsPornhub?: boolean | string;
   proxyCountry?: string;
   proxyCity?: string;
   timezone?: string;
@@ -202,6 +274,8 @@ export interface ChromeProfilesLaunchRequest {
   loginMode?: boolean;
   referer?: string;
   videoQuality?: string;
+  requireYoutube?: boolean;
+  requirePornhub?: boolean;
 }
 
 export interface ChromeProfilesBulkActionRequest {
@@ -212,6 +286,8 @@ export interface ChromeProfilesBulkActionRequest {
   maxDelaySeconds?: number;
   referer?: string;
   videoQuality?: string;
+  requireYoutube?: boolean;
+  requirePornhub?: boolean;
 }
 
 export interface ChromeProfileActionResult {
@@ -265,4 +341,30 @@ export interface PostingJobStatus {
   nextRunAt: string | null;
   nextRunOffsetMinutes: number | null;
   lastRunMessage: string;
+}
+
+export interface QueuePostingJob {
+  id: string;
+  accountId: string;
+  accountLabel: string;
+  platform: 'x' | 'threads';
+  running: boolean;
+  intervalHours: number;
+  postsPerRun: number;
+  minimumReady: number;
+  randomizeUpToHour: boolean;
+  startedAt: string | null;
+  lastHeartbeatAt: string | null;
+  nextRunAt: string | null;
+  nextRunOffsetMinutes: number | null;
+  lastRunMessage: string;
+}
+
+export interface QueuePostingJobRequest {
+  accountId: string;
+  platform: 'x' | 'threads';
+  intervalHours: number;
+  postsPerRun: number;
+  minimumReady: number;
+  randomizeUpToHour: boolean;
 }

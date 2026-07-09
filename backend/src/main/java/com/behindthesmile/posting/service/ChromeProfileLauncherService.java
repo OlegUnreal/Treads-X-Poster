@@ -4,6 +4,7 @@ import com.behindthesmile.posting.api.ChromeProfilesLaunchRequest;
 import com.behindthesmile.posting.api.ChromeProfilesBulkActionRequest;
 import com.behindthesmile.posting.api.ChromeProfileActionRequest;
 import com.behindthesmile.posting.api.ChromeProfileLoginStatusRequest;
+import com.behindthesmile.posting.api.ChromeProfileProxyCapabilityRequest;
 import com.behindthesmile.posting.api.ChromeProfilesUrlCheckRequest;
 import org.springframework.stereotype.Service;
 
@@ -39,6 +40,7 @@ public class ChromeProfileLauncherService {
     private static final Pattern ENV_LINE = Pattern.compile("^([A-Za-z_][A-Za-z0-9_]*)=(.*)$");
     private static final Pattern EMAIL = Pattern.compile("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", Pattern.CASE_INSENSITIVE);
     private static final Pattern FULL_NAME = Pattern.compile("\"(?:full_name|given_name|display_name)\"\\s*:\\s*\"([^\"]+)\"", Pattern.CASE_INSENSITIVE);
+    private static final String PROXY_CAPABILITIES_FILE = "proxy-capabilities.tsv";
     private static final Duration DEVTOOLS_STATUS_TIMEOUT = Duration.ofMillis(700);
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(DEVTOOLS_STATUS_TIMEOUT)
@@ -74,6 +76,8 @@ public class ChromeProfileLauncherService {
         int maxDelay = clampDelay(request == null ? null : request.maxDelaySeconds(), minDelay, 3600);
         List<Map<String, String>> allProfiles = readProfiles();
         List<String> selectedProfiles = selectedProfiles(request == null ? null : request.profileNames(), allProfiles);
+        selectedProfiles = filterProfilesForCapabilities(selectedProfiles, allProfiles, requireYoutube(request), requirePornhub(request));
+        ensureCapabilityFilterMatch(selectedProfiles, requireYoutube(request), requirePornhub(request));
         int maxProfiles = selectedProfiles.isEmpty() ? allProfiles.stream()
                 .filter(profile -> !profile.getOrDefault("proxy", "").isBlank() || !profile.getOrDefault("upstreamProxy", "").isBlank())
                 .toList()
@@ -119,6 +123,8 @@ public class ChromeProfileLauncherService {
         int maxDelay = clampDelay(request == null ? null : request.maxDelaySeconds(), minDelay, 3600);
         List<Map<String, String>> allProfiles = readProfiles();
         List<String> selectedProfiles = selectedProfiles(request == null ? null : request.profileNames(), allProfiles);
+        selectedProfiles = filterProfilesForCapabilities(selectedProfiles, allProfiles, requireYoutube(request), requirePornhub(request));
+        ensureCapabilityFilterMatch(selectedProfiles, requireYoutube(request), requirePornhub(request));
         int requestedCount = request == null ? 1 : request.profileCount() == null ? 1 : request.profileCount();
         int availableProfiles = allProfiles.stream()
                 .filter(profile -> !profile.getOrDefault("proxy", "").isBlank() || !profile.getOrDefault("upstreamProxy", "").isBlank())
@@ -326,6 +332,8 @@ public class ChromeProfileLauncherService {
 
         List<Map<String, String>> currentProfiles = readProfiles();
         List<String> selectedProfiles = selectedProfiles(request.profileNames(), currentProfiles);
+        selectedProfiles = filterProfilesForCapabilities(selectedProfiles, currentProfiles, requireYoutube(request), requirePornhub(request));
+        ensureCapabilityFilterMatch(selectedProfiles, requireYoutube(request), requirePornhub(request));
         if (selectedProfiles.isEmpty()) {
             throw new IllegalArgumentException("Choose at least one profile.");
         }
@@ -379,7 +387,9 @@ public class ChromeProfileLauncherService {
                     profilesToOpen,
                     false,
                     cleanReferer(request.referer()),
-                    cleanVideoQuality(request.videoQuality())
+                    cleanVideoQuality(request.videoQuality()),
+                    request.requireYoutube(),
+                    request.requirePornhub()
             );
             result = startAll(launchRequest);
             result.put("message", ("restart".equals(action) ? "Restarted " : "Opened ") + profilesToOpen.size() + " checked profile(s).");
@@ -603,6 +613,26 @@ public class ChromeProfileLauncherService {
         return result;
     }
 
+    public Map<String, Object> updateProxyCapability(String profileName, ChromeProfileProxyCapabilityRequest request) throws Exception {
+        String cleanProfileName = requireKnownProfile(profileName);
+        Map<String, String> env = readEnvFile();
+        String proxyKey = proxyKeyForProfile(env, cleanProfileName);
+        if (proxyKey.isBlank()) {
+            throw new IllegalArgumentException("Profile has no proxy host: " + cleanProfileName);
+        }
+
+        Map<String, ProxyCapability> capabilities = readProxyCapabilities();
+        ProxyCapability current = capabilities.getOrDefault(proxyKey, new ProxyCapability(false, false));
+        boolean youtube = request == null || request.youtube() == null ? current.youtube() : Boolean.TRUE.equals(request.youtube());
+        boolean pornhub = request == null || request.pornhub() == null ? current.pornhub() : Boolean.TRUE.equals(request.pornhub());
+        capabilities.put(proxyKey, new ProxyCapability(youtube, pornhub));
+        writeProxyCapabilities(capabilities);
+
+        Map<String, Object> result = status();
+        result.put("message", cleanProfileName + " proxy marked " + proxyCapabilityLabel(youtube, pornhub));
+        return result;
+    }
+
     public Map<String, Object> focusProfile(String profileName) throws Exception {
         String cleanProfileName = requireKnownProfile(profileName);
         boolean focused = focusProfileWindow(cleanProfileName);
@@ -630,7 +660,9 @@ public class ChromeProfileLauncherService {
                 List.of(cleanProfileName),
                 false,
                 cleanReferer(request == null ? null : request.referer()),
-                cleanVideoQuality(request == null ? null : request.videoQuality())
+                cleanVideoQuality(request == null ? null : request.videoQuality()),
+                false,
+                false
         );
         Map<String, Object> result = startAll(launchRequest);
         result.put("message", "Restarted " + cleanProfileName);
@@ -647,7 +679,9 @@ public class ChromeProfileLauncherService {
                 List.of(cleanProfileName),
                 true,
                 "",
-                "auto"
+                "auto",
+                false,
+                false
         );
         Map<String, Object> result = startAll(launchRequest);
         result.put("message", "Opened login mode for " + cleanProfileName);
@@ -695,6 +729,55 @@ public class ChromeProfileLauncherService {
             }
         }
         return selected;
+    }
+
+    private List<String> filterProfilesForCapabilities(
+            List<String> selectedProfiles,
+            List<Map<String, String>> allProfiles,
+            boolean requireYoutube,
+            boolean requirePornhub
+    ) {
+        if (!requireYoutube && !requirePornhub) {
+            return selectedProfiles;
+        }
+        List<String> selected = selectedProfiles == null ? List.of() : selectedProfiles;
+        boolean useAllProfiles = selected.isEmpty();
+        List<String> filtered = new ArrayList<>();
+        for (Map<String, String> profile : allProfiles) {
+            String name = profile.getOrDefault("name", "");
+            if (name.isBlank() || (!useAllProfiles && !selected.contains(name))) {
+                continue;
+            }
+            boolean youtube = Boolean.parseBoolean(profile.getOrDefault("supportsYoutube", "false"));
+            boolean pornhub = Boolean.parseBoolean(profile.getOrDefault("supportsPornhub", "false"));
+            if ((!requireYoutube || youtube) && (!requirePornhub || pornhub)) {
+                filtered.add(name);
+            }
+        }
+        return filtered;
+    }
+
+    private void ensureCapabilityFilterMatch(List<String> selectedProfiles, boolean requireYoutube, boolean requirePornhub) {
+        if ((requireYoutube || requirePornhub) && selectedProfiles.isEmpty()) {
+            String filter = requireYoutube && requirePornhub ? "YT and PH" : requireYoutube ? "YT" : "PH";
+            throw new IllegalArgumentException("No profiles match proxy filter: " + filter);
+        }
+    }
+
+    private boolean requireYoutube(ChromeProfilesLaunchRequest request) {
+        return Boolean.TRUE.equals(request == null ? null : request.requireYoutube());
+    }
+
+    private boolean requirePornhub(ChromeProfilesLaunchRequest request) {
+        return Boolean.TRUE.equals(request == null ? null : request.requirePornhub());
+    }
+
+    private boolean requireYoutube(ChromeProfilesBulkActionRequest request) {
+        return Boolean.TRUE.equals(request == null ? null : request.requireYoutube());
+    }
+
+    private boolean requirePornhub(ChromeProfilesBulkActionRequest request) {
+        return Boolean.TRUE.equals(request == null ? null : request.requirePornhub());
     }
 
     private String launchUrlForRequest(ChromeProfilesLaunchRequest request) {
@@ -1093,6 +1176,7 @@ $procs.Count
 
     private List<Map<String, String>> readProfiles() throws Exception {
         Map<String, String> env = readEnvFile();
+        Map<String, ProxyCapability> proxyCapabilities = readProxyCapabilities();
         String[] profileNames = env.getOrDefault("PROFILE_NAMES", "").trim().split("\\s+");
         List<String> configuredProfileNames = new ArrayList<>();
         for (String profileName : profileNames) {
@@ -1129,6 +1213,11 @@ $procs.Count
             profile.put("loggedIn", String.valueOf(!googleEmail.isBlank() || "logged_in".equalsIgnoreCase(loginStatus)));
             profile.put("proxy", maskProxy(env.getOrDefault("PROXY_" + profileName, "")));
             profile.put("upstreamProxy", maskProxy(env.getOrDefault("UPSTREAM_PROXY_" + profileName, "")));
+            String proxyKey = proxyKeyForProfile(env, profileName);
+            ProxyCapability proxyCapability = proxyCapabilities.getOrDefault(proxyKey, new ProxyCapability(false, false));
+            profile.put("proxyKey", proxyKey);
+            profile.put("supportsYoutube", String.valueOf(proxyCapability.youtube()));
+            profile.put("supportsPornhub", String.valueOf(proxyCapability.pornhub()));
             profile.put("proxyCountry", env.getOrDefault("PROXY_COUNTRY_" + profileName, ""));
             profile.put("proxyCity", env.getOrDefault("PROXY_CITY_" + profileName, ""));
             profile.put("timezone", firstNonBlank(env.getOrDefault("TIMEZONE_" + profileName, ""), env.getOrDefault("TIMEZONE", ""), state.getOrDefault("TIMEZONE", "")));
@@ -1346,6 +1435,96 @@ $procs.Count
         }
     }
 
+    private Map<String, ProxyCapability> readProxyCapabilities() throws Exception {
+        Map<String, ProxyCapability> capabilities = new LinkedHashMap<>();
+        Path file = proxyCapabilitiesFile();
+        if (!Files.isRegularFile(file)) {
+            return capabilities;
+        }
+        for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+            String trimmed = line.trim();
+            if (trimmed.isBlank() || trimmed.startsWith("#")) {
+                continue;
+            }
+            String[] parts = trimmed.split("\t");
+            if (parts.length < 3 || parts[0].isBlank()) {
+                continue;
+            }
+            capabilities.put(parts[0].trim().toLowerCase(), new ProxyCapability(Boolean.parseBoolean(parts[1]), Boolean.parseBoolean(parts[2])));
+        }
+        return capabilities;
+    }
+
+    private void writeProxyCapabilities(Map<String, ProxyCapability> capabilities) throws Exception {
+        Path file = proxyCapabilitiesFile();
+        Files.createDirectories(file.getParent());
+        List<String> lines = new ArrayList<>();
+        lines.add("# proxy-host\tyoutube\tpornhub");
+        for (Map.Entry<String, ProxyCapability> entry : capabilities.entrySet()) {
+            if (entry.getKey() == null || entry.getKey().isBlank()) {
+                continue;
+            }
+            ProxyCapability capability = entry.getValue();
+            lines.add(entry.getKey().trim().toLowerCase() + "\t" + capability.youtube() + "\t" + capability.pornhub());
+        }
+        Path tempFile = file.resolveSibling(file.getFileName() + ".tmp");
+        Files.writeString(tempFile, String.join("\n", lines) + "\n", StandardCharsets.UTF_8);
+        try {
+            Files.move(tempFile, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException ex) {
+            Files.move(tempFile, file, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private String proxyKeyForProfile(Map<String, String> env, String profileName) {
+        String upstreamProxy = env.getOrDefault("UPSTREAM_PROXY_" + profileName, "");
+        String proxy = upstreamProxy.isBlank() ? env.getOrDefault("PROXY_" + profileName, "") : upstreamProxy;
+        return proxyHostKey(proxy);
+    }
+
+    private String proxyHostKey(String proxy) {
+        if (proxy == null || proxy.isBlank()) {
+            return "";
+        }
+        String value = proxy.trim();
+        try {
+            URI uri = URI.create(value.contains("://") ? value : "http://" + value);
+            String host = uri.getHost();
+            if (host != null && !host.isBlank()) {
+                return host.toLowerCase();
+            }
+        } catch (Exception ignored) {
+            // Fall back to simple host extraction below.
+        }
+        String withoutScheme = value.replaceFirst("^[A-Za-z][A-Za-z0-9+.-]*://", "");
+        int at = withoutScheme.lastIndexOf('@');
+        if (at >= 0) {
+            withoutScheme = withoutScheme.substring(at + 1);
+        }
+        int slash = withoutScheme.indexOf('/');
+        if (slash >= 0) {
+            withoutScheme = withoutScheme.substring(0, slash);
+        }
+        int colon = withoutScheme.indexOf(':');
+        if (colon >= 0) {
+            withoutScheme = withoutScheme.substring(0, colon);
+        }
+        return withoutScheme.trim().toLowerCase();
+    }
+
+    private String proxyCapabilityLabel(boolean youtube, boolean pornhub) {
+        if (youtube && pornhub) {
+            return "YT + PH";
+        }
+        if (youtube) {
+            return "YT only";
+        }
+        if (pornhub) {
+            return "PH only";
+        }
+        return "blocked";
+    }
+
     private String maskProxy(String proxy) {
         if (proxy == null || proxy.isBlank()) {
             return "";
@@ -1392,6 +1571,10 @@ $procs.Count
         return profilesDir().resolve("profiles.env");
     }
 
+    private Path proxyCapabilitiesFile() {
+        return profilesDir().resolve(PROXY_CAPABILITIES_FILE);
+    }
+
     private Path profileDir(String profileName) {
         return profilesDir().resolve("data").resolve(profileName).toAbsolutePath().normalize();
     }
@@ -1410,5 +1593,8 @@ $procs.Count
             return current.getParent();
         }
         return current;
+    }
+
+    private record ProxyCapability(boolean youtube, boolean pornhub) {
     }
 }

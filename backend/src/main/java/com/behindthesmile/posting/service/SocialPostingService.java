@@ -1,7 +1,11 @@
 package com.behindthesmile.posting.service;
 
 import com.behindthesmile.posting.api.ActionResult;
+import com.behindthesmile.posting.api.AccountConfigRequest;
+import com.behindthesmile.posting.api.AccountConfigResponse;
 import com.behindthesmile.posting.api.AccountSelectionResponse;
+import com.behindthesmile.posting.api.AccountWorkspaceAccount;
+import com.behindthesmile.posting.api.AccountWorkspaceSummary;
 import com.behindthesmile.posting.api.BrowserXPublishRequest;
 import com.behindthesmile.posting.api.DashboardSummary;
 import com.behindthesmile.posting.api.GeneratePromptRequest;
@@ -9,6 +13,7 @@ import com.behindthesmile.posting.api.GeneratePromptResponse;
 import com.behindthesmile.posting.api.PublisherAccountOption;
 import com.behindthesmile.posting.api.PublisherAccountSummary;
 import com.behindthesmile.posting.api.QueuePostUpsertRequest;
+import com.behindthesmile.posting.api.ThreadsProfileLookupResponse;
 import com.behindthesmile.posting.config.AppProperties;
 import com.behindthesmile.posting.model.ContentPlan;
 import com.behindthesmile.posting.model.GeneratedPostDraft;
@@ -76,12 +81,11 @@ public class SocialPostingService {
     public String draft(Map<String, String> args, boolean publish) throws Exception {
         String topic = args.getOrDefault("topic", appProperties.defaults().topic());
         int count = parseInt(args.get("count"), appProperties.defaults().count());
-        String tone = args.getOrDefault("tone", appProperties.defaults().tone());
         String language = args.getOrDefault("language", appProperties.defaults().language());
         String platforms = args.getOrDefault("platforms", "x,threads");
 
-        List<GeneratedPostDraft> posts = enrichDraftsWithUniqueImages(openAiService.generateDrafts(topic, tone, language, count), topic);
-        Path savedPath = draftService.saveDraft(posts, topic, appPathService.draftPath());
+        List<GeneratedPostDraft> posts = enrichDraftsWithUniqueImages(openAiService.generateDrafts(topic, language, count), topic);
+        draftService.saveDraft(posts, topic, appPathService.draftPath());
         int selectedIndex = Math.max(parseInt(args.get("index"), 1) - 1, 0);
         String selectedPost = selectedIndex < posts.size()
                 ? posts.get(selectedIndex).getText()
@@ -89,7 +93,7 @@ public class SocialPostingService {
 
         StringBuilder output = new StringBuilder()
                 .append("Generated ").append(posts.size()).append(" post option(s).").append(System.lineSeparator())
-                .append("Saved drafts to ").append(savedPath.toAbsolutePath()).append(System.lineSeparator())
+                .append("Saved drafts to database.").append(System.lineSeparator())
                 .append(System.lineSeparator());
 
         for (int i = 0; i < posts.size(); i++) {
@@ -165,6 +169,24 @@ public class SocialPostingService {
         return output.toString().trim();
     }
 
+    public String dailyForAllAccounts(Map<String, String> args) throws Exception {
+        StringBuilder output = new StringBuilder();
+        List<PublisherAccountOption> accounts = accountConfigService.accountOptions();
+        if (accounts.isEmpty()) {
+            return daily(args);
+        }
+
+        for (PublisherAccountOption account : accounts) {
+            String result = accountConfigService.withAccount(account.id(), () -> daily(args));
+            output.append("Account: ").append(account.label()).append(System.lineSeparator())
+                    .append(result)
+                    .append(System.lineSeparator())
+                    .append(System.lineSeparator());
+        }
+
+        return output.toString().trim();
+    }
+
     public String buildXLinks(Map<String, String> args) throws Exception {
         Path queuePath = Path.of(args.getOrDefault("queue", activeQueuePath("x").toString()));
         Path savedPath = queueService.saveXComposerLinks(queuePath, appPathService.xLinksPath());
@@ -210,13 +232,12 @@ public class SocialPostingService {
 
         for (ContentPlan.Item item : items) {
             String topic = item.getTopic() != null ? item.getTopic() : appProperties.defaults().topic();
-            String tone = item.getTone() != null ? item.getTone() : appProperties.defaults().tone();
             String language = item.getLanguage() != null ? item.getLanguage() : appProperties.defaults().language();
             int count = item.getCount() != null ? item.getCount() : appProperties.defaults().count();
             List<String> platforms = item.getPlatforms() != null ? item.getPlatforms() : List.of("x", "threads");
 
             List<GeneratedPostDraft> posts = enrichDraftsWithUniqueImages(
-                    openAiService.generateDrafts(topic, tone, language, count),
+                    openAiService.generateDrafts(topic, language, count),
                     topic,
                     usedImageUrls
             );
@@ -225,7 +246,6 @@ public class SocialPostingService {
                 savedPath = queueService.saveQueuedPosts(
                         posts,
                         topic,
-                        tone,
                         language,
                         List.of(platform),
                         activeQueuePath(platform),
@@ -244,6 +264,19 @@ public class SocialPostingService {
     }
 
     public DashboardSummary getDashboardSummary() throws Exception {
+        if (accountConfigService.accountOptions().isEmpty()) {
+            return new DashboardSummary(
+                    0,
+                    0,
+                    0,
+                    "stopped",
+                    "No accounts configured. Add one in Accounts page.",
+                    "No accounts configured.",
+                    getPublisherAccountSummary(),
+                    null
+            );
+        }
+
         long threadsReady = queueService.countReadyPosts(activeQueuePath("threads"), "threads");
         long xReady = queueService.countReadyPosts(activeQueuePath("x"), "x");
         long queueReady = threadsReady + xReady;
@@ -269,6 +302,18 @@ public class SocialPostingService {
     }
 
     public PublisherAccountSummary getPublisherAccountSummary() {
+        java.util.List<PublisherAccountOption> options = accountConfigService.accountOptions();
+        if (options.isEmpty()) {
+            return new PublisherAccountSummary(
+                    "",
+                    "No account configured",
+                    "No X account",
+                    "Posting through browser",
+                    "No Threads account",
+                    options
+            );
+        }
+
         PublisherAccountOption active = accountConfigService.activeAccountOption();
         return new PublisherAccountSummary(
                 active.id(),
@@ -282,6 +327,88 @@ public class SocialPostingService {
 
     public AccountSelectionResponse getAccounts() {
         return accountConfigService.selection();
+    }
+
+    public List<AccountConfigResponse> getAccountConfigs() {
+        return accountConfigService.accountConfigs();
+    }
+
+    public AccountConfigResponse saveAccountConfig(AccountConfigRequest request) throws Exception {
+        return accountConfigService.upsertAccount(request);
+    }
+
+    public void deleteAccountConfig(String accountId) throws Exception {
+        accountConfigService.deleteUiAccount(accountId);
+    }
+
+    public ThreadsProfileLookupResponse lookupThreadsProfile(AccountConfigRequest request) throws Exception {
+        if (request == null) {
+            throw new IllegalStateException("Threads settings are required.");
+        }
+        return threadsService.lookupProfile(request.threadsAccessToken(), request.threadsUserId());
+    }
+
+    public AccountWorkspaceSummary getAccountWorkspaceSummary() throws Exception {
+        Map<String, AccountConfigResponse> configsById = accountConfigService.accountConfigs().stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        AccountConfigResponse::id,
+                        config -> config,
+                        (first, second) -> second,
+                        java.util.LinkedHashMap::new
+                ));
+        List<AccountWorkspaceAccount> accountSummaries = new ArrayList<>();
+        long totalReady = 0;
+        long totalFailed = 0;
+        long totalPublished = 0;
+
+        for (PublisherAccountOption account : accountConfigService.accountOptions()) {
+            AccountConfigResponse config = configsById.get(account.id());
+            List<QueuedPost> xPosts = queueService.readQueuedPosts(appPathService.queuePath(account.id(), "x"));
+            List<QueuedPost> threadsPosts = queueService.readQueuedPosts(appPathService.queuePath(account.id(), "threads"));
+            List<QueuedPost> allPosts = new ArrayList<>();
+            allPosts.addAll(xPosts);
+            allPosts.addAll(threadsPosts);
+
+            long xReady = countReadyForPlatform(xPosts, "x");
+            long threadsReady = countReadyForPlatform(threadsPosts, "threads");
+            long xFailed = countStatus(xPosts, "failed");
+            long threadsFailed = countStatus(threadsPosts, "failed");
+            long published = allPosts.stream().filter(post -> "posted".equals(post.getStatus())).count();
+            long mediaAttached = allPosts.stream().filter(post -> post.getImageUrl() != null && !post.getImageUrl().isBlank()).count();
+            long textOnly = allPosts.stream().filter(post -> post.getImageUrl() == null || post.getImageUrl().isBlank()).count();
+
+            totalReady += xReady + threadsReady;
+            totalFailed += xFailed + threadsFailed;
+            totalPublished += published;
+
+            accountSummaries.add(new AccountWorkspaceAccount(
+                    account.id(),
+                    account.label(),
+                    config == null ? "" : config.prompt(),
+                    config == null ? appProperties.defaults().language() : config.language(),
+                    config == null ? appProperties.defaults().count() : config.defaultPostCount(),
+                    account.xAccountLabel(),
+                    account.xModeLabel(),
+                    isConfiguredLabel(account.xAccountLabel()),
+                    xReady,
+                    xFailed,
+                    account.threadsAccountLabel(),
+                    isConfiguredLabel(account.threadsAccountLabel()),
+                    threadsReady,
+                    threadsFailed,
+                    mediaAttached,
+                    textOnly,
+                    published
+            ));
+        }
+
+        return new AccountWorkspaceSummary(
+                accountConfigService.accountOptions().isEmpty() ? "" : accountConfigService.activeAccount().id(),
+                totalReady,
+                totalFailed,
+                totalPublished,
+                accountSummaries
+        );
     }
 
     public AccountSelectionResponse switchActiveAccount(String accountId) throws Exception {
@@ -304,6 +431,25 @@ public class SocialPostingService {
 
     public List<String> parseTargetProfiles(String targetProfiles) {
         return parseAccountIds(targetProfiles);
+    }
+
+    public String activeAccountId() {
+        return accountConfigService.activeAccount().id();
+    }
+
+    public AppProperties.Account requireAccountForJobTargets(String accountId) {
+        return accountId == null || accountId.isBlank()
+                ? accountConfigService.activeAccount()
+                : accountConfigService.requireAccount(accountId);
+    }
+
+    public String resolveAccountLabel(String accountId) {
+        AppProperties.Account account = requireAccountForJobTargets(accountId);
+        return firstNonBlank(account.label(), account.id());
+    }
+
+    public List<QueuedPost> getQueue(String platform, String accountId) throws Exception {
+        return queueService.readQueuedPosts(queuePathForProfile(accountId, platform));
     }
 
     public List<QueuedPost> getQueue(String platform) throws Exception {
@@ -436,7 +582,39 @@ public class SocialPostingService {
         return "Published to X with Selenium: " + result;
     }
 
+    public ActionResult publishQueuedPost(String id, String platform, String accountId) {
+        return executeAction("publish-queued-post", () ->
+                accountConfigService.withAccount(
+                        requireAccountForJobTargets(accountId).id(),
+                        () -> {
+                            String normalizedPlatform = normalizeQueuePlatform(platform);
+                            Path queuePath = queuePathForProfile(accountId, normalizedPlatform);
+                            QueuedPost selectedPost = queueService.readQueuedPosts(queuePath).stream()
+                                    .filter(post -> id != null && id.equals(post.getId()))
+                                    .findFirst()
+                                    .orElseThrow(() -> new IllegalStateException("Queued post not found: " + id));
+
+                            if (selectedPost.getPublished() != null && selectedPost.getPublished().get(normalizedPlatform) != null) {
+                                throw new IllegalStateException("Selected queued post is not ready for publishing.");
+                            }
+
+                            Map<String, Object> result = switch (normalizedPlatform) {
+                                case "threads" -> threadsService.publishToThreads(selectedPost.getText(), selectedPost.getImageUrl());
+                                case "x" -> publishXWithConfiguredMode(selectedPost.getText(), selectedPost.getImageUrl());
+                                default -> throw new IllegalStateException("Unsupported platform: " + normalizedPlatform);
+                            };
+                            queueService.markQueuedPostPublished(queuePath, selectedPost.getId(), normalizedPlatform, result);
+                            return "Published post " + id + " to " + normalizedPlatform + ".";
+                        }
+                )
+        );
+    }
+
     public QueuedPost updateQueuedPost(String id, String platform, QueuePostUpsertRequest request) throws Exception {
+        return updateQueuedPost(id, platform, null, request);
+    }
+
+    public QueuedPost updateQueuedPost(String id, String platform, String accountId, QueuePostUpsertRequest request) throws Exception {
         QueuedPost updated = queueService.createQueuedPost(
                 request.topic(),
                 request.text(),
@@ -445,22 +623,29 @@ public class SocialPostingService {
                 request.imageSourcePage(),
                 request.imageAttribution(),
                 request.imageLicense(),
-                request.tone(),
                 request.language(),
                 request.platforms(),
                 request.status()
         );
-        return queueService.updateQueuedPost(activeQueuePath(platform), id, updated);
+        return queueService.updateQueuedPost(queuePathForProfile(accountId, platform), id, updated);
     }
 
     public ActionResult deleteQueuedPost(String id, String platform) {
+        return deleteQueuedPost(id, platform, null);
+    }
+
+    public ActionResult deleteQueuedPost(String id, String platform, String accountId) {
         return executeAction("delete-queue-post", () -> {
-            queueService.deleteQueuedPost(activeQueuePath(platform), id);
+            queueService.deleteQueuedPost(queuePathForProfile(accountId, platform), id);
             return "Queued post removed.";
         });
     }
 
     public ActionResult moveQueuedPost(String id, String direction, String platform) {
+        return moveQueuedPost(id, direction, platform, null);
+    }
+
+    public ActionResult moveQueuedPost(String id, String direction, String platform, String accountId) {
         return executeAction("move-queue-post", () -> {
             int offset = switch (direction == null ? "" : direction.trim().toLowerCase(Locale.ROOT)) {
                 case "up" -> -1;
@@ -468,14 +653,18 @@ public class SocialPostingService {
                 default -> throw new IllegalStateException("Move direction must be up or down.");
             };
 
-            queueService.moveQueuedPost(activeQueuePath(platform), id, offset);
+            queueService.moveQueuedPost(queuePathForProfile(accountId, platform), id, offset);
             return offset < 0 ? "Queued post moved up." : "Queued post moved down.";
         });
     }
 
     public ActionResult clearDuplicateQueueImages(String platform) {
+        return clearDuplicateQueueImages(platform, null);
+    }
+
+    public ActionResult clearDuplicateQueueImages(String platform, String accountId) {
         return executeAction("clean-duplicate-images", () -> {
-            int clearedCount = queueService.clearDuplicateImages(activeQueuePath(platform));
+            int clearedCount = queueService.clearDuplicateImages(queuePathForProfile(accountId, platform));
             return clearedCount == 0
                     ? "No duplicate queue photos found."
                     : "Removed duplicate photos from " + clearedCount + " queued post(s).";
@@ -483,9 +672,14 @@ public class SocialPostingService {
     }
 
     public ActionResult fillMissingQueuePhotos(String platform) {
+        return fillMissingQueuePhotos(platform, null);
+    }
+
+    public ActionResult fillMissingQueuePhotos(String platform, String accountId) {
         return executeAction("fill-missing-photos", () -> {
-            List<QueuedPost> posts = queueService.readQueuedPosts(activeQueuePath(platform));
-            Set<String> usedImageUrls = readUsedImageUrls();
+            Path queuePath = queuePathForProfile(accountId, platform);
+            List<QueuedPost> posts = queueService.readQueuedPosts(queuePath);
+            Set<String> usedImageUrls = readUsedImageUrls(accountId, platform);
             int updatedCount = 0;
             int missingCount = 0;
             int skippedWithoutMatchCount = 0;
@@ -498,7 +692,7 @@ public class SocialPostingService {
                 if (!"ready".equals(post.getStatus()) || (post.getImageUrl() != null && !post.getImageUrl().isBlank())) {
                     continue;
                 }
-                missingCount++;
+                        missingCount++;
 
                 GeneratedPostDraft draft = new GeneratedPostDraft();
                 draft.setText(post.getText());
@@ -554,7 +748,7 @@ public class SocialPostingService {
             }
 
             if (updatedCount > 0) {
-                queueService.writeQueuedPosts(posts, activeQueuePath(platform));
+                queueService.writeQueuedPosts(posts, queuePathForProfile(accountId, platform));
             }
             if (missingCount == 0) {
                 return "No ready posts are missing photos.";
@@ -581,6 +775,23 @@ public class SocialPostingService {
         });
     }
 
+    public ActionResult markQueuedPostPublishedManually(String id, String platform, String accountId) {
+        return executeAction("mark-queued-post-published", () -> {
+            String normalizedPlatform = normalizeQueuePlatform(platform);
+            if (!List.of("x", "threads").contains(normalizedPlatform)) {
+                throw new IllegalStateException("Unsupported platform: " + platform);
+            }
+
+            queueService.markQueuedPostPublished(
+                    queuePathForProfile(accountId, normalizedPlatform),
+                    id,
+                    normalizedPlatform,
+                    Map.of("manual", true, "source", "web-composer")
+            );
+            return "Queued post " + id + " marked as published for " + normalizedPlatform + ".";
+        });
+    }
+
     public QueuedPost createQueuedPost(QueuePostUpsertRequest request) throws Exception {
         if (request.text() == null || request.text().isBlank()) {
             throw new IllegalStateException("Post text is required.");
@@ -602,7 +813,6 @@ public class SocialPostingService {
                     request.imageSourcePage(),
                     request.imageAttribution(),
                     request.imageLicense(),
-                    request.tone(),
                     request.language(),
                     List.of(targetProfile.platform()),
                     request.status(),
@@ -617,11 +827,45 @@ public class SocialPostingService {
         return firstCreated;
     }
 
+    public String publishQueuedForAccountOnce(String accountId, String platform, int postsPerRun, int minimumReady) throws Exception {
+        return accountConfigService.withAccount(
+                requireAccountForJobTargets(accountId).id(),
+                () -> {
+                    String normalizedPlatform = normalizeQueuePlatform(platform);
+                    if (postsPerRun < 1) {
+                        return "No posts were published. postsPerRun must be at least 1.";
+                    }
+                    Path queuePath = queuePathForProfile(accountId, normalizedPlatform);
+                    long readyCount = queueService.countReadyPosts(queuePath, normalizedPlatform);
+                    if (readyCount < minimumReady) {
+                        return "Only " + readyCount + " ready " + normalizedPlatform + " post(s) found. Skipping publication.";
+                    }
+
+                    int publishedCount = 0;
+                    for (int index = 0; index < postsPerRun; index++) {
+                        QueuedPost post = queueService.selectQueuedPost(
+                                queuePath,
+                                normalizedPlatform,
+                                1,
+                                "No ready queued " + normalizedPlatform + " posts found."
+                        );
+                        Map<String, Object> result = switch (normalizedPlatform) {
+                            case "threads" -> threadsService.publishToThreads(post.getText(), post.getImageUrl());
+                            case "x" -> publishXWithConfiguredMode(post.getText(), post.getImageUrl());
+                            default -> throw new IllegalStateException("Unsupported platform: " + normalizedPlatform);
+                        };
+                        queueService.markQueuedPostPublished(queuePath, post.getId(), normalizedPlatform, result);
+                        publishedCount++;
+                    }
+                    return "Published " + publishedCount + " queued post(s) for account " + resolveAccountLabel(accountId) + " on " + normalizedPlatform + ".";
+                }
+        );
+    }
+
     public ActionResult createPostsFromUploadedPhotos(
             MultipartFile[] photos,
             String prompt,
             String topic,
-            String tone,
             String language,
             List<String> platforms,
             List<String> accountIds,
@@ -634,7 +878,6 @@ public class SocialPostingService {
             }
 
             String resolvedTopic = firstNonBlank(topic, "Uploaded photo batch");
-            String resolvedTone = firstNonBlank(tone, appProperties.defaults().tone());
             String resolvedLanguage = firstNonBlank(language, appProperties.defaults().language());
             List<TargetProfile> targetProfiles = resolveTargetProfiles(targetProfileIds, accountIds, platforms);
             int queuedCount = 0;
@@ -656,7 +899,6 @@ public class SocialPostingService {
                         photo.getOriginalFilename(),
                         firstNonBlank(prompt, ""),
                         resolvedTopic,
-                        resolvedTone,
                         resolvedLanguage
                 );
 
@@ -671,7 +913,6 @@ public class SocialPostingService {
                             "Uploaded photo: " + firstNonBlank(photo.getOriginalFilename(), "untitled"),
                             "User uploaded photo",
                             "User provided",
-                            resolvedTone,
                             resolvedLanguage,
                             List.of(platform),
                             "ready",
@@ -716,12 +957,20 @@ public class SocialPostingService {
     }
 
     public GeneratePromptResponse generateFromCustomPrompt(GeneratePromptRequest request) throws Exception {
-        String prompt = buildCustomPrompt(request);
-        List<String> posts = openAiService.generatePostsFromPrompt(prompt);
+        int requestedCount = resolveCustomPromptCount(request);
+        List<TargetProfile> targetProfiles = resolveTargetProfiles(
+                request.targetProfiles(),
+                request.accountIds(),
+                request.platforms()
+        );
+        Set<String> publishedSignatures = collectPublishedPostSignatures(targetProfiles);
+        List<String> posts = generateUniquePostsFromPrompt(request, requestedCount, publishedSignatures);
+        if (posts.isEmpty()) {
+            throw new IllegalStateException("OpenAI returned posts already used for selected account(s) and platforms. Try changing the prompt.");
+        }
 
         if (request.saveToQueue()) {
             String topic = firstNonBlank(request.topic(), "Custom prompt");
-            String tone = firstNonBlank(request.tone(), appProperties.defaults().tone());
             String language = firstNonBlank(request.language(), appProperties.defaults().language());
             List<GeneratedPostDraft> drafts = posts.stream().map(text -> {
                 GeneratedPostDraft draft = new GeneratedPostDraft();
@@ -731,17 +980,11 @@ public class SocialPostingService {
             }).toList();
             drafts = enrichDraftsWithUniqueImages(drafts, topic, readUsedImageUrls());
 
-            List<TargetProfile> targetProfiles = resolveTargetProfiles(
-                    request.targetProfiles(),
-                    request.accountIds(),
-                    request.platforms()
-            );
             for (TargetProfile targetProfile : targetProfiles) {
                 AppProperties.Account account = accountConfigService.requireAccount(targetProfile.accountId());
                 queueService.saveQueuedPosts(
                         drafts,
                         topic,
-                        tone,
                         language,
                         List.of(targetProfile.platform()),
                         appPathService.queuePath(account.id(), targetProfile.platform()),
@@ -751,12 +994,22 @@ public class SocialPostingService {
             }
         }
 
+        int generatedCount = posts.size();
+        int skippedCount = Math.max(0, requestedCount - generatedCount);
+        String message = "Generated " + generatedCount + " post(s)";
+        if (skippedCount > 0) {
+            message += ", skipped " + skippedCount + " duplicate(s) already published";
+        }
+        if (request.saveToQueue()) {
+            message += " and saved them to selected account queue(s).";
+        } else {
+            message += ".";
+        }
+
         return new GeneratePromptResponse(
                 posts,
                 request.saveToQueue(),
-                request.saveToQueue()
-                        ? "Generated " + posts.size() + " post(s) and saved them to selected account queue(s)."
-                        : "Generated " + posts.size() + " post(s)."
+                message
         );
     }
 
@@ -779,8 +1032,11 @@ public class SocialPostingService {
 
     private String buildCustomPrompt(GeneratePromptRequest request) {
         int count = request.count() == null || request.count() < 1 ? 3 : request.count();
+        return buildCustomPrompt(request, count);
+    }
+
+    private String buildCustomPrompt(GeneratePromptRequest request, int count) {
         String language = firstNonBlank(request.language(), appProperties.defaults().language());
-        String tone = firstNonBlank(request.tone(), appProperties.defaults().tone());
         String topic = firstNonBlank(request.topic(), "Custom prompt");
         String customPrompt = firstNonBlank(request.prompt(), "");
 
@@ -788,12 +1044,8 @@ public class SocialPostingService {
         builder.append("Create ").append(count).append(" social media post options.").append(System.lineSeparator());
         builder.append("Topic: ").append(topic).append(System.lineSeparator());
         builder.append("Language: ").append(language).append(System.lineSeparator());
-        builder.append("Tone: ").append(tone).append(System.lineSeparator());
         builder.append("Each post must be suitable for both X and Threads.").append(System.lineSeparator());
         builder.append("Keep every post under 260 characters.").append(System.lineSeparator());
-        builder.append("Write like a real person, not like a campaign or public awareness poster.").append(System.lineSeparator());
-        builder.append("Make it feel like a quiet voice-over from a personal vlog.").append(System.lineSeparator());
-        builder.append("Prefer short sentences, pauses, and small visual details from ordinary life.").append(System.lineSeparator());
         builder.append("Avoid forcing the phrase Behind The Smile unless explicitly requested.").append(System.lineSeparator());
         builder.append("Do not include direct medical advice beyond encouraging professional care and avoiding self-medication.").append(System.lineSeparator());
         if (!customPrompt.isBlank()) {
@@ -802,6 +1054,84 @@ public class SocialPostingService {
         }
         builder.append("Return JSON as: {\"posts\":[\"...\"]}");
         return builder.toString();
+    }
+
+    private List<String> generateUniquePostsFromPrompt(
+            GeneratePromptRequest request,
+            int requestedCount,
+            Set<String> publishedSignatures
+    ) throws Exception {
+        Set<String> seenSignatures = new HashSet<>();
+        List<String> generatedPosts = new ArrayList<>();
+        int maxAttempts = Math.max(requestedCount * 3, 6);
+        int attempts = 0;
+
+        while (generatedPosts.size() < requestedCount && attempts < maxAttempts) {
+            int batchCount = Math.min(requestedCount - generatedPosts.size() + 1, 8);
+            String prompt = buildCustomPrompt(request, batchCount);
+            List<String> generatedBatch = openAiService.generatePostsFromPrompt(prompt, true);
+
+            for (String post : generatedBatch) {
+                String signature = normalizePostSignature(post);
+                if (signature.isBlank() || seenSignatures.contains(signature) || publishedSignatures.contains(signature)) {
+                    continue;
+                }
+                generatedPosts.add(post);
+                seenSignatures.add(signature);
+                if (generatedPosts.size() >= requestedCount) {
+                    break;
+                }
+            }
+            attempts++;
+            if (generatedBatch.isEmpty()) {
+                break;
+            }
+        }
+
+        return generatedPosts;
+    }
+
+    private Set<String> collectPublishedPostSignatures(List<TargetProfile> targetProfiles) throws Exception {
+        Set<String> signatures = new HashSet<>();
+        for (TargetProfile targetProfile : targetProfiles) {
+            List<QueuedPost> posts = queueService.readQueuedPosts(appPathService.queuePath(
+                    targetProfile.accountId(),
+                    targetProfile.platform()
+            ));
+            for (QueuedPost post : posts) {
+                if (!isPostPublishedForPlatform(post, targetProfile.platform())) {
+                    continue;
+                }
+                String signature = normalizePostSignature(post.getText());
+                if (!signature.isBlank()) {
+                    signatures.add(signature);
+                }
+            }
+        }
+        return signatures;
+    }
+
+    private boolean isPostPublishedForPlatform(QueuedPost post, String platform) {
+        if ("posted".equals(post.getStatus())) {
+            return true;
+        }
+        Map<String, QueuedPost.PublishedInfo> published = post.getPublished();
+        return published != null && published.get(platform) != null;
+    }
+
+    private String normalizePostSignature(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        return value.toLowerCase(Locale.ROOT)
+                .replaceAll("\\p{Z}+", " ")
+                .replaceAll("[\\p{Punct}\\p{S}]+", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+    }
+
+    private int resolveCustomPromptCount(GeneratePromptRequest request) {
+        return request.count() == null || request.count() < 1 ? 3 : request.count();
     }
 
     private ActionResult executeAction(String command, ServiceAction action) {
@@ -822,6 +1152,18 @@ public class SocialPostingService {
         Path activeQueuePath = appPathService.queuePath(activeAccount.id(), normalizedPlatform);
         migrateLegacyQueueIfNeeded(activeQueuePath, activeAccount, normalizedPlatform);
         return activeQueuePath;
+    }
+
+    private Path queuePathForProfile(String accountId, String platform) {
+        AppProperties.Account targetAccount = accountId == null || accountId.isBlank()
+                ? accountConfigService.activeAccount()
+                : accountConfigService.requireAccount(accountId);
+        String normalizedPlatform = normalizeQueuePlatform(platform);
+        Path queuePath = appPathService.queuePath(targetAccount.id(), normalizedPlatform);
+        if ("x".equals(normalizedPlatform)) {
+            migrateLegacyQueueIfNeeded(queuePath, targetAccount, normalizedPlatform);
+        }
+        return queuePath;
     }
 
     private String normalizeQueuePlatform(String platform) {
@@ -953,10 +1295,25 @@ public class SocialPostingService {
     }
 
     private Set<String> readUsedImageUrls() throws Exception {
+        return readUsedImageUrls(null, null);
+    }
+
+    private Set<String> readUsedImageUrls(String accountId, String platform) throws Exception {
         Set<String> usedImageUrls = new HashSet<>();
         List<QueuedPost> posts = new ArrayList<>();
-        posts.addAll(queueService.readQueuedPosts(activeQueuePath("x")));
-        posts.addAll(queueService.readQueuedPosts(activeQueuePath("threads")));
+        if (accountId == null || accountId.isBlank()) {
+            accountId = accountConfigService.activeAccount().id();
+        } else {
+            accountConfigService.requireAccount(accountId);
+        }
+
+        if (platform == null || platform.isBlank()) {
+            posts.addAll(queueService.readQueuedPosts(queuePathForProfile(accountId, "x")));
+            posts.addAll(queueService.readQueuedPosts(queuePathForProfile(accountId, "threads")));
+        } else {
+            posts.addAll(queueService.readQueuedPosts(queuePathForProfile(accountId, platform)));
+        }
+
         for (QueuedPost post : posts) {
             if (post.getImageUrl() != null && !post.getImageUrl().isBlank()) {
                 usedImageUrls.add(post.getImageUrl());
@@ -1015,6 +1372,28 @@ public class SocialPostingService {
         return value == null || value.isBlank() ? fallback : Integer.parseInt(value);
     }
 
+    private long countReadyForPlatform(List<QueuedPost> posts, String platform) {
+        return posts.stream()
+                .filter(post -> "ready".equals(post.getStatus()))
+                .filter(post -> {
+                    List<String> platforms = post.getPlatforms() == null ? List.of() : post.getPlatforms();
+                    boolean published = post.getPublished() != null && post.getPublished().get(platform) != null;
+                    return platforms.contains(platform) && !published;
+                })
+                .count();
+    }
+
+    private long countStatus(List<QueuedPost> posts, String status) {
+        return posts.stream()
+                .filter(post -> status.equals(post.getStatus()))
+                .count();
+    }
+
+    private boolean isConfiguredLabel(String label) {
+        String normalized = label == null ? "" : label.trim().toLowerCase(Locale.ROOT);
+        return !normalized.isBlank() && !normalized.contains("not configured");
+    }
+
     private String resolveXAccountLabel() {
         AppProperties.X x = accountConfigService.activeAccount().x();
         if (x.accountLabel() != null && !x.accountLabel().isBlank()) {
@@ -1039,7 +1418,8 @@ public class SocialPostingService {
     }
 
     private String resolveThreadsAccountLabel() {
-        AppProperties.Threads threads = accountConfigService.activeAccount().threads();
+        AppProperties.Account account = accountConfigService.activeAccount();
+        AppProperties.Threads threads = account.threads();
         if (threads.accountLabel() != null && !threads.accountLabel().isBlank()) {
             return threads.accountLabel().trim();
         }
@@ -1048,10 +1428,10 @@ public class SocialPostingService {
             return fetchedLabel;
         }
         if (threads.userId() != null && !threads.userId().isBlank()) {
-            return "Threads user ID ending in " + trailing(threads.userId(), 4);
+            return firstNonBlank(account.label(), account.id());
         }
         if (threads.accessToken() != null && !threads.accessToken().isBlank()) {
-            return "Configured Threads account";
+            return firstNonBlank(account.label(), "Configured Threads account");
         }
         return "Threads account is not configured";
     }

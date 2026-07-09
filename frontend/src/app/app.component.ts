@@ -14,13 +14,12 @@ import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/rou
           <span>{{ desktopPlaybackMode ? 'Playback' : 'Admin' }}</span>
         </div>
         <nav class="nav nav-pills ms-lg-auto" *ngIf="!desktopPlaybackMode">
-          <a class="nav-link" routerLink="/overview" routerLinkActive="active">Overview</a>
-          <a class="nav-link" routerLink="/publish" routerLinkActive="active">Publish</a>
-          <a class="nav-link" routerLink="/create" routerLinkActive="active">Create</a>
+          <a class="nav-link" routerLink="/accounts" routerLinkActive="active">Accounts</a>
+          <a class="nav-link" routerLink="/create" routerLinkActive="active">Content</a>
           <a class="nav-link" routerLink="/queue" routerLinkActive="active">Queue</a>
-          <a class="nav-link" routerLink="/playback" routerLinkActive="active">Playback</a>
           <a class="nav-link" routerLink="/automation" routerLinkActive="active">Automation</a>
-          <a class="nav-link" routerLink="/settings" routerLinkActive="active">Settings</a>
+          <a class="nav-link" routerLink="/publish" routerLinkActive="active">Manual Send</a>
+          <a class="nav-link" routerLink="/playback" routerLinkActive="active">Playback</a>
         </nav>
       </header>
 

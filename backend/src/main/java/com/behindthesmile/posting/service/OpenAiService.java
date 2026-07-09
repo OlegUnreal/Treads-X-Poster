@@ -36,20 +36,19 @@ public class OpenAiService {
         this.appProperties = appProperties;
     }
 
-    public List<String> generatePosts(String topic, String tone, String language, int count)
+    public List<String> generatePosts(String topic, String language, int count)
             throws IOException, InterruptedException {
-        return generateDrafts(topic, tone, language, count).stream()
+        return generateDrafts(topic, language, count).stream()
                 .map(GeneratedPostDraft::getText)
                 .toList();
     }
 
-    public List<GeneratedPostDraft> generateDrafts(String topic, String tone, String language, int count)
+    public List<GeneratedPostDraft> generateDrafts(String topic, String language, int count)
             throws IOException, InterruptedException {
         String prompt = String.join("\n",
                 "Create " + count + " personal social media post options.",
                 "Topic: " + topic,
                 "Language: " + language,
-                "Tone: " + tone,
                 "Each post must be suitable for both X and Threads.",
                 "Keep every post under 260 characters.",
                 "Write like a real person sharing a lived moment, not like a campaign, NGO, or awareness poster.",
@@ -67,7 +66,11 @@ public class OpenAiService {
         return generateDraftsFromPrompt(prompt);
     }
 
-    public List<String> generatePostsFromPrompt(String prompt)
+    public List<String> generatePostsFromPrompt(String prompt) throws IOException, InterruptedException {
+        return generatePostsFromPrompt(prompt, false);
+    }
+
+    public List<String> generatePostsFromPrompt(String prompt, boolean customMode)
             throws IOException, InterruptedException {
         String apiKey = requireValue(appProperties.openAi().apiKey(), "OPENAI_API_KEY");
         String model = appProperties.openAi().model();
@@ -79,7 +82,7 @@ public class OpenAiService {
                 "input", List.of(
                         Map.of(
                                 "role", "system",
-                                "content", buildSystemPrompt()
+                                "content", customMode ? buildCustomSystemPrompt() : buildSystemPrompt()
                         ),
                         Map.of(
                                 "role", "user",
@@ -124,7 +127,11 @@ public class OpenAiService {
         return posts;
     }
 
-    public List<GeneratedPostDraft> generateDraftsFromPrompt(String prompt)
+    public List<GeneratedPostDraft> generateDraftsFromPrompt(String prompt) throws IOException, InterruptedException {
+        return generateDraftsFromPrompt(prompt, false);
+    }
+
+    public List<GeneratedPostDraft> generateDraftsFromPrompt(String prompt, boolean customMode)
             throws IOException, InterruptedException {
         String apiKey = requireValue(appProperties.openAi().apiKey(), "OPENAI_API_KEY");
         String model = appProperties.openAi().model();
@@ -136,7 +143,7 @@ public class OpenAiService {
                 "input", List.of(
                         Map.of(
                                 "role", "system",
-                                "content", buildSystemPrompt()
+                                "content", customMode ? buildCustomSystemPrompt() : buildSystemPrompt()
                         ),
                         Map.of(
                                 "role", "user",
@@ -202,14 +209,13 @@ public class OpenAiService {
             String fileName,
             String prompt,
             String topic,
-            String tone,
             String language
     ) throws IOException, InterruptedException {
         String apiKey = requireValue(appProperties.openAi().apiKey(), "OPENAI_API_KEY");
         String model = appProperties.openAi().model();
         String dataUrl = "data:" + normalizeMimeType(mimeType, fileName) + ";base64,"
                 + Base64.getEncoder().encodeToString(imageBytes);
-        String userPrompt = buildImageCaptionPrompt(prompt, topic, tone, language, fileName);
+        String userPrompt = buildImageCaptionPrompt(prompt, topic, language, fileName);
         long startedAt = System.nanoTime();
         log.info("Generating image-based post with OpenAI: model={}, fileName={}, promptChars={}",
                 model,
@@ -353,6 +359,20 @@ public class OpenAiService {
         );
     }
 
+    private String buildCustomSystemPrompt() {
+        return String.join(" ",
+                "You write short social media posts for X and Threads.",
+                "Return only valid JSON and do not add extra text.",
+                "Write in the style requested by the user prompt.",
+                "Do not force a fixed 'brand voice'; adapt to each request naturally.",
+                "Keep posts readable, coherent, and realistic.",
+                "If the user prompt is explicit or edgy, follow it unless it is clearly unsafe.",
+                "Safety rules:",
+                "do not give medical dosages, diagnose people, provide harmful medical treatment advice, or instruct illegal acts.",
+                "Avoid encouraging self-harm, abuse, or violence."
+        );
+    }
+
     private String buildImagePrompt(String postText, String topic, String visualHint) {
         return String.join("\n",
                 "Create one square social media image for a reflective Ukrainian personal post.",
@@ -367,12 +387,11 @@ public class OpenAiService {
         );
     }
 
-    private String buildImageCaptionPrompt(String prompt, String topic, String tone, String language, String fileName) {
+    private String buildImageCaptionPrompt(String prompt, String topic, String language, String fileName) {
         return String.join("\n",
                 "Look at the attached photo and create exactly one social media post caption for it.",
                 "Topic/context: " + safeForPrompt(topic),
                 "Language: " + safeForPrompt(language),
-                "Tone: " + safeForPrompt(tone),
                 "Original file name: " + safeForPrompt(fileName),
                 "User instructions: " + safeForPrompt(prompt),
                 "The post must fit both X and Threads.",

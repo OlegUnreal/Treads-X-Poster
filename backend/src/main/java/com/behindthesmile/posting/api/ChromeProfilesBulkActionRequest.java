@@ -9,6 +9,8 @@ public record ChromeProfilesBulkActionRequest(
         Integer minDelaySeconds,
         Integer maxDelaySeconds,
         String referer,
-        String videoQuality
+        String videoQuality,
+        Boolean requireYoutube,
+        Boolean requirePornhub
 ) {
 }

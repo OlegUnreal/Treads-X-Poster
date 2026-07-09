@@ -79,14 +79,84 @@ public class DashboardController {
         return socialPostingService.getAccounts();
     }
 
+    @GetMapping("/accounts/config")
+    public List<AccountConfigResponse> accountConfigs() {
+        return socialPostingService.getAccountConfigs();
+    }
+
+    @PostMapping("/accounts/config")
+    public AccountConfigResponse createAccountConfig(@RequestBody AccountConfigRequest request) throws Exception {
+        return socialPostingService.saveAccountConfig(request);
+    }
+
+    @PutMapping("/accounts/config/{id}")
+    public AccountConfigResponse updateAccountConfig(
+            @PathVariable String id,
+            @RequestBody AccountConfigRequest request
+    ) throws Exception {
+        AccountConfigRequest normalized = new AccountConfigRequest(
+                id,
+                request.label(),
+                request.prompt(),
+                request.language(),
+                request.defaultPostCount(),
+                request.xPrompt(),
+                request.xLanguage(),
+                request.xDefaultPostCount(),
+                request.xAccountLabel(),
+                request.xAccessToken(),
+                request.xClientId(),
+                request.xClientSecret(),
+                request.xRedirectUri(),
+                request.xScopes(),
+                request.xApiKey(),
+                request.xApiSecret(),
+                request.xAccessTokenSecret(),
+                request.xRefreshToken(),
+                request.xPublishMode(),
+                request.xBrowser(),
+                request.xBrowserProfileDir(),
+                request.xBrowserHeadless(),
+                request.threadsPrompt(),
+                request.threadsLanguage(),
+                request.threadsDefaultPostCount(),
+                request.threadsAccountLabel(),
+                request.threadsAccessToken(),
+                request.threadsUserId(),
+                request.threadsAppId(),
+                request.threadsAppSecret(),
+                request.threadsRedirectUri()
+        );
+        return socialPostingService.saveAccountConfig(normalized);
+    }
+
+    @DeleteMapping("/accounts/config/{id}")
+    public ActionResult deleteAccountConfig(@PathVariable String id) throws Exception {
+        socialPostingService.deleteAccountConfig(id);
+        return new ActionResult(true, "delete-account", "Account removed from UI-managed settings.");
+    }
+
+    @PostMapping("/accounts/config/threads/lookup")
+    public ThreadsProfileLookupResponse lookupThreadsProfile(@RequestBody AccountConfigRequest request) throws Exception {
+        return socialPostingService.lookupThreadsProfile(request);
+    }
+
+    @GetMapping("/accounts/workspace")
+    public AccountWorkspaceSummary accountWorkspace() throws Exception {
+        return socialPostingService.getAccountWorkspaceSummary();
+    }
+
     @PutMapping("/accounts/active")
     public AccountSelectionResponse switchActiveAccount(@RequestBody ActiveAccountRequest request) throws Exception {
         return socialPostingService.switchActiveAccount(request.accountId());
     }
 
     @GetMapping("/queue")
-    public List<QueuedPost> queue(@RequestParam(value = "platform", required = false) String platform) throws Exception {
-        return socialPostingService.getQueue(platform);
+    public List<QueuedPost> queue(
+            @RequestParam(value = "platform", required = false) String platform,
+            @RequestParam(value = "accountId", required = false) String accountId
+    ) throws Exception {
+        return socialPostingService.getQueue(platform, accountId);
     }
 
     @PostMapping("/queue")
@@ -98,38 +168,63 @@ public class DashboardController {
     public QueuedPost updateQueuePost(
             @PathVariable String id,
             @RequestParam(value = "platform", required = false) String platform,
+            @RequestParam(value = "accountId", required = false) String accountId,
             @RequestBody QueuePostUpsertRequest request
     ) throws Exception {
-        return socialPostingService.updateQueuedPost(id, platform, request);
+        return socialPostingService.updateQueuedPost(id, platform, accountId, request);
     }
 
     @DeleteMapping("/queue/{id}")
-    public ActionResult deleteQueuePost(@PathVariable String id, @RequestParam(value = "platform", required = false) String platform) {
-        return socialPostingService.deleteQueuedPost(id, platform);
+    public ActionResult deleteQueuePost(
+            @PathVariable String id,
+            @RequestParam(value = "platform", required = false) String platform,
+            @RequestParam(value = "accountId", required = false) String accountId
+    ) {
+        return socialPostingService.deleteQueuedPost(id, platform, accountId);
     }
 
     @PostMapping("/queue/{id}/move/{direction}")
     public ActionResult moveQueuePost(
             @PathVariable String id,
             @PathVariable String direction,
-            @RequestParam(value = "platform", required = false) String platform
+            @RequestParam(value = "platform", required = false) String platform,
+            @RequestParam(value = "accountId", required = false) String accountId
     ) {
-        return socialPostingService.moveQueuedPost(id, direction, platform);
+        return socialPostingService.moveQueuedPost(id, direction, platform, accountId);
+    }
+
+    @PostMapping("/queue/{id}/publish")
+    public ActionResult publishQueuePost(
+            @PathVariable String id,
+            @RequestParam(value = "platform", required = false) String platform,
+            @RequestParam(value = "accountId", required = false) String accountId
+    ) {
+        return socialPostingService.publishQueuedPost(id, platform, accountId);
     }
 
     @PostMapping("/queue/clean-duplicate-images")
-    public ActionResult cleanDuplicateQueueImages(@RequestParam(value = "platform", required = false) String platform) {
-        return socialPostingService.clearDuplicateQueueImages(platform);
+    public ActionResult cleanDuplicateQueueImages(
+            @RequestParam(value = "platform", required = false) String platform,
+            @RequestParam(value = "accountId", required = false) String accountId
+    ) {
+        return socialPostingService.clearDuplicateQueueImages(platform, accountId);
     }
 
     @PostMapping("/queue/fill-missing-photos")
-    public ActionResult fillMissingQueuePhotos(@RequestParam(value = "platform", required = false) String platform) {
-        return socialPostingService.fillMissingQueuePhotos(platform);
+    public ActionResult fillMissingQueuePhotos(
+            @RequestParam(value = "platform", required = false) String platform,
+            @RequestParam(value = "accountId", required = false) String accountId
+    ) {
+        return socialPostingService.fillMissingQueuePhotos(platform, accountId);
     }
 
     @PostMapping("/queue/{id}/mark-published/{platform}")
-    public ActionResult markQueuePostPublished(@PathVariable String id, @PathVariable String platform) {
-        return socialPostingService.markQueuedPostPublishedManually(id, platform);
+    public ActionResult markQueuePostPublished(
+            @PathVariable String id,
+            @PathVariable String platform,
+            @RequestParam(value = "accountId", required = false) String accountId
+    ) {
+        return socialPostingService.markQueuedPostPublishedManually(id, platform, accountId);
     }
 
     @PostMapping("/generate")
@@ -142,7 +237,6 @@ public class DashboardController {
             @RequestParam("photos") MultipartFile[] photos,
             @RequestParam(value = "prompt", required = false) String prompt,
             @RequestParam(value = "topic", required = false) String topic,
-            @RequestParam(value = "tone", required = false) String tone,
             @RequestParam(value = "language", required = false) String language,
             @RequestParam(value = "platforms", required = false) String platforms,
             @RequestParam(value = "accountIds", required = false) String accountIds,
@@ -153,7 +247,6 @@ public class DashboardController {
                 photos,
                 prompt,
                 topic,
-                tone,
                 language,
                 socialPostingService.parsePlatforms(platforms),
                 socialPostingService.parseAccountIds(accountIds),
@@ -283,6 +376,14 @@ public class DashboardController {
         return chromeProfileLauncherService.updateLoginStatus(profileName, request);
     }
 
+    @PutMapping("/actions/chrome-profiles/{profileName}/proxy-capability")
+    public Map<String, Object> updateChromeProfileProxyCapability(
+            @PathVariable String profileName,
+            @RequestBody ChromeProfileProxyCapabilityRequest request
+    ) throws Exception {
+        return chromeProfileLauncherService.updateProxyCapability(profileName, request);
+    }
+
     @PostMapping("/actions/chrome-profiles/{profileName}/focus")
     public Map<String, Object> focusChromeProfile(@PathVariable String profileName) throws Exception {
         return chromeProfileLauncherService.focusProfile(profileName);
@@ -309,6 +410,39 @@ public class DashboardController {
     @PostMapping("/actions/attach-open-images")
     public ActionResult attachOpenImages() {
         return socialPostingService.attachImagesToReadyQueue();
+    }
+
+    @GetMapping("/jobs")
+    public List<QueuePostingJobSummary> queueJobs() {
+        return postingJobService.list();
+    }
+
+    @PostMapping("/jobs")
+    public QueuePostingJobSummary createQueueJob(@RequestBody QueuePostingJobRequest request) {
+        return postingJobService.create(request);
+    }
+
+    @PutMapping("/jobs/{id}")
+    public QueuePostingJobSummary updateQueueJob(
+            @PathVariable String id,
+            @RequestBody QueuePostingJobRequest request
+    ) {
+        return postingJobService.update(id, request);
+    }
+
+    @DeleteMapping("/jobs/{id}")
+    public ActionResult deleteQueueJob(@PathVariable String id) {
+        return postingJobService.delete(id);
+    }
+
+    @PostMapping("/jobs/{id}/start")
+    public ActionResult startQueueJob(@PathVariable String id) {
+        return postingJobService.start(id);
+    }
+
+    @PostMapping("/jobs/{id}/stop")
+    public ActionResult stopQueueJob(@PathVariable String id) {
+        return postingJobService.stop(id);
     }
 
     @GetMapping("/job")

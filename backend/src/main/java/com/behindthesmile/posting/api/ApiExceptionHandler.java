@@ -10,6 +10,11 @@ import java.util.Map;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidConfiguration(IllegalStateException exception) {
+        return error(HttpStatus.BAD_REQUEST, exception);
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleBadRequest(IllegalArgumentException exception) {
         return error(HttpStatus.BAD_REQUEST, exception);

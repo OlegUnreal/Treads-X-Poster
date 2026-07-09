@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 import java.util.stream.Stream;
 
 @Configuration
@@ -17,11 +18,7 @@ public class EnvConfig {
     @Bean
     public AppProperties appProperties() throws IOException {
         Map<String, String> values = new HashMap<>(System.getenv());
-        Path envPath = firstExistingPath(
-                Path.of("config/.env"),
-                Path.of(".env"),
-                Path.of("../.env")
-        );
+        Path envPath = findEnvPath();
 
         if (envPath != null && Files.exists(envPath)) {
             List<String> lines = Files.readAllLines(envPath, StandardCharsets.UTF_8);
@@ -37,12 +34,19 @@ public class EnvConfig {
                 }
 
                 String key = trimmed.substring(0, separator).trim();
+                if (!key.isEmpty() && key.charAt(0) == '\uFEFF') {
+                    key = key.substring(1);
+                }
                 String value = trimmed.substring(separator + 1).trim();
                 if ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("'") && value.endsWith("'"))) {
                     value = value.substring(1, value.length() - 1);
                 }
-                values.putIfAbsent(key, value);
+                value = trimBOM(value);
+                putIfBlank(values, key, value);
             }
+        }
+        if (envPath == null) {
+            System.err.println("Warning: .env file was not found in expected locations. Falling back to process environment variables.");
         }
 
         AppProperties.Runtime runtime = new AppProperties.Runtime(
@@ -69,7 +73,6 @@ public class EnvConfig {
                 new AppProperties.Defaults(
                         values.getOrDefault("POST_LANGUAGE", "uk"),
                         values.getOrDefault("POST_TOPIC", "Behind The Smile"),
-                        values.getOrDefault("POST_TONE", "warm, fan-friendly, concise"),
                         Integer.parseInt(values.getOrDefault("POST_COUNT", "3"))
                 ),
                 runtime,
@@ -77,6 +80,41 @@ public class EnvConfig {
                 defaultX,
                 defaultThreads
         );
+    }
+
+    private static Path findEnvPath() {
+        Path workDir = Path.of(System.getProperty("user.dir")).toAbsolutePath().normalize();
+        String[] candidates = {
+                "backend/config/.env",
+                "config/.env",
+                ".env",
+                "../.env",
+                "../config/.env",
+                "../backend/config/.env"
+        };
+        for (int depth = 0; depth <= 3; depth++) {
+            for (String candidate : candidates) {
+                Path path = workDir.resolve(candidate).normalize();
+                if (Files.exists(path)) {
+                    return path;
+                }
+            }
+            workDir = workDir.getParent();
+            if (workDir == null) {
+                break;
+            }
+        }
+        return null;
+    }
+
+    private static String trimBOM(String value) {
+        if (value == null || value.isEmpty()) {
+            return value;
+        }
+        if (!value.isBlank() && value.charAt(0) == '\uFEFF') {
+            return value.substring(1);
+        }
+        return value;
     }
 
     private static List<AppProperties.Account> buildAccounts(
@@ -87,12 +125,28 @@ public class EnvConfig {
     ) {
         String accountIds = values.get("SOCIAL_ACCOUNTS");
         if (accountIds == null || accountIds.isBlank()) {
-            return List.of(new AppProperties.Account(
-                    "default",
-                    firstNonBlank(values.get("ACCOUNT_LABEL"), "Default account"),
-                    defaultX,
-                    defaultThreads
-            ));
+            boolean hasXConfig = hasAnyCredential(
+                    values,
+                    "X_ACCESS_TOKEN", "X_CLIENT_ID", "X_CLIENT_SECRET", "X_API_KEY",
+                    "X_API_SECRET", "X_ACCESS_TOKEN_SECRET", "X_REFRESH_TOKEN", "X_ACCOUNT_LABEL"
+            );
+            boolean hasThreadsConfig = hasAnyCredential(
+                    values,
+                    "THREADS_ACCESS_TOKEN", "THREADS_USER_ID", "THREADS_ACCOUNT_LABEL",
+                    "THREADS_APP_ID", "THREADS_APP_SECRET", "META_APP_ID", "META_APP_SECRET"
+            );
+            if (!hasXConfig && !hasThreadsConfig) {
+                return List.of();
+            }
+            String legacyLabel = firstNonBlank(
+                    values.get("ACCOUNT_LABEL"),
+                    values.get("SOCIAL_ACCOUNT_LABEL"),
+                    values.get("X_ACCOUNT_LABEL"),
+                    values.get("THREADS_ACCOUNT_LABEL"),
+                    "Publishing account"
+            );
+            String legacyId = firstNonBlank(values.get("ACCOUNT_ID"), safeLegacyAccountId(legacyLabel));
+            return buildProfileAccounts(values, runtime, legacyId, legacyLabel, defaultX, defaultThreads, null);
         }
 
         return Stream.of(accountIds.split(","))
@@ -102,16 +156,77 @@ public class EnvConfig {
                     String prefix = "ACCOUNT_" + normalizeAccountKey(id) + "_";
                     AppProperties.X x = buildX(values, prefix, runtime);
                     AppProperties.Threads threads = buildThreads(values, prefix);
-                    return new AppProperties.Account(
-                            id,
-                            firstNonBlank(values.get(prefix + "LABEL"), id),
-                            x,
-                            threads
-                    );
+                    String accountLabel = firstNonBlank(values.get(prefix + "LABEL"), id);
+                    return buildProfileAccounts(values, runtime, id, accountLabel, x, threads, id).getFirst();
                 })
                 .toList();
     }
 
+    private static List<AppProperties.Account> buildProfileAccounts(
+            Map<String, String> values,
+            AppProperties.Runtime runtime,
+            String sourceId,
+            String label,
+            AppProperties.X x,
+            AppProperties.Threads threads,
+            String accountIdSuffix
+    ) {
+        boolean hasExplicitX = hasAnyCredential(
+                values,
+                "X_ACCESS_TOKEN", "X_CLIENT_ID", "X_CLIENT_SECRET", "X_API_KEY",
+                "X_API_SECRET", "X_ACCESS_TOKEN_SECRET", "X_REFRESH_TOKEN"
+        );
+        boolean hasExplicitThreads = hasAnyCredential(
+                values,
+                "THREADS_ACCESS_TOKEN", "THREADS_USER_ID", "THREADS_APP_ID", "THREADS_APP_SECRET"
+        );
+        AppProperties.X emptyX = new AppProperties.X(null, null, null, null, null, null, null, null, null, null, "selenium", "chrome", "", false);
+        AppProperties.Threads emptyThreads = new AppProperties.Threads(null, null, null, null, null, null);
+        String idSuffix = accountIdSuffix == null ? sourceId : accountIdSuffix;
+
+        if (hasExplicitX && hasExplicitThreads) {
+            String xId = buildPlatformAccountId(values, idSuffix, "x");
+            String threadsId = buildPlatformAccountId(values, idSuffix, "threads");
+            return List.of(
+                    new AppProperties.Account(
+                            xId,
+                            firstNonBlank(firstNonBlank(values.get("X_ACCOUNT_LABEL"), label), sourceId) + " (X)",
+                            x,
+                            emptyThreads
+                    ),
+                    new AppProperties.Account(
+                            threadsId,
+                            firstNonBlank(firstNonBlank(values.get("THREADS_ACCOUNT_LABEL"), label), sourceId) + " (Threads)",
+                            emptyX,
+                            threads
+                    )
+            );
+        }
+
+        AppProperties.X platformX = hasExplicitX ? x : emptyX;
+        AppProperties.Threads platformThreads = hasExplicitThreads ? threads : emptyThreads;
+        return List.of(new AppProperties.Account(
+                idSuffix,
+                label,
+                platformX,
+                platformThreads
+        ));
+    }
+
+    private static String buildPlatformAccountId(Map<String, String> values, String sourceId, String platform) {
+        String customId = values.get(platform.toUpperCase() + "_ACCOUNT_ID");
+        if (customId != null && !customId.isBlank()) {
+            return sanitizeAccountId(customId);
+        }
+        if (sourceId != null && !sourceId.isBlank()) {
+            return sanitizeAccountId(sourceId + "-" + platform);
+        }
+        return safeLegacyAccountId("account-" + platform);
+    }
+
+    private static String sanitizeAccountId(String value) {
+        return value == null ? null : value.trim().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_-]+", "-");
+    }
     private static AppProperties.X buildX(Map<String, String> values, String prefix, AppProperties.Runtime runtime) {
         String profileSuffix = prefix.isBlank()
                 ? "chrome-profile"
@@ -151,23 +266,47 @@ public class EnvConfig {
         );
     }
 
-    private static Path firstExistingPath(Path... paths) {
-        for (Path path : paths) {
-            if (Files.exists(path)) {
-                return path;
+    private static String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
             }
         }
-        return paths.length > 0 ? paths[0] : null;
+        return null;
     }
 
-    private static String firstNonBlank(String first, String second) {
-        if (first != null && !first.isBlank()) {
-            return first;
+    private static boolean hasAnyCredential(Map<String, String> values, String... keys) {
+        if (keys == null || keys.length == 0) {
+            return false;
         }
-        return second;
+        for (String key : keys) {
+            if (values.getOrDefault(key, "").trim().length() > 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String normalizeAccountKey(String value) {
         return value == null ? "" : value.trim().toUpperCase().replaceAll("[^A-Z0-9]", "_");
+    }
+
+    private static String safeLegacyAccountId(String label) {
+        String safe = label == null ? "" : label.trim().toLowerCase().replaceAll("[^a-z0-9_-]+", "-");
+        safe = safe.replaceAll("^-+|-+$", "");
+        return safe.isBlank() ? "legacy-account" : safe;
+    }
+
+    private static void putIfBlank(Map<String, String> values, String key, String value) {
+        if (value == null) {
+            return;
+        }
+        String current = values.get(key);
+        if (current == null || current.isBlank()) {
+            values.put(key, value);
+        }
     }
 }

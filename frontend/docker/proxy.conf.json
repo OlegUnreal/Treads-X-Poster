@@ -1,0 +1,8 @@
+{
+  "/api": {
+    "target": "http://bts-backend:8080",
+    "secure": false,
+    "changeOrigin": true,
+    "logLevel": "info"
+  }
+}
