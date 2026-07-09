@@ -3,6 +3,9 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
   AccountSelectionResponse,
+  AccountConfig,
+  AccountConfigRequest,
+  AccountWorkspaceSummary,
   ActionResult,
   BrowserXPublishRequest,
   ChromeProfilesLaunchRequest,
@@ -15,9 +18,12 @@ import {
   GeneratePromptResponse,
   PostingJobRequest,
   PostingJobStatus,
+  QueuePostingJob,
+  QueuePostingJobRequest,
   QueuePost,
   QueuePostUpsertRequest,
   RunSummary,
+  ThreadsProfileLookupResponse,
   YoutubePlaybackRequest,
   YoutubePlaybackStatus
 } from '../models/dashboard.models';
@@ -37,13 +43,37 @@ export class DashboardService {
     return this.http.get<AccountSelectionResponse>(`${API_BASE_URL}/accounts`);
   }
 
+  getAccountWorkspace(): Observable<AccountWorkspaceSummary> {
+    return this.http.get<AccountWorkspaceSummary>(`${API_BASE_URL}/accounts/workspace`);
+  }
+
+  getAccountConfigs(): Observable<AccountConfig[]> {
+    return this.http.get<AccountConfig[]>(`${API_BASE_URL}/accounts/config`);
+  }
+
+  saveAccountConfig(request: AccountConfigRequest): Observable<AccountConfig> {
+    const id = request.id?.trim();
+    if (id) {
+      return this.http.put<AccountConfig>(`${API_BASE_URL}/accounts/config/${encodeURIComponent(id)}`, request);
+    }
+    return this.http.post<AccountConfig>(`${API_BASE_URL}/accounts/config`, request);
+  }
+
+  deleteAccountConfig(id: string): Observable<ActionResult> {
+    return this.http.delete<ActionResult>(`${API_BASE_URL}/accounts/config/${encodeURIComponent(id)}`);
+  }
+
+  lookupThreadsProfile(request: AccountConfigRequest): Observable<ThreadsProfileLookupResponse> {
+    return this.http.post<ThreadsProfileLookupResponse>(`${API_BASE_URL}/accounts/config/threads/lookup`, request);
+  }
+
   switchActiveAccount(accountId: string): Observable<AccountSelectionResponse> {
     return this.http.put<AccountSelectionResponse>(`${API_BASE_URL}/accounts/active`, { accountId });
   }
 
-  getQueue(platform = 'x'): Observable<QueuePost[]> {
+  getQueue(platform = 'x', accountId?: string): Observable<QueuePost[]> {
     return this.http.get<QueuePost[]>(`${API_BASE_URL}/queue`, {
-      params: { platform }
+      params: accountId ? { platform, accountId } : { platform }
     });
   }
 
@@ -51,33 +81,45 @@ export class DashboardService {
     return this.http.post<QueuePost>(`${API_BASE_URL}/queue`, request);
   }
 
-  updateQueuePost(id: string, request: QueuePostUpsertRequest, platform = 'x'): Observable<QueuePost> {
+  updateQueuePost(id: string, request: QueuePostUpsertRequest, platform = 'x', accountId?: string): Observable<QueuePost> {
     return this.http.put<QueuePost>(`${API_BASE_URL}/queue/${id}`, request, {
-      params: { platform }
+      params: accountId ? { platform, accountId } : { platform }
     });
   }
 
-  deleteQueuePost(id: string, platform = 'x'): Observable<ActionResult> {
+  deleteQueuePost(id: string, platform = 'x', accountId?: string): Observable<ActionResult> {
     return this.http.delete<ActionResult>(`${API_BASE_URL}/queue/${id}`, {
-      params: { platform }
+      params: accountId ? { platform, accountId } : { platform }
     });
   }
 
-  moveQueuePost(id: string, direction: 'up' | 'down', platform = 'x'): Observable<ActionResult> {
+  moveQueuePost(id: string, direction: 'up' | 'down', platform = 'x', accountId?: string): Observable<ActionResult> {
     return this.http.post<ActionResult>(`${API_BASE_URL}/queue/${id}/move/${direction}`, {}, {
-      params: { platform }
+      params: accountId ? { platform, accountId } : { platform }
     });
   }
 
-  cleanDuplicateQueueImages(platform = 'x'): Observable<ActionResult> {
+  cleanDuplicateQueueImages(platform = 'x', accountId?: string): Observable<ActionResult> {
     return this.http.post<ActionResult>(`${API_BASE_URL}/queue/clean-duplicate-images`, {}, {
-      params: { platform }
+      params: accountId ? { platform, accountId } : { platform }
     });
   }
 
-  fillMissingQueuePhotos(platform = 'x'): Observable<ActionResult> {
+  fillMissingQueuePhotos(platform = 'x', accountId?: string): Observable<ActionResult> {
     return this.http.post<ActionResult>(`${API_BASE_URL}/queue/fill-missing-photos`, {}, {
-      params: { platform }
+      params: accountId ? { platform, accountId } : { platform }
+    });
+  }
+
+  publishQueuePost(id: string, platform = 'x', accountId?: string): Observable<ActionResult> {
+    return this.http.post<ActionResult>(`${API_BASE_URL}/queue/${id}/publish`, {}, {
+      params: accountId ? { platform, accountId } : { platform }
+    });
+  }
+
+  markQueuePostPublished(id: string, platform = 'x', accountId?: string): Observable<ActionResult> {
+    return this.http.post<ActionResult>(`${API_BASE_URL}/queue/${id}/mark-published/${platform}`, {}, {
+      params: accountId ? { accountId } : {}
     });
   }
 
@@ -89,7 +131,6 @@ export class DashboardService {
     photos: File[];
     prompt: string;
     topic: string;
-    tone: string;
     language: string;
     platforms: string[];
     accountIds: string[];
@@ -100,7 +141,6 @@ export class DashboardService {
     request.photos.forEach((photo) => formData.append('photos', photo, photo.name));
     formData.append('prompt', request.prompt);
     formData.append('topic', request.topic);
-    formData.append('tone', request.tone);
     formData.append('language', request.language);
     formData.append('platforms', request.platforms.join(','));
     formData.append('accountIds', request.accountIds.join(','));
@@ -111,6 +151,30 @@ export class DashboardService {
 
   getJobStatus(): Observable<PostingJobStatus> {
     return this.http.get<PostingJobStatus>(`${API_BASE_URL}/job`);
+  }
+
+  getQueueJobs(): Observable<QueuePostingJob[]> {
+    return this.http.get<QueuePostingJob[]>(`${API_BASE_URL}/jobs`);
+  }
+
+  createQueueJob(request: QueuePostingJobRequest): Observable<QueuePostingJob> {
+    return this.http.post<QueuePostingJob>(`${API_BASE_URL}/jobs`, request);
+  }
+
+  updateQueueJob(id: string, request: QueuePostingJobRequest): Observable<QueuePostingJob> {
+    return this.http.put<QueuePostingJob>(`${API_BASE_URL}/jobs/${encodeURIComponent(id)}`, request);
+  }
+
+  deleteQueueJob(id: string): Observable<ActionResult> {
+    return this.http.delete<ActionResult>(`${API_BASE_URL}/jobs/${encodeURIComponent(id)}`);
+  }
+
+  startQueueJob(id: string): Observable<ActionResult> {
+    return this.http.post<ActionResult>(`${API_BASE_URL}/jobs/${encodeURIComponent(id)}/start`, {});
+  }
+
+  stopQueueJob(id: string): Observable<ActionResult> {
+    return this.http.post<ActionResult>(`${API_BASE_URL}/jobs/${encodeURIComponent(id)}/stop`, {});
   }
 
   startJob(request: PostingJobRequest): Observable<ActionResult> {
@@ -185,6 +249,13 @@ export class DashboardService {
     return this.http.put<ChromeProfilesStatus>(
       `${API_BASE_URL}/actions/chrome-profiles/${encodeURIComponent(profileName)}/login-status`,
       { loggedIn }
+    );
+  }
+
+  updateChromeProfileProxyCapability(profileName: string, youtube: boolean, pornhub: boolean): Observable<ChromeProfilesStatus> {
+    return this.http.put<ChromeProfilesStatus>(
+      `${API_BASE_URL}/actions/chrome-profiles/${encodeURIComponent(profileName)}/proxy-capability`,
+      { youtube, pornhub }
     );
   }
 

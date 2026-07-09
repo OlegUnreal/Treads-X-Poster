@@ -14,15 +14,15 @@ import { ContentConfigService, PromptPreset } from '../services/content-config.s
     <section class="page" *ngIf="ui.vm$ | async as vm">
       <header class="page-head">
         <div>
-          <p class="eyebrow">Create</p>
-          <h1>New posts</h1>
+          <p class="eyebrow">Content</p>
+          <h1>Create posts</h1>
         </div>
         <span class="mode-pill">{{ selectedPhotoFiles.length > 0 ? 'Photo mode' : 'Text mode' }}</span>
       </header>
 
       <article class="panel profile-panel">
         <div class="section-head">
-          <h2>Where to post</h2>
+          <h2>Accounts and platforms</h2>
           <span class="badge text-bg-light">{{ selectedTargetProfileIds.length }} selected</span>
         </div>
         <div class="profile-grid">
@@ -51,7 +51,7 @@ import { ContentConfigService, PromptPreset } from '../services/content-config.s
 
       <article class="panel ai-panel">
         <div class="section-head">
-          <h2>AI Create</h2>
+          <h2>AI content</h2>
           <span class="hint">{{ selectedPhotoFiles.length > 0 ? 'One caption per photo' : 'Generate text posts' }}</span>
         </div>
 
@@ -95,18 +95,12 @@ import { ContentConfigService, PromptPreset } from '../services/content-config.s
           </button>
         </div>
 
-        <details class="advanced">
+        <details class="advanced" open>
           <summary>Settings</summary>
           <div class="advanced-grid">
             <label class="field">
               <span>Language</span>
               <input class="form-control form-control-sm" [(ngModel)]="generatorForm.language" />
-            </label>
-            <label class="field">
-              <span>Tone</span>
-              <select class="form-select form-select-sm" [(ngModel)]="generatorForm.tone">
-                <option *ngFor="let tone of allowedTones" [ngValue]="tone">{{ tone }}</option>
-              </select>
             </label>
           </div>
         </details>
@@ -283,11 +277,9 @@ export class CreatePageComponent {
   protected targetProfileError = '';
   protected selectedPromptTemplateId = 'quiet-vlog';
   protected promptTemplates: PromptPreset[] = [];
-  protected allowedTones: string[] = [];
   protected generatorForm = {
     prompt: '',
     topic: '',
-    tone: '',
     language: 'uk',
     count: 3,
     saveToQueue: true
@@ -302,19 +294,15 @@ export class CreatePageComponent {
     imageUrl: '',
     imageSourcePage: '',
     status: 'ready',
-    language: 'uk',
-    tone: 'warm, honest, cinematic, human'
+    language: 'uk'
   };
 
   constructor() {
     this.promptTemplates = this.contentConfig.loadPresets();
-    this.allowedTones = this.contentConfig.loadTones();
     const firstTemplate = this.promptTemplates[0];
     if (firstTemplate) {
       this.selectedPromptTemplateId = firstTemplate.id;
       this.applyPromptTemplate(firstTemplate.id);
-    } else {
-      this.generatorForm.tone = this.allowedTones[0] ?? 'warm, honest, cinematic, human';
     }
   }
 
@@ -326,8 +314,7 @@ export class CreatePageComponent {
     this.generatorForm = {
       ...this.generatorForm,
       prompt: template.prompt,
-      topic: template.topic,
-      tone: template.tone
+      topic: template.topic
     };
   }
 
@@ -389,7 +376,6 @@ export class CreatePageComponent {
       photos: this.selectedPhotoFiles,
       prompt: this.generatorForm.prompt,
       topic: this.resolveAiTopic(),
-      tone: this.generatorForm.tone,
       language: this.generatorForm.language,
       platforms: [],
       accountIds: [],
@@ -436,8 +422,7 @@ export class CreatePageComponent {
         imageUrl: '',
         imageSourcePage: '',
         status: 'ready',
-        language: 'uk',
-        tone: 'warm, honest, cinematic, human'
+        language: 'uk'
       };
     });
   }

@@ -1,0 +1,37 @@
+package com.behindthesmile.posting.api;
+
+public record AccountConfigResponse(
+        String id,
+        String label,
+        String source,
+        String prompt,
+        String language,
+        Integer defaultPostCount,
+        String xPrompt,
+        String xLanguage,
+        Integer xDefaultPostCount,
+        String xAccountLabel,
+        String xAccessToken,
+        String xClientId,
+        String xClientSecret,
+        String xRedirectUri,
+        String xScopes,
+        String xApiKey,
+        String xApiSecret,
+        String xAccessTokenSecret,
+        String xRefreshToken,
+        String xPublishMode,
+        String xBrowser,
+        String xBrowserProfileDir,
+        Boolean xBrowserHeadless,
+        String threadsPrompt,
+        String threadsLanguage,
+        Integer threadsDefaultPostCount,
+        String threadsAccountLabel,
+        String threadsAccessToken,
+        String threadsUserId,
+        String threadsAppId,
+        String threadsAppSecret,
+        String threadsRedirectUri
+) {
+}

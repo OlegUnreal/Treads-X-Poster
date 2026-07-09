@@ -1,5 +1,6 @@
 package com.behindthesmile.posting.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
 
 public class ContentPlan {
@@ -13,17 +14,15 @@ public class ContentPlan {
         this.items = items;
     }
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Item {
         private String topic;
-        private String tone;
         private String language;
         private Integer count;
         private List<String> platforms;
 
         public String getTopic() { return topic; }
         public void setTopic(String topic) { this.topic = topic; }
-        public String getTone() { return tone; }
-        public void setTone(String tone) { this.tone = tone; }
         public String getLanguage() { return language; }
         public void setLanguage(String language) { this.language = language; }
         public Integer getCount() { return count; }

@@ -1,7 +1,7 @@
 import { DecimalPipe, NgFor, NgIf } from '@angular/common';
 import { Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ChromeProfilesStatus, ChromeProfilesUrlCheckStatus, DesktopUpdateStatus, YoutubePlaybackStatus } from '../models/dashboard.models';
+import { ChromeProfileSummary, ChromeProfilesStatus, ChromeProfilesUrlCheckStatus, DesktopUpdateStatus, YoutubePlaybackStatus } from '../models/dashboard.models';
 import { DashboardService } from '../services/dashboard.service';
 
 @Component({
@@ -129,6 +129,17 @@ import { DashboardService } from '../services/dashboard.service';
               <input class="form-control form-control-sm" [(ngModel)]="profilesMaxDelay" type="number" min="0" max="3600" />
             </label>
             </div>
+            <div class="capability-filters">
+              <label>
+                <input type="checkbox" [(ngModel)]="requireYoutubeProxy" />
+                <span>YT</span>
+              </label>
+              <label>
+                <input type="checkbox" [(ngModel)]="requirePornhubProxy" />
+                <span>PH</span>
+              </label>
+              <small>{{ launchFilterLabel() }}</small>
+            </div>
           </div>
           <div class="profiles-actions">
             <button class="btn btn-outline-primary btn-sm" type="button" [disabled]="profilesBusy" (click)="startProfiles()">
@@ -208,6 +219,9 @@ import { DashboardService } from '../services/dashboard.service';
               <small class="profile-geo" *ngIf="profileGeo(profile)">
                 {{ profileGeo(profile) }}
               </small>
+              <small class="proxy-capability" [class.empty]="!supportsYoutube(profile) && !supportsPornhub(profile)">
+                Proxy: {{ proxyCapabilityLabel(profile) }}{{ profile.proxyKey ? ' | ' + profile.proxyKey : '' }}
+              </small>
               <small class="profile-check" *ngIf="checkResultFor(profile.name)">
                 Check: {{ checkResultFor(profile.name)?.ok ? 'OK' : checkResultFor(profile.name)?.reason }}
               </small>
@@ -240,6 +254,26 @@ import { DashboardService } from '../services/dashboard.service';
                 (click)="setLoginStatus(profile.name, !isLoggedIn(profile))"
               >
                 {{ busyLoginStatusName === profile.name ? 'Saving...' : isLoggedIn(profile) ? 'Mark not logged in' : 'Mark logged in' }}
+              </button>
+              <button
+                class="btn btn-sm"
+                [class.btn-success]="supportsYoutube(profile)"
+                [class.btn-outline-success]="!supportsYoutube(profile)"
+                type="button"
+                [disabled]="busyProxyCapabilityName === profile.name || !profile.proxyKey"
+                (click)="toggleProxyCapability(profile, 'youtube')"
+              >
+                YT
+              </button>
+              <button
+                class="btn btn-sm"
+                [class.btn-success]="supportsPornhub(profile)"
+                [class.btn-outline-success]="!supportsPornhub(profile)"
+                type="button"
+                [disabled]="busyProxyCapabilityName === profile.name || !profile.proxyKey"
+                (click)="toggleProxyCapability(profile, 'pornhub')"
+              >
+                PH
               </button>
             </div>
           </div>
@@ -286,6 +320,10 @@ import { DashboardService } from '../services/dashboard.service';
     .profile-count-row { display: grid; grid-template-columns: minmax(0, 1fr) 76px; gap: 10px; align-items: end; }
     .count-input { text-align: center; }
     .delay-grid { display: grid; grid-template-columns: repeat(2, 96px); gap: 8px; }
+    .capability-filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: #475569; font: 800 12px/1.2 "Segoe UI", sans-serif; }
+    .capability-filters label { display: inline-flex; align-items: center; gap: 5px; margin: 0; }
+    .capability-filters input { width: 14px; height: 14px; }
+    .capability-filters small { color: #64748b; font-weight: 700; }
     .profiles-actions { display: flex; align-items: end; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
     .feedback {
       margin: 10px 0 0;
@@ -330,6 +368,8 @@ import { DashboardService } from '../services/dashboard.service';
     .profile-row > span:not(.login-pill) { color: #64748b; overflow-wrap: anywhere; }
     .profile-meta { display: block; margin-top: 2px; color: #475569; font-weight: 700; }
     .profile-geo { display: block; margin-top: 2px; color: #475569; font-weight: 700; overflow-wrap: anywhere; }
+    .proxy-capability { display: block; margin-top: 2px; color: #0f766e; font-weight: 900; overflow-wrap: anywhere; }
+    .proxy-capability.empty { color: #be123c; }
     .profile-check { display: block; margin-top: 2px; color: #334155; font-weight: 800; }
     .profile-row-actions { display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
     .log-tail { margin: 12px 0 0; max-height: 220px; overflow: auto; padding: 10px; border-radius: 10px; background: #0f172a; color: #dbeafe; font: 600 12px/1.45 Consolas, monospace; white-space: pre-wrap; }
@@ -359,12 +399,15 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
   protected urlCheckStatus: ChromeProfilesUrlCheckStatus | null = null;
   protected busyProfileName = '';
   protected busyLoginStatusName = '';
+  protected busyProxyCapabilityName = '';
   protected updateBusy = false;
   protected updateMessage = '';
   protected updateError = false;
   protected updateStatus: DesktopUpdateStatus | null = null;
   protected refererHeader = '';
   protected videoQuality = 'auto';
+  protected requireYoutubeProxy = false;
+  protected requirePornhubProxy = false;
   private bulkProgressTimer: ReturnType<typeof setTimeout> | null = null;
   private checkProgressTimer: ReturnType<typeof setTimeout> | null = null;
   protected readonly videoQualityOptions = [
@@ -404,7 +447,7 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
       maxDelaySeconds: this.normalizedDelay(this.profilesMaxDelay, this.normalizedDelay(this.profilesMinDelay, 0)),
       profileCount: this.normalizedProfileCount(),
       url: cleanUrl,
-      ...this.launchOptions()
+      ...this.launchOptions(true)
     }).subscribe({
       next: (status) => {
         this.profilesStatus = status;
@@ -455,7 +498,7 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
       minDelaySeconds: this.normalizedDelay(this.profilesMinDelay, 0),
       maxDelaySeconds: this.normalizedDelay(this.profilesMaxDelay, this.normalizedDelay(this.profilesMinDelay, 0)),
       profileCount: this.normalizedProfileCount(),
-      ...this.launchOptions()
+      ...this.launchOptions(true)
     }).subscribe({
       next: (status) => {
         this.profilesStatus = status;
@@ -537,7 +580,7 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
       maxDelaySeconds: this.normalizedDelay(this.profilesMaxDelay, this.normalizedDelay(this.profilesMinDelay, 0)),
       profileNames,
       url: cleanUrl || undefined,
-      ...this.launchOptions()
+      ...this.launchOptions(true)
     }).subscribe({
       next: (status) => {
         this.profilesStatus = status;
@@ -667,6 +710,28 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
     });
   }
 
+  protected toggleProxyCapability(profile: ChromeProfileSummary, capability: 'youtube' | 'pornhub'): void {
+    const youtube = capability === 'youtube' ? !this.supportsYoutube(profile) : this.supportsYoutube(profile);
+    const pornhub = capability === 'pornhub' ? !this.supportsPornhub(profile) : this.supportsPornhub(profile);
+    this.busyProxyCapabilityName = profile.name;
+    this.profilesError = false;
+    this.profilesMessage = `Saving ${profile.name} proxy capability...`;
+    this.dashboardService.updateChromeProfileProxyCapability(profile.name, youtube, pornhub).subscribe({
+      next: (status) => {
+        this.profilesStatus = status;
+        this.clampProfileCount();
+        this.profilesMessage = status.message || `${profile.name} proxy capability updated.`;
+        this.profilesError = false;
+        this.busyProxyCapabilityName = '';
+      },
+      error: (error) => {
+        this.profilesMessage = this.errorMessage(error, `Could not update ${profile.name} proxy capability.`);
+        this.profilesError = true;
+        this.busyProxyCapabilityName = '';
+      }
+    });
+  }
+
   protected refreshProfilesStatus(showMessage = true): void {
     this.profilesBusy = true;
     this.dashboardService.getChromeProfilesStatus().subscribe({
@@ -731,6 +796,42 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
 
   protected isLoggedIn(profile: { googleAccount?: string; loggedIn?: boolean | string; loginStatus?: string }): boolean {
     return Boolean(profile.googleAccount?.trim()) || profile.loggedIn === true || profile.loggedIn === 'true' || profile.loginStatus === 'logged_in';
+  }
+
+  protected supportsYoutube(profile: { supportsYoutube?: boolean | string }): boolean {
+    return profile.supportsYoutube === true || profile.supportsYoutube === 'true';
+  }
+
+  protected supportsPornhub(profile: { supportsPornhub?: boolean | string }): boolean {
+    return profile.supportsPornhub === true || profile.supportsPornhub === 'true';
+  }
+
+  protected proxyCapabilityLabel(profile: { supportsYoutube?: boolean | string; supportsPornhub?: boolean | string }): string {
+    const youtube = this.supportsYoutube(profile);
+    const pornhub = this.supportsPornhub(profile);
+    if (youtube && pornhub) {
+      return 'YT + PH';
+    }
+    if (youtube) {
+      return 'YT only';
+    }
+    if (pornhub) {
+      return 'PH only';
+    }
+    return 'blocked';
+  }
+
+  protected launchFilterLabel(): string {
+    if (this.requireYoutubeProxy && this.requirePornhubProxy) {
+      return 'Only proxies where both work';
+    }
+    if (this.requireYoutubeProxy) {
+      return 'Only YouTube-ready proxies';
+    }
+    if (this.requirePornhubProxy) {
+      return 'Only Pornhub-ready proxies';
+    }
+    return 'No proxy capability filter';
   }
 
   protected isRunning(profile: { running?: boolean | string }): boolean {
@@ -906,7 +1007,7 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
   }
 
   protected maxProfileCount(): number {
-    return Math.max(1, this.profilesStatus?.profiles?.length ?? 1);
+    return Math.max(1, this.launchEligibleProfiles().length || this.profilesStatus?.profiles?.length || 1);
   }
 
   protected normalizedProfileCount(): number {
@@ -919,6 +1020,17 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
 
   private clampProfileCount(): void {
     this.profileCount = this.normalizedProfileCount();
+  }
+
+  private launchEligibleProfiles(): ChromeProfileSummary[] {
+    const profiles = this.profilesStatus?.profiles ?? [];
+    if (!this.requireYoutubeProxy && !this.requirePornhubProxy) {
+      return profiles;
+    }
+    return profiles.filter((profile) =>
+      (!this.requireYoutubeProxy || this.supportsYoutube(profile)) &&
+      (!this.requirePornhubProxy || this.supportsPornhub(profile))
+    );
   }
 
   protected normalizedUrl(): string {
@@ -955,11 +1067,15 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
     return this.refererHeader.trim();
   }
 
-  private launchOptions(): { referer: string; videoQuality: string } {
+  private launchOptions(includeProxyFilters = false): { referer: string; videoQuality: string; requireYoutube?: boolean; requirePornhub?: boolean } {
     this.saveLaunchSettings();
     return {
       referer: this.normalizedReferer(),
-      videoQuality: this.videoQuality
+      videoQuality: this.videoQuality,
+      ...(includeProxyFilters ? {
+        requireYoutube: this.requireYoutubeProxy,
+        requirePornhub: this.requirePornhubProxy
+      } : {})
     };
   }
 
@@ -969,8 +1085,10 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
       if (!raw) {
         return;
       }
-      const settings = JSON.parse(raw) as { refererHeader?: string; videoQuality?: string };
+      const settings = JSON.parse(raw) as { refererHeader?: string; videoQuality?: string; requireYoutubeProxy?: boolean; requirePornhubProxy?: boolean };
       this.refererHeader = settings.refererHeader ?? '';
+      this.requireYoutubeProxy = Boolean(settings.requireYoutubeProxy);
+      this.requirePornhubProxy = Boolean(settings.requirePornhubProxy);
       if (settings.videoQuality && this.videoQualityOptions.some((option) => option.value === settings.videoQuality)) {
         this.videoQuality = settings.videoQuality;
       }
@@ -984,7 +1102,9 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
     try {
       window.localStorage.setItem(this.launchSettingsStorageKey, JSON.stringify({
         refererHeader: this.normalizedReferer(),
-        videoQuality: this.videoQuality
+        videoQuality: this.videoQuality,
+        requireYoutubeProxy: this.requireYoutubeProxy,
+        requirePornhubProxy: this.requirePornhubProxy
       }));
     } catch {
       // Local persistence is optional.

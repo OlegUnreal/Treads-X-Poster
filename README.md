@@ -51,13 +51,42 @@ mvn -f backend/pom.xml spring-boot:run "-Dspring-boot.run.arguments=auto-create"
 
 Both flows read the same config from `backend/config/`.
 
+### Автоматичний локальний запуск (рекомендований)
+
+Щоб одним командом підняти і бекенд, і фронтенд:
+
+```powershell
+# Повний локальний запуск (без Docker): збирає та стартує обидва процеси.
+powershell -ExecutionPolicy Bypass -File .\scripts\start-auto-stack.ps1
+
+# Те саме в Docker (Spring Boot + Frontend + PostgreSQL контейнер):
+powershell -ExecutionPolicy Bypass -File .\scripts\start-auto-stack.ps1 -UseDocker
+```
+
+Зупинка:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\stop-auto-stack.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\stop-auto-stack.ps1 -UseDocker
+```
+
+Що всередині:
+
+- `docker-compose.local.yml` — піднімає `postgres`, `backend`, `frontend`.
+- `scripts/start-auto-stack.ps1` — автоматично перевіряє залежності, збирає backend/front,
+  зберігає PIDs і чекає на `/api/health`.
+- `scripts/stop-auto-stack.ps1` — чисто зупиняє процеси/контейнери.
+
+Наразі бекенд працює в DB-first режимі: стан акаунтів/черг/чернеток/автоjobs зберігається в PostgreSQL (або H2 локально, якщо налаштування БД не задані),
+а `queue.jsonl`/`posts.jsonl` можуть залишатися лише як legacy джерело для разової міграції.
+
 Human-readable account labels can also be set there:
 
 - `backend/config/.env`
 - `X_ACCOUNT_LABEL=@your_x_account`
 - `THREADS_ACCOUNT_LABEL=@your_threads_account`
 
-Multiple publishing profiles can be configured in the same `.env`. The UI can switch the active profile, and the selected profile is stored in `DATA_DIR/active-account.txt`.
+Multiple publishing profiles can be configured in the same `.env`. The UI can switch the active profile, and the selected profile is stored in the database (`APP_SETTINGS` table, key `active_account_id`), with legacy compatibility fallback to `ACTIVE_ACCOUNT_FILE` during migration.
 
 Example:
 
@@ -291,6 +320,8 @@ Notes:
 
 The backend can run on a server as long as runtime files live in a persistent folder. Configure that folder with `DATA_DIR` instead of relying on files inside the repository checkout.
 
+By default account settings, queues, generated drafts and posting jobs are stored in the database through Spring Data JPA. Keep `SPRING_DATASOURCE_*` set for PostgreSQL in production; if unset, the app falls back to local H2 storage.
+
 Recommended server layout:
 
 ```text
@@ -347,6 +378,18 @@ Health check:
 Invoke-RestMethod http://localhost:8080/api/health
 ```
 
+## CI/CD (GitHub Actions)
+
+The repository has a production deploy workflow in `.github/workflows/deploy-production.yml` that runs on push to `master` and `main`:
+
+- `git push` to `master` (including merge commit from PR) starts automatic deployment.
+- manual deployment is also available with `workflow_dispatch`.
+
+On each run the workflow checks out the target branch, runs `deploy-production.sh`, builds backend/frontend and restarts the service. State persistence is provided by:
+
+- PostgreSQL (`SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD`) in production,
+- local H2 file DB fallback when datasource is not set.
+
 The health response includes the active `DATA_DIR`, queue path, draft path, X links path, content plan path, and whether the data directory is writable.
 
 ## Deploy
@@ -379,7 +422,7 @@ Optional repository variable:
 
 - `DEPLOY_PATH` - server checkout path, defaults to `/opt/behind-the-smile`.
 
-The workflow deploys automatically on pushes to `main`. It can also be started manually from the Actions tab and pointed at another branch.
+The workflow deploys automatically on pushes to `main` and `master`. It can also be started manually from the Actions tab and pointed at another branch.
 
 ### Doppler production config
 

@@ -12,7 +12,7 @@ public record AppProperties(
 ) {
     public record OpenAi(String apiKey, String model, String imageModel, int imageFillLimit) {}
 
-    public record Defaults(String language, String topic, String tone, int count) {}
+    public record Defaults(String language, String topic, int count) {}
 
     public record Runtime(
             String dataDir,

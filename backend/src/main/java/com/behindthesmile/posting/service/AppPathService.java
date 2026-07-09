@@ -53,6 +53,10 @@ public class AppPathService {
         return dataPath(appProperties.runtime().activeAccountFile());
     }
 
+    public Path accountSettingsPath() {
+        return dataPath("accounts.json");
+    }
+
     public Path mediaDir() {
         return Path.of(appProperties.runtime().mediaDir()).toAbsolutePath().normalize();
     }
@@ -79,6 +83,8 @@ public class AppPathService {
         Path contentPlanPath = contentPlanPath();
         details.put("dataDir", dataDir.toString());
         details.put("dataDirWritable", isWritableDirectory(dataDir));
+        details.put("storageMode", "database");
+        details.put("datasourceUrl", firstNonBlank(System.getenv("SPRING_DATASOURCE_URL"), "not-set"));
         details.put("queuePath", queuePath().toString());
         details.put("draftPath", draftPath().toString());
         details.put("xLinksPath", xLinksPath().toString());
@@ -106,5 +112,9 @@ public class AppPathService {
         String safe = value.toLowerCase().replaceAll("[^a-z0-9_-]+", "-");
         safe = safe.replaceAll("^-+|-+$", "");
         return safe.isBlank() ? "default" : safe;
+    }
+
+    private String firstNonBlank(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
     }
 }

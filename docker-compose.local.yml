@@ -1,0 +1,67 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: bts-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-bts_social_posting}
+      POSTGRES_USER: ${POSTGRES_USER:-bts_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bts_secret}
+    volumes:
+      - bts-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bts_user} -d ${POSTGRES_DB:-bts_social_posting}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: bts-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    env_file:
+      - backend/config/.env
+    environment:
+      SERVER_PORT: 8080
+      PUBLIC_BASE_URL: http://localhost:4200
+      DATA_DIR: /app/data
+      X_LINKS_FILE: x-ready.html
+      CONTENT_PLAN_FILE: /app/config/content-plan.json
+      MEDIA_DIR: /app/data/media
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-bts_social_posting}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-bts_user}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-bts_secret}
+      SPRING_DATASOURCE_DRIVER: org.postgresql.Driver
+    volumes:
+      - ./generated:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/api/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: bts-frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "4200:4200"
+    environment:
+      - NODE_ENV=development
+
+volumes:
+  bts-postgres-data:
