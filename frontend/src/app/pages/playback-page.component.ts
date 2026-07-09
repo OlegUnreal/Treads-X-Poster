@@ -806,9 +806,19 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
     return profile.supportsPornhub === true || profile.supportsPornhub === 'true';
   }
 
+  protected blocksYoutube(profile: { supportsYoutube?: boolean | string }): boolean {
+    return profile.supportsYoutube === false || profile.supportsYoutube === 'false';
+  }
+
+  protected blocksPornhub(profile: { supportsPornhub?: boolean | string }): boolean {
+    return profile.supportsPornhub === false || profile.supportsPornhub === 'false';
+  }
+
   protected proxyCapabilityLabel(profile: { supportsYoutube?: boolean | string; supportsPornhub?: boolean | string }): string {
     const youtube = this.supportsYoutube(profile);
     const pornhub = this.supportsPornhub(profile);
+    const youtubeBlocked = this.blocksYoutube(profile);
+    const pornhubBlocked = this.blocksPornhub(profile);
     if (youtube && pornhub) {
       return 'YT + PH';
     }
@@ -818,18 +828,21 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
     if (pornhub) {
       return 'PH only';
     }
+    if (!youtubeBlocked || !pornhubBlocked) {
+      return 'unknown';
+    }
     return 'blocked';
   }
 
   protected launchFilterLabel(): string {
     if (this.requireYoutubeProxy && this.requirePornhubProxy) {
-      return 'Only proxies where both work';
+      return 'Exclude proxies blocked for YT or PH';
     }
     if (this.requireYoutubeProxy) {
-      return 'Only YouTube-ready proxies';
+      return 'Exclude YouTube-blocked proxies';
     }
     if (this.requirePornhubProxy) {
-      return 'Only Pornhub-ready proxies';
+      return 'Exclude Pornhub-blocked proxies';
     }
     return 'No proxy capability filter';
   }
@@ -1028,8 +1041,8 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
       return profiles;
     }
     return profiles.filter((profile) =>
-      (!this.requireYoutubeProxy || this.supportsYoutube(profile)) &&
-      (!this.requirePornhubProxy || this.supportsPornhub(profile))
+      (!this.requireYoutubeProxy || !this.blocksYoutube(profile)) &&
+      (!this.requirePornhubProxy || !this.blocksPornhub(profile))
     );
   }
 

@@ -22,9 +22,11 @@ const bundledPython = path.join(resourcesRoot, 'runtime', 'python', process.plat
 const backendPort = Number(process.env.BTS_BACKEND_PORT || 8081);
 const frontendPort = Number(process.env.BTS_DESKTOP_PORT || 4311);
 const profilesEnvSyncUrl = process.env.BTS_PROFILES_ENV_SYNC_URL || 'http://167.233.93.6:4301/api/actions/chrome-profiles/profiles-env';
+const proxyCapabilitiesSyncUrl = process.env.BTS_PROXY_CAPABILITIES_SYNC_URL || 'http://167.233.93.6:4301/api/actions/chrome-profiles/proxy-capabilities';
 const profilesEnvSyncToken = process.env.BTS_PROFILES_ENV_SYNC_TOKEN || '';
 const profilesRuntimeDir = path.join(app.getPath('home'), 'chrome-proxy-profiles');
 const profilesEnvFile = path.join(profilesRuntimeDir, 'profiles.env');
+const proxyCapabilitiesFile = path.join(profilesRuntimeDir, 'proxy-capabilities.tsv');
 const appRuntimeRoot = path.join(profilesRuntimeDir, 'app');
 const backendPidFile = path.join(profilesRuntimeDir, 'behind-the-smile-backend.pid');
 const startupLogFile = path.join(profilesRuntimeDir, 'behind-the-smile-startup.log');
@@ -40,6 +42,10 @@ let profilesEnvWatcher = null;
 let profilesEnvUploadTimer = null;
 let profilesEnvLastUploaded = '';
 let profilesEnvSyncing = false;
+let proxyCapabilitiesWatcher = null;
+let proxyCapabilitiesUploadTimer = null;
+let proxyCapabilitiesLastUploaded = '';
+let proxyCapabilitiesSyncing = false;
 
 function waitForPort(port, timeoutMs = 60000) {
   const startedAt = Date.now();
@@ -757,6 +763,37 @@ function validateProfilesEnv(content) {
   }
 }
 
+function validateProxyCapabilities(content) {
+  if (content == null) {
+    throw new Error('Downloaded proxy-capabilities.tsv is empty');
+  }
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) {
+      continue;
+    }
+    const parts = line.split('\t');
+    if (parts.length < 3 || !parts[0].trim()) {
+      throw new Error(`Invalid proxy capability row: ${rawLine}`);
+    }
+    for (const value of [parts[1], parts[2]]) {
+      const normalized = String(value || '').trim().toLowerCase();
+      if (!['true', 'false', 'unknown', ''].includes(normalized)) {
+        throw new Error(`Invalid proxy capability value: ${value}`);
+      }
+    }
+  }
+}
+
+function hasProxyCapabilityRows(content) {
+  return String(content || '')
+    .split(/\r?\n/)
+    .some((line) => {
+      const trimmed = line.trim();
+      return trimmed && !trimmed.startsWith('#');
+    });
+}
+
 async function syncProfilesEnv() {
   if (!profilesEnvSyncUrl) {
     return;
@@ -781,6 +818,40 @@ async function syncProfilesEnv() {
   }
 }
 
+async function syncProxyCapabilities() {
+  if (!proxyCapabilitiesSyncUrl) {
+    return;
+  }
+  const headers = profilesEnvSyncToken ? { 'X-Profiles-Env-Token': profilesEnvSyncToken } : {};
+  try {
+    const content = await requestText(proxyCapabilitiesSyncUrl, headers);
+    validateProxyCapabilities(content);
+    if (!hasProxyCapabilityRows(content) && fs.existsSync(proxyCapabilitiesFile)) {
+      const localContent = fs.readFileSync(proxyCapabilitiesFile, 'utf8');
+      if (hasProxyCapabilityRows(localContent)) {
+        proxyCapabilitiesLastUploaded = '';
+        await uploadProxyCapabilities();
+        return;
+      }
+    }
+    proxyCapabilitiesSyncing = true;
+    fs.mkdirSync(profilesRuntimeDir, { recursive: true });
+    fs.writeFileSync(proxyCapabilitiesFile, content.replace(/\r?\n/g, '\r\n'), 'utf8');
+    proxyCapabilitiesLastUploaded = fs.readFileSync(proxyCapabilitiesFile, 'utf8');
+  } catch (error) {
+    if (!fs.existsSync(proxyCapabilitiesFile)) {
+      fs.mkdirSync(profilesRuntimeDir, { recursive: true });
+      fs.writeFileSync(proxyCapabilitiesFile, '# proxy-host\tyoutube\tpornhub\r\n', 'utf8');
+      proxyCapabilitiesLastUploaded = fs.readFileSync(proxyCapabilitiesFile, 'utf8');
+    }
+    console.warn(`proxy-capabilities.tsv sync failed, using local copy: ${error.message}`);
+  } finally {
+    setTimeout(() => {
+      proxyCapabilitiesSyncing = false;
+    }, 1000);
+  }
+}
+
 async function uploadProfilesEnv() {
   if (!profilesEnvSyncUrl || !fs.existsSync(profilesEnvFile)) {
     return;
@@ -796,6 +867,24 @@ async function uploadProfilesEnv() {
     profilesEnvLastUploaded = content;
   } catch (error) {
     console.warn(`profiles.env upload failed: ${error.message}`);
+  }
+}
+
+async function uploadProxyCapabilities() {
+  if (!proxyCapabilitiesSyncUrl || !fs.existsSync(proxyCapabilitiesFile)) {
+    return;
+  }
+  try {
+    const content = fs.readFileSync(proxyCapabilitiesFile, 'utf8');
+    validateProxyCapabilities(content);
+    if (content === proxyCapabilitiesLastUploaded) {
+      return;
+    }
+    const headers = profilesEnvSyncToken ? { 'X-Profiles-Env-Token': profilesEnvSyncToken } : {};
+    await sendText(proxyCapabilitiesSyncUrl, content, headers);
+    proxyCapabilitiesLastUploaded = content;
+  } catch (error) {
+    console.warn(`proxy-capabilities.tsv upload failed: ${error.message}`);
   }
 }
 
@@ -817,6 +906,24 @@ function startProfilesEnvWatcher() {
   });
 }
 
+function startProxyCapabilitiesWatcher() {
+  if (!proxyCapabilitiesSyncUrl || proxyCapabilitiesWatcher || !fs.existsSync(proxyCapabilitiesFile)) {
+    return;
+  }
+  proxyCapabilitiesLastUploaded = fs.readFileSync(proxyCapabilitiesFile, 'utf8');
+  proxyCapabilitiesWatcher = fs.watch(proxyCapabilitiesFile, () => {
+    if (proxyCapabilitiesSyncing) {
+      return;
+    }
+    clearTimeout(proxyCapabilitiesUploadTimer);
+    proxyCapabilitiesUploadTimer = setTimeout(uploadProxyCapabilities, 2500);
+  });
+  proxyCapabilitiesWatcher.on('error', (error) => {
+    console.warn(`proxy-capabilities.tsv watcher failed: ${error.message}`);
+    proxyCapabilitiesWatcher = null;
+  });
+}
+
 function stopProfilesEnvWatcher() {
   if (profilesEnvUploadTimer) {
     clearTimeout(profilesEnvUploadTimer);
@@ -828,12 +935,26 @@ function stopProfilesEnvWatcher() {
   }
 }
 
+function stopProxyCapabilitiesWatcher() {
+  if (proxyCapabilitiesUploadTimer) {
+    clearTimeout(proxyCapabilitiesUploadTimer);
+    proxyCapabilitiesUploadTimer = null;
+  }
+  if (proxyCapabilitiesWatcher) {
+    proxyCapabilitiesWatcher.close();
+    proxyCapabilitiesWatcher = null;
+  }
+}
+
 async function createWindow() {
   await createMainWindow();
   setStartupStatus('Syncing profile config...');
   await syncProfilesEnv();
+  setStartupStatus('Syncing proxy rules...');
+  await syncProxyCapabilities();
   setStartupStatus('Watching local config changes...');
   startProfilesEnvWatcher();
+  startProxyCapabilitiesWatcher();
   setStartupStatus('Preparing local runtime files...');
   prepareAppRuntimeFiles();
   setStartupStatus('Starting local services...');
@@ -864,6 +985,7 @@ if (!hasSingleInstanceLock) {
 
 app.on('window-all-closed', () => {
   stopProfilesEnvWatcher();
+  stopProxyCapabilitiesWatcher();
   if (backendProcess) {
     backendProcess.kill();
     backendProcess = null;

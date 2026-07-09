@@ -345,6 +345,29 @@ public class DashboardController {
         return ResponseEntity.ok(chromeProfileLauncherService.updateProfilesEnvContent(content));
     }
 
+    @GetMapping(value = "/actions/chrome-profiles/proxy-capabilities", produces = MediaType.TEXT_PLAIN_VALUE)
+    public ResponseEntity<String> chromeProxyCapabilities(
+            @RequestHeader(value = "X-Profiles-Env-Token", required = false) String token
+    ) throws Exception {
+        if (!profilesEnvTokenAllowed(token, "PROFILES_ENV_DOWNLOAD_TOKEN")) {
+            return ResponseEntity.status(403).body("Forbidden");
+        }
+        return ResponseEntity.ok()
+                .contentType(MediaType.TEXT_PLAIN)
+                .body(chromeProfileLauncherService.proxyCapabilitiesContent());
+    }
+
+    @PutMapping(value = "/actions/chrome-profiles/proxy-capabilities", consumes = MediaType.TEXT_PLAIN_VALUE)
+    public ResponseEntity<Map<String, Object>> updateChromeProxyCapabilities(
+            @RequestHeader(value = "X-Profiles-Env-Token", required = false) String token,
+            @RequestBody String content
+    ) throws Exception {
+        if (!profilesEnvTokenAllowed(token, "PROFILES_ENV_UPLOAD_TOKEN")) {
+            return ResponseEntity.status(403).body(Map.of("error", "Forbidden"));
+        }
+        return ResponseEntity.ok(chromeProfileLauncherService.updateProxyCapabilitiesContent(content));
+    }
+
     private boolean profilesEnvTokenAllowed(String token, String envName) {
         String expectedToken = System.getenv(envName);
         if (expectedToken == null || expectedToken.isBlank()) {
