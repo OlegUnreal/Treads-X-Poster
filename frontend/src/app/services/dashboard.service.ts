@@ -10,6 +10,7 @@ import {
   BrowserXPublishRequest,
   ChromeProfilesLaunchRequest,
   ChromeProfilesBulkActionRequest,
+  ChromeProfileProxyCapabilityUpdate,
   ChromeProfilesStatus,
   ChromeProfilesUrlCheckRequest,
   ChromeProfilesUrlCheckStatus,
@@ -252,8 +253,8 @@ export class DashboardService {
     );
   }
 
-  updateChromeProfileProxyCapability(profileName: string, youtube: boolean, pornhub: boolean): Observable<ChromeProfilesStatus> {
-    return this.http.put<ChromeProfilesStatus>(
+  updateChromeProfileProxyCapability(profileName: string, youtube: boolean | null, pornhub: boolean | null): Observable<ChromeProfileProxyCapabilityUpdate> {
+    return this.http.put<ChromeProfileProxyCapabilityUpdate>(
       `${API_BASE_URL}/actions/chrome-profiles/${encodeURIComponent(profileName)}/proxy-capability`,
       { youtube, pornhub }
     );

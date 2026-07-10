@@ -261,9 +261,19 @@ import { DashboardService } from '../services/dashboard.service';
                 [class.btn-outline-success]="!supportsYoutube(profile)"
                 type="button"
                 [disabled]="busyProxyCapabilityName === profile.name || !profile.proxyKey"
-                (click)="toggleProxyCapability(profile, 'youtube')"
+                (click)="setProxyCapability(profile, 'youtube', true)"
               >
-                YT
+                YT ok
+              </button>
+              <button
+                class="btn btn-sm"
+                [class.btn-danger]="blocksYoutube(profile)"
+                [class.btn-outline-danger]="!blocksYoutube(profile)"
+                type="button"
+                [disabled]="busyProxyCapabilityName === profile.name || !profile.proxyKey"
+                (click)="setProxyCapability(profile, 'youtube', false)"
+              >
+                YT no
               </button>
               <button
                 class="btn btn-sm"
@@ -271,9 +281,19 @@ import { DashboardService } from '../services/dashboard.service';
                 [class.btn-outline-success]="!supportsPornhub(profile)"
                 type="button"
                 [disabled]="busyProxyCapabilityName === profile.name || !profile.proxyKey"
-                (click)="toggleProxyCapability(profile, 'pornhub')"
+                (click)="setProxyCapability(profile, 'pornhub', true)"
               >
-                PH
+                PH ok
+              </button>
+              <button
+                class="btn btn-sm"
+                [class.btn-danger]="blocksPornhub(profile)"
+                [class.btn-outline-danger]="!blocksPornhub(profile)"
+                type="button"
+                [disabled]="busyProxyCapabilityName === profile.name || !profile.proxyKey"
+                (click)="setProxyCapability(profile, 'pornhub', false)"
+              >
+                PH no
               </button>
             </div>
           </div>
@@ -710,17 +730,17 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
     });
   }
 
-  protected toggleProxyCapability(profile: ChromeProfileSummary, capability: 'youtube' | 'pornhub'): void {
-    const youtube = capability === 'youtube' ? !this.supportsYoutube(profile) : this.supportsYoutube(profile);
-    const pornhub = capability === 'pornhub' ? !this.supportsPornhub(profile) : this.supportsPornhub(profile);
+  protected setProxyCapability(profile: ChromeProfileSummary, capability: 'youtube' | 'pornhub', value: boolean): void {
+    const youtube = capability === 'youtube' ? value : null;
+    const pornhub = capability === 'pornhub' ? value : null;
     this.busyProxyCapabilityName = profile.name;
     this.profilesError = false;
     this.profilesMessage = `Saving ${profile.name} proxy capability...`;
     this.dashboardService.updateChromeProfileProxyCapability(profile.name, youtube, pornhub).subscribe({
-      next: (status) => {
-        this.profilesStatus = status;
+      next: (update) => {
+        this.applyProxyCapabilityUpdate(update);
         this.clampProfileCount();
-        this.profilesMessage = status.message || `${profile.name} proxy capability updated.`;
+        this.profilesMessage = update.message || `${profile.name} proxy capability updated.`;
         this.profilesError = false;
         this.busyProxyCapabilityName = '';
       },
@@ -730,6 +750,25 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
         this.busyProxyCapabilityName = '';
       }
     });
+  }
+
+  private applyProxyCapabilityUpdate(update: { proxyKey?: string; supportsYoutube?: boolean | string; supportsPornhub?: boolean | string }): void {
+    if (!this.profilesStatus?.profiles?.length || !update.proxyKey) {
+      return;
+    }
+    this.profilesStatus = {
+      ...this.profilesStatus,
+      profiles: this.profilesStatus.profiles.map((profile) => {
+        if (profile.proxyKey !== update.proxyKey) {
+          return profile;
+        }
+        return {
+          ...profile,
+          supportsYoutube: update.supportsYoutube ?? profile.supportsYoutube,
+          supportsPornhub: update.supportsPornhub ?? profile.supportsPornhub
+        };
+      })
+    };
   }
 
   protected refreshProfilesStatus(showMessage = true): void {

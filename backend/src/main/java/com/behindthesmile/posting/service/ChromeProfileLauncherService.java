@@ -6,6 +6,8 @@ import com.behindthesmile.posting.api.ChromeProfileActionRequest;
 import com.behindthesmile.posting.api.ChromeProfileLoginStatusRequest;
 import com.behindthesmile.posting.api.ChromeProfileProxyCapabilityRequest;
 import com.behindthesmile.posting.api.ChromeProfilesUrlCheckRequest;
+import com.behindthesmile.posting.persistence.ProxyCapabilityEntity;
+import com.behindthesmile.posting.persistence.ProxyCapabilityRepository;
 import org.springframework.stereotype.Service;
 
 import java.io.BufferedReader;
@@ -46,6 +48,7 @@ public class ChromeProfileLauncherService {
             .connectTimeout(DEVTOOLS_STATUS_TIMEOUT)
             .build();
     private final Object urlCheckLock = new Object();
+    private final ProxyCapabilityRepository proxyCapabilityRepository;
 
     private Instant lastStartedAt;
     private Map<String, Object> latestUrlCheckStatus = Map.of(
@@ -57,6 +60,10 @@ public class ChromeProfileLauncherService {
             "results", List.of()
     );
     private ExecutorService activeUrlCheckExecutor;
+
+    public ChromeProfileLauncherService(ProxyCapabilityRepository proxyCapabilityRepository) {
+        this.proxyCapabilityRepository = proxyCapabilityRepository;
+    }
 
     public Map<String, Object> startAll(ChromeProfilesLaunchRequest request) throws Exception {
         if (isWindows()) {
@@ -593,16 +600,13 @@ public class ChromeProfileLauncherService {
     }
 
     public String proxyCapabilitiesContent() throws Exception {
-        Path file = proxyCapabilitiesFile();
-        if (!Files.isRegularFile(file)) {
-            return "# proxy-host\tyoutube\tpornhub\n";
-        }
-        return Files.readString(file, StandardCharsets.UTF_8);
+        return proxyCapabilitiesContent(readProxyCapabilities());
     }
 
     public Map<String, Object> updateProxyCapabilitiesContent(String content) throws Exception {
         validateProxyCapabilitiesContent(content);
-        writeTextFile(proxyCapabilitiesFile(), content);
+        Map<String, ProxyCapability> capabilities = parseProxyCapabilitiesContent(content);
+        writeProxyCapabilities(capabilities);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("message", PROXY_CAPABILITIES_FILE + " updated");
@@ -683,9 +687,14 @@ public class ChromeProfileLauncherService {
         Boolean pornhub = request == null || request.pornhub() == null ? current.pornhub() : request.pornhub();
         capabilities.put(proxyKey, new ProxyCapability(youtube, pornhub));
         writeProxyCapabilities(capabilities);
+        proxyCapabilityRepository.save(new ProxyCapabilityEntity(proxyKey, youtube, pornhub));
 
-        Map<String, Object> result = status();
+        Map<String, Object> result = new LinkedHashMap<>();
         result.put("message", cleanProfileName + " proxy marked " + proxyCapabilityLabel(youtube, pornhub));
+        result.put("profileName", cleanProfileName);
+        result.put("proxyKey", proxyKey);
+        result.put("supportsYoutube", proxyCapabilityValue(youtube));
+        result.put("supportsPornhub", proxyCapabilityValue(pornhub));
         return result;
     }
 
@@ -1496,12 +1505,57 @@ $procs.Count
     }
 
     private Map<String, ProxyCapability> readProxyCapabilities() throws Exception {
-        Map<String, ProxyCapability> capabilities = new LinkedHashMap<>();
+        Map<String, ProxyCapability> capabilities = readProxyCapabilitiesFromDatabase();
+        if (!capabilities.isEmpty()) {
+            return capabilities;
+        }
+
         Path file = proxyCapabilitiesFile();
         if (!Files.isRegularFile(file)) {
             return capabilities;
         }
-        for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+        capabilities = parseProxyCapabilitiesContent(Files.readString(file, StandardCharsets.UTF_8));
+        if (!capabilities.isEmpty()) {
+            writeProxyCapabilitiesToDatabase(capabilities);
+        }
+        return capabilities;
+    }
+
+    private void writeProxyCapabilities(Map<String, ProxyCapability> capabilities) throws Exception {
+        writeProxyCapabilitiesToDatabase(capabilities);
+        writeProxyCapabilitiesFile(capabilities);
+    }
+
+    private Map<String, ProxyCapability> readProxyCapabilitiesFromDatabase() {
+        Map<String, ProxyCapability> capabilities = new LinkedHashMap<>();
+        for (ProxyCapabilityEntity entity : proxyCapabilityRepository.findAll()) {
+            if (entity.getProxyHost() == null || entity.getProxyHost().isBlank()) {
+                continue;
+            }
+            capabilities.put(entity.getProxyHost().trim().toLowerCase(), new ProxyCapability(entity.getYoutube(), entity.getPornhub()));
+        }
+        return capabilities;
+    }
+
+    private void writeProxyCapabilitiesToDatabase(Map<String, ProxyCapability> capabilities) {
+        List<ProxyCapabilityEntity> entities = new ArrayList<>();
+        for (Map.Entry<String, ProxyCapability> entry : capabilities.entrySet()) {
+            if (entry.getKey() == null || entry.getKey().isBlank()) {
+                continue;
+            }
+            ProxyCapability capability = entry.getValue();
+            entities.add(new ProxyCapabilityEntity(entry.getKey().trim().toLowerCase(), capability.youtube(), capability.pornhub()));
+        }
+        proxyCapabilityRepository.deleteAll();
+        proxyCapabilityRepository.saveAll(entities);
+    }
+
+    private Map<String, ProxyCapability> parseProxyCapabilitiesContent(String content) {
+        Map<String, ProxyCapability> capabilities = new LinkedHashMap<>();
+        if (content == null) {
+            return capabilities;
+        }
+        for (String line : content.split("\\R")) {
             String trimmed = line.trim();
             if (trimmed.isBlank() || trimmed.startsWith("#")) {
                 continue;
@@ -1515,9 +1569,7 @@ $procs.Count
         return capabilities;
     }
 
-    private void writeProxyCapabilities(Map<String, ProxyCapability> capabilities) throws Exception {
-        Path file = proxyCapabilitiesFile();
-        Files.createDirectories(file.getParent());
+    private String proxyCapabilitiesContent(Map<String, ProxyCapability> capabilities) {
         List<String> lines = new ArrayList<>();
         lines.add("# proxy-host\tyoutube\tpornhub");
         for (Map.Entry<String, ProxyCapability> entry : capabilities.entrySet()) {
@@ -1527,8 +1579,14 @@ $procs.Count
             ProxyCapability capability = entry.getValue();
             lines.add(entry.getKey().trim().toLowerCase() + "\t" + proxyCapabilityValue(capability.youtube()) + "\t" + proxyCapabilityValue(capability.pornhub()));
         }
+        return String.join("\n", lines) + "\n";
+    }
+
+    private void writeProxyCapabilitiesFile(Map<String, ProxyCapability> capabilities) throws Exception {
+        Path file = proxyCapabilitiesFile();
+        Files.createDirectories(file.getParent());
         Path tempFile = file.resolveSibling(file.getFileName() + ".tmp");
-        Files.writeString(tempFile, String.join("\n", lines) + "\n", StandardCharsets.UTF_8);
+        Files.writeString(tempFile, proxyCapabilitiesContent(capabilities), StandardCharsets.UTF_8);
         try {
             Files.move(tempFile, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } catch (AtomicMoveNotSupportedException ex) {

@@ -265,6 +265,14 @@ export interface ChromeProfileSummary {
   lastMode?: string;
 }
 
+export interface ChromeProfileProxyCapabilityUpdate {
+  message?: string;
+  profileName?: string;
+  proxyKey?: string;
+  supportsYoutube?: boolean | string;
+  supportsPornhub?: boolean | string;
+}
+
 export interface ChromeProfilesLaunchRequest {
   minDelaySeconds: number;
   maxDelaySeconds: number;
