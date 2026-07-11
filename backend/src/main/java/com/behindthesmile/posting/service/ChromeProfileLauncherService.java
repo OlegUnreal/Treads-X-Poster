@@ -53,6 +53,7 @@ public class ChromeProfileLauncherService {
             .connectTimeout(DEVTOOLS_STATUS_TIMEOUT)
             .build();
     private final Object urlCheckLock = new Object();
+    private final Object launcherLock = new Object();
     private final ProxyCapabilityRepository proxyCapabilityRepository;
     private final RuntimeTextConfigRepository runtimeTextConfigRepository;
     private final ChromeProfileProxySettingRepository chromeProfileProxySettingRepository;
@@ -67,6 +68,7 @@ public class ChromeProfileLauncherService {
             "results", List.of()
     );
     private ExecutorService activeUrlCheckExecutor;
+    private Process activeLauncherProcess;
 
     public ChromeProfileLauncherService(
             ProxyCapabilityRepository proxyCapabilityRepository,
@@ -79,6 +81,7 @@ public class ChromeProfileLauncherService {
     }
 
     public Map<String, Object> startAll(ChromeProfilesLaunchRequest request) throws Exception {
+        cancelActiveLaunch();
         if (isWindows()) {
             return startWindowsProfiles(request);
         }
@@ -128,6 +131,7 @@ public class ChromeProfileLauncherService {
         processBuilder.environment().put("VIDEO_QUALITY", cleanVideoQuality(request == null ? null : request.videoQuality()));
 
         Process process = processBuilder.start();
+        rememberLauncherProcess(process);
         return waitForStart(process, minDelay, maxDelay, profileCount, launchUrl, selectedProfiles);
     }
 
@@ -197,7 +201,7 @@ public class ChromeProfileLauncherService {
                 .directory(repoRoot().toFile())
                 .redirectOutput(logFile.toFile())
                 .redirectErrorStream(true);
-        processBuilder.start();
+        rememberLauncherProcess(processBuilder.start());
 
         lastStartedAt = Instant.now();
         Map<String, Object> result = status();
@@ -368,6 +372,9 @@ public class ChromeProfileLauncherService {
         if (!List.of("open", "restart", "close").contains(action)) {
             throw new IllegalArgumentException("Unsupported bulk action: " + action);
         }
+        if ("restart".equals(action) || "close".equals(action)) {
+            cancelActiveLaunch();
+        }
 
         List<Map<String, String>> currentProfiles = readProfiles();
         List<String> selectedProfiles = selectedProfiles(request.profileNames(), currentProfiles);
@@ -433,6 +440,38 @@ public class ChromeProfileLauncherService {
             result = startAll(launchRequest);
             result.put("message", ("restart".equals(action) ? "Restarted " : "Opened ") + profilesToOpen.size() + " checked profile(s).");
         }
+        result.put("profileResults", profileResults);
+        return result;
+    }
+
+    public Map<String, Object> stopLaunch() throws Exception {
+        cancelActiveLaunch();
+        Map<String, Object> result = status();
+        result.put("message", "Profile launch queue stopped.");
+        return result;
+    }
+
+    public Map<String, Object> closeAllProfiles() throws Exception {
+        cancelActiveLaunch();
+        List<Map<String, String>> profiles = readProfiles();
+        int closed = 0;
+        List<Map<String, Object>> profileResults = new ArrayList<>();
+        for (Map<String, String> profile : profiles) {
+            String profileName = profile.getOrDefault("name", "").trim();
+            if (profileName.isBlank()) {
+                continue;
+            }
+            int closedForProfile = closeProfileProcesses(profileName);
+            closed += closedForProfile;
+            profileResults.add(profileActionResult(
+                    profileName,
+                    closedForProfile > 0 ? "closed" : "not_running",
+                    closedForProfile > 0 ? "Closed" : "Was not running"
+            ));
+        }
+        Map<String, Object> result = status();
+        result.put("message", closed > 0 ? "Closed all running profiles." : "No running profiles found.");
+        result.put("closedProcessCount", closed);
         result.put("profileResults", profileResults);
         return result;
     }
@@ -1198,11 +1237,71 @@ $procs.Count
             return parseInt(output.trim(), 0);
         }
         String quoted = profileDir(profileName).toString().replace("'", "'\\''");
-        Process process = new ProcessBuilder("bash", "-lc", "pkill -f -- '--user-data-dir=" + quoted + "'; true")
+        Process process = new ProcessBuilder("bash", "-lc", """
+profile_dir='__PROFILE_DIR__'
+pids="$(ps -eo pid=,comm=,args= | awk '$2 ~ /(chrome|chromium)/ {print}' | grep -F -- "--user-data-dir=$profile_dir" | awk '{print $1}' || true)"
+if [ -z "$pids" ]; then
+  echo 0
+  exit 0
+fi
+echo "$pids" | xargs -r kill -9
+echo "$pids" | wc -l
+""".replace("__PROFILE_DIR__", quoted))
                 .redirectErrorStream(true)
                 .start();
         process.waitFor(5, TimeUnit.SECONDS);
-        return 0;
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+        return parseInt(output, 0);
+    }
+
+    private void rememberLauncherProcess(Process process) {
+        synchronized (launcherLock) {
+            activeLauncherProcess = process;
+        }
+    }
+
+    private void cancelActiveLaunch() throws Exception {
+        synchronized (launcherLock) {
+            if (activeLauncherProcess != null && activeLauncherProcess.isAlive()) {
+                activeLauncherProcess.destroyForcibly();
+            }
+            activeLauncherProcess = null;
+        }
+        killLauncherScripts();
+    }
+
+    private void killLauncherScripts() throws Exception {
+        if (isWindows()) {
+            String scriptPath = escapePowerShellSingleQuoted(startScript().toString());
+            runPowerShell("""
+$ErrorActionPreference = 'SilentlyContinue'
+$scriptPath = '__SCRIPT_PATH__'
+$procs = @(Get-CimInstance Win32_Process | Where-Object {
+  $_.CommandLine -and (
+    $_.CommandLine -like "*$scriptPath*" -or
+    ($_.CommandLine -like "*start-local-chrome-profiles.ps1*" -and $_.CommandLine -like "*chrome-proxy-profiles*")
+  )
+})
+foreach ($item in $procs) { Stop-Process -Id $item.ProcessId -Force -ErrorAction SilentlyContinue }
+$procs.Count
+""".replace("__SCRIPT_PATH__", scriptPath));
+            return;
+        }
+        Process process = new ProcessBuilder(
+                "bash",
+                "-lc",
+                """
+self="$$"
+pids="$(ps -eo pid=,args= | grep -E 'start-all\\.sh|start-local-chrome-profiles\\.ps1|start-profiles\\.ps1' | awk -v self="$self" '$1 != self {print $1}' || true)"
+if [ -n "$pids" ]; then
+  echo "$pids" | xargs -r kill -9
+fi
+true
+"""
+        )
+                .redirectErrorStream(true)
+                .start();
+        process.waitFor(5, TimeUnit.SECONDS);
     }
 
     private String runPowerShell(String script) throws Exception {

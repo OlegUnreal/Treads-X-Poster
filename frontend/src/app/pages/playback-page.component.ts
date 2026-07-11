@@ -60,6 +60,7 @@ import { DashboardService } from '../services/dashboard.service';
         <div class="secondary-actions">
           <button class="btn btn-outline-secondary btn-sm" type="button" [disabled]="profilesBusy" (click)="refreshProfilesStatus()">Refresh</button>
           <button class="btn btn-outline-secondary btn-sm" type="button" [disabled]="busy" (click)="stop()">Stop playback</button>
+          <button class="btn btn-outline-danger btn-sm" type="button" [disabled]="busy" (click)="closeAllProfiles()">Close all</button>
           <button class="btn btn-outline-success btn-sm" type="button" [disabled]="profilesBusy" (click)="openLoginQueue()">Login setup</button>
           <button class="btn btn-outline-secondary btn-sm" type="button" (click)="showAdvanced = !showAdvanced">
             {{ showAdvanced ? 'Hide advanced' : 'Advanced' }}
@@ -493,17 +494,47 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
 
   protected stop(): void {
     this.busy = true;
-    this.dashboardService.stopYoutube().subscribe({
+    this.dashboardService.stopChromeProfileLaunch().subscribe({
+      next: (profileStatus) => {
+        this.profilesStatus = profileStatus;
+        this.dashboardService.stopYoutube().subscribe({
+          next: (status) => {
+            this.status = status;
+            this.message = 'Playback and pending profile launches stopped.';
+            this.error = false;
+            this.busy = false;
+          },
+          error: (error) => {
+            this.message = this.errorMessage(error, 'Profile launch stopped, but playback stop failed.');
+            this.error = true;
+            this.busy = false;
+          }
+        });
+      },
+      error: (error) => {
+        this.message = this.errorMessage(error, 'Could not stop pending profile launches.');
+        this.error = true;
+        this.busy = false;
+      }
+    });
+  }
+
+  protected closeAllProfiles(): void {
+    this.busy = true;
+    this.error = false;
+    this.message = 'Closing all Chrome profiles...';
+    this.dashboardService.closeAllChromeProfiles().subscribe({
       next: (status) => {
-        this.status = status;
-        this.message = 'Playback stopped.';
+        this.profilesStatus = status;
+        this.message = status.message || 'Closed all Chrome profiles.';
         this.error = false;
         this.busy = false;
       },
       error: (error) => {
-        this.message = this.errorMessage(error, 'Could not stop playback.');
+        this.message = this.errorMessage(error, 'Could not close Chrome profiles.');
         this.error = true;
         this.busy = false;
+        this.loadProfilesDiagnostics('message', this.message);
       }
     });
   }

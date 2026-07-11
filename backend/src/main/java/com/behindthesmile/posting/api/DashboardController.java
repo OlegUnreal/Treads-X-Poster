@@ -312,6 +312,16 @@ public class DashboardController {
         return chromeProfileLauncherService.startAll(request);
     }
 
+    @PostMapping("/actions/chrome-profiles/stop-launch")
+    public Map<String, Object> stopChromeProfileLaunch() throws Exception {
+        return chromeProfileLauncherService.stopLaunch();
+    }
+
+    @PostMapping("/actions/chrome-profiles/close-all")
+    public Map<String, Object> closeAllChromeProfiles() throws Exception {
+        return chromeProfileLauncherService.closeAllProfiles();
+    }
+
     @GetMapping("/actions/chrome-profiles/status")
     public Map<String, Object> chromeProfileStatus() throws Exception {
         return chromeProfileLauncherService.status();

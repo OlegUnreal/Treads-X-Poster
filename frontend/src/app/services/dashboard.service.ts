@@ -226,6 +226,14 @@ export class DashboardService {
     return this.http.post<ChromeProfilesStatus>(`${API_BASE_URL}/actions/chrome-profiles/start-all`, request);
   }
 
+  stopChromeProfileLaunch(): Observable<ChromeProfilesStatus> {
+    return this.http.post<ChromeProfilesStatus>(`${API_BASE_URL}/actions/chrome-profiles/stop-launch`, {});
+  }
+
+  closeAllChromeProfiles(): Observable<ChromeProfilesStatus> {
+    return this.http.post<ChromeProfilesStatus>(`${API_BASE_URL}/actions/chrome-profiles/close-all`, {});
+  }
+
   getChromeProfilesStatus(): Observable<ChromeProfilesStatus> {
     return this.http.get<ChromeProfilesStatus>(`${API_BASE_URL}/actions/chrome-profiles/status`);
   }
