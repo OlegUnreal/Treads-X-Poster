@@ -7,9 +7,9 @@ const path = require('path');
 
 const repoRoot = path.resolve(__dirname, '..', '..');
 const resourcesRoot = app.isPackaged ? process.resourcesPath : repoRoot;
-const backendDir = app.isPackaged ? path.join(resourcesRoot, 'backend') : path.join(repoRoot, 'backend');
+const backendDir = app.isPackaged ? path.join(resourcesRoot, 'windows-agent') : path.join(repoRoot, 'windows-agent');
 const backendJar = app.isPackaged
-  ? path.join(resourcesRoot, 'backend', 'app.jar')
+  ? path.join(resourcesRoot, 'windows-agent', 'app.jar')
   : path.join(backendDir, 'target', 'app.jar');
 const frontendDist = app.isPackaged
   ? path.join(resourcesRoot, 'frontend')
@@ -28,7 +28,7 @@ const profilesRuntimeDir = path.join(app.getPath('home'), 'chrome-proxy-profiles
 const profilesEnvFile = path.join(profilesRuntimeDir, 'profiles.env');
 const proxyCapabilitiesFile = path.join(profilesRuntimeDir, 'proxy-capabilities.tsv');
 const appRuntimeRoot = path.join(profilesRuntimeDir, 'app');
-const backendPidFile = path.join(profilesRuntimeDir, 'behind-the-smile-backend.pid');
+const backendPidFile = path.join(profilesRuntimeDir, 'behind-the-smile-agent.pid');
 const startupLogFile = path.join(profilesRuntimeDir, 'behind-the-smile-startup.log');
 const backendStdoutLogFile = path.join(profilesRuntimeDir, 'behind-the-smile-backend.out.log');
 const backendStderrLogFile = path.join(profilesRuntimeDir, 'behind-the-smile-backend.err.log');
@@ -459,7 +459,6 @@ function startBackend() {
     PATH: [...runtimePathEntries, process.env.PATH || ''].filter(Boolean).join(path.delimiter),
     DATA_DIR: path.join(app.getPath('userData'), 'data'),
     MEDIA_DIR: path.join(app.getPath('userData'), 'data', 'media'),
-    CONTENT_PLAN_FILE: path.join(resourcesRoot, 'backend', 'config', 'content-plan.json'),
     PUBLIC_BASE_URL: `http://127.0.0.1:${frontendPort}`
   };
 
@@ -516,9 +515,9 @@ function readFileTail(filePath, maxBytes = 5000) {
 
 function startupDiagnostics() {
   const details = [
-    `Backend jar: ${backendJar} (${fs.existsSync(backendJar) ? 'exists' : 'missing'})`,
+    `Agent jar: ${backendJar} (${fs.existsSync(backendJar) ? 'exists' : 'missing'})`,
     `Bundled Java: ${bundledJava} (${fs.existsSync(bundledJava) ? 'exists' : 'missing'})`,
-    `Backend port: ${backendPort}`,
+    `Agent port: ${backendPort}`,
     `Startup log: ${startupLogFile}`,
     `Backend stderr: ${backendStderrLogFile}`,
     readFileTail(backendStderrLogFile),
@@ -601,7 +600,7 @@ if (Test-Path -LiteralPath $pidFile) {
   }
 }
 Get-CimInstance Win32_Process -Filter "name = 'java.exe' or name = 'javaw.exe'" |
-  Where-Object { $_.ProcessId -ne $PID -and $_.ProcessId -ne $currentAppPid -and ($_.CommandLine -match '[\\\\/]backend[\\\\/]app\\.jar' -or $_.CommandLine -match 'social-posting.*\\.jar') } |
+  Where-Object { $_.ProcessId -ne $PID -and $_.ProcessId -ne $currentAppPid -and ($_.CommandLine -match '[\\\\/]windows-agent[\\\\/]app\\.jar' -or $_.CommandLine -match 'windows-agent.*\\.jar') } |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 Start-Sleep -Milliseconds 700
 `;

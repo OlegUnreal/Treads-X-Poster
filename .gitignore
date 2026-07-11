@@ -4,6 +4,7 @@ generated/
 data/
 *.log
 backend/target/
+windows-agent/target/
 frontend/dist/
 frontend/release/
 frontend/runtime/

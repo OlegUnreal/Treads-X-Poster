@@ -51,12 +51,8 @@
         ]
       },
       {
-        "from": "../backend/target/app.jar",
-        "to": "backend/app.jar"
-      },
-      {
-        "from": "../backend/config/content-plan.json",
-        "to": "backend/config/content-plan.json"
+        "from": "../windows-agent/target/app.jar",
+        "to": "windows-agent/app.jar"
       },
       {
         "from": "../scripts/start-local-chrome-profiles.ps1",

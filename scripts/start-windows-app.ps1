@@ -6,10 +6,10 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $frontendDir = Join-Path $repoRoot "frontend"
-$backendDir = Join-Path $repoRoot "backend"
+$agentDir = Join-Path $repoRoot "windows-agent"
 
 if (-not $SkipBuild) {
-    mvn -f (Join-Path $backendDir "pom.xml") package -DskipTests
+    mvn -f (Join-Path $agentDir "pom.xml") package -DskipTests
 
     Push-Location $frontendDir
     try {
@@ -24,15 +24,15 @@ if (-not $SkipBuild) {
     }
 }
 
-$jar = Get-ChildItem -Path (Join-Path $backendDir "target") -Filter "*.jar" |
+$jar = Get-ChildItem -Path (Join-Path $agentDir "target") -Filter "*.jar" |
     Where-Object { $_.Name -notlike "*sources.jar" -and $_.Name -notlike "*javadoc.jar" } |
     Select-Object -First 1
 
 if (-not $jar) {
-    throw "Backend jar was not found. Run without -SkipBuild first."
+    throw "Windows agent jar was not found. Run without -SkipBuild first."
 }
 
-Copy-Item -LiteralPath $jar.FullName -Destination (Join-Path $backendDir "target\app.jar") -Force
+Copy-Item -LiteralPath $jar.FullName -Destination (Join-Path $agentDir "target\app.jar") -Force
 
 Push-Location $frontendDir
 try {

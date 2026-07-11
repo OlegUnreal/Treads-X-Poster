@@ -8,7 +8,7 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $frontendDir = Join-Path $repoRoot "frontend"
-$backendDir = Join-Path $repoRoot "backend"
+$agentDir = Join-Path $repoRoot "windows-agent"
 $chromeRuntimeDir = Join-Path $env:USERPROFILE "chrome-proxy-profiles"
 
 function Invoke-Step {
@@ -56,8 +56,8 @@ try {
         git pull --ff-only
     }
 
-    Invoke-Step "Building backend" {
-        mvn -f (Join-Path $backendDir "pom.xml") package -DskipTests
+    Invoke-Step "Building Windows agent" {
+        mvn -f (Join-Path $agentDir "pom.xml") package -DskipTests
     }
 
     Invoke-Step "Building frontend" {
@@ -76,15 +76,15 @@ try {
         }
     }
 
-    Invoke-Step "Updating backend app.jar" {
-        $jar = Get-ChildItem -Path (Join-Path $backendDir "target") -Filter "*.jar" |
+    Invoke-Step "Updating Windows agent app.jar" {
+        $jar = Get-ChildItem -Path (Join-Path $agentDir "target") -Filter "*.jar" |
             Where-Object { $_.Name -ne "app.jar" -and $_.Name -notlike "*.original" -and $_.Name -notlike "*sources.jar" -and $_.Name -notlike "*javadoc.jar" } |
             Select-Object -First 1
         if (-not $jar) {
-            throw "Backend jar was not found."
+            throw "Windows agent jar was not found."
         }
-        Copy-Item -LiteralPath $jar.FullName -Destination (Join-Path $backendDir "target\app.jar") -Force
-        Write-Host "Updated backend\target\app.jar"
+        Copy-Item -LiteralPath $jar.FullName -Destination (Join-Path $agentDir "target\app.jar") -Force
+        Write-Host "Updated windows-agent\target\app.jar"
     }
 
     if ($BuildExe) {
