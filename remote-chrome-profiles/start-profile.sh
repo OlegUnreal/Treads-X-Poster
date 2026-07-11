@@ -88,6 +88,32 @@ EOF
   URL="file://$HOME_FILE"
 fi
 
+apply_video_quality() {
+  local url="$1"
+  local quality="${VIDEO_QUALITY:-auto}"
+  if [[ -z "$quality" || "$quality" == "auto" ]]; then
+    printf '%s\n' "$url"
+    return 0
+  fi
+  python3 - "$url" "$quality" <<'PY'
+import sys
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
+url, quality = sys.argv[1], sys.argv[2]
+parsed = urlparse(url)
+host = (parsed.hostname or "").lower()
+if host != "youtube.com" and not host.endswith(".youtube.com") and host != "youtu.be" and not host.endswith(".youtu.be"):
+    print(url)
+    raise SystemExit
+
+query = [(key, value) for key, value in parse_qsl(parsed.query, keep_blank_values=True) if key.lower() != "vq"]
+query.append(("vq", quality))
+print(urlunparse(parsed._replace(query=urlencode(query))))
+PY
+}
+
+URL="$(apply_video_quality "$URL")"
+
 if [[ "$PROXY" == http://127.0.0.1:* && -n "$UPSTREAM_PROXY" ]]; then
   LISTEN="${PROXY#http://}"
   LOG_SAFE_UPSTREAM="$(echo "$UPSTREAM_PROXY" | sed -E 's#(https?://)[^:@/]+:[^@/]+@#\1***:***@#')"

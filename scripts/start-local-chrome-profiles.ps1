@@ -5,7 +5,8 @@ param(
     [int]$DelayFrom = 0,
     [int]$DelayTo = 0,
     [string]$RuntimeDir = "$env:USERPROFILE\chrome-proxy-profiles",
-    [string]$ChromePath = "C:\Program Files\Google\Chrome\Application\chrome.exe"
+    [string]$ChromePath = "C:\Program Files\Google\Chrome\Application\chrome.exe",
+    [string]$VideoQuality = "auto"
 )
 
 $ErrorActionPreference = "Stop"
@@ -135,6 +136,42 @@ function Should-UseIncognito {
     return $false
 }
 
+function Add-VideoQualityToUrl {
+    param(
+        [string]$LaunchUrl,
+        [string]$Quality
+    )
+    if (-not $LaunchUrl -or -not $Quality -or $Quality -eq "auto") {
+        return $LaunchUrl
+    }
+    try {
+        $uri = [Uri]$LaunchUrl
+        $host = $uri.Host.ToLowerInvariant()
+        if ($host -ne "youtube.com" -and -not $host.EndsWith(".youtube.com") -and $host -ne "youtu.be" -and -not $host.EndsWith(".youtu.be")) {
+            return $LaunchUrl
+        }
+        $pairs = @()
+        $rawQuery = $uri.Query.TrimStart("?")
+        if ($rawQuery) {
+            foreach ($part in ($rawQuery -split "&")) {
+                if (-not $part) {
+                    continue
+                }
+                $key = ($part -split "=", 2)[0]
+                if ($key -and [Uri]::UnescapeDataString($key).ToLowerInvariant() -ne "vq") {
+                    $pairs += $part
+                }
+            }
+        }
+        $pairs += "vq=$([Uri]::EscapeDataString($Quality))"
+        $builder = [UriBuilder]$uri
+        $builder.Query = ($pairs -join "&")
+        return $builder.Uri.AbsoluteUri
+    } catch {
+        return $LaunchUrl
+    }
+}
+
 if (-not (Test-Path -LiteralPath $ChromePath)) {
     throw "Chrome was not found: $ChromePath"
 }
@@ -198,6 +235,7 @@ foreach ($profileName in $selectedProfiles) {
     if ($launchUrl -eq "profile-home") {
         $launchUrl = New-ProfileHome -ProfileName $profileName -Proxy $proxy -Upstream $upstream
     }
+    $launchUrl = Add-VideoQualityToUrl -LaunchUrl $launchUrl -Quality $VideoQuality
 
     $position = $profileEnv["WINDOW_POSITION_$profileName"]
     $chromeArgs = @(
