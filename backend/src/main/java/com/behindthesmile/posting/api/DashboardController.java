@@ -3,6 +3,7 @@ package com.behindthesmile.posting.api;
 import com.behindthesmile.posting.model.QueuedPost;
 import com.behindthesmile.posting.service.AppPathService;
 import com.behindthesmile.posting.service.ChromeProfileLauncherService;
+import com.behindthesmile.posting.service.ProxyInventoryService;
 import com.behindthesmile.posting.service.SocialPostingService;
 import com.behindthesmile.posting.service.YoutubePlaybackService;
 import org.springframework.http.MediaType;
@@ -36,19 +37,22 @@ public class DashboardController {
     private final AppPathService appPathService;
     private final YoutubePlaybackService youtubePlaybackService;
     private final ChromeProfileLauncherService chromeProfileLauncherService;
+    private final ProxyInventoryService proxyInventoryService;
 
     public DashboardController(
             SocialPostingService socialPostingService,
             com.behindthesmile.posting.service.PostingJobService postingJobService,
             AppPathService appPathService,
             YoutubePlaybackService youtubePlaybackService,
-            ChromeProfileLauncherService chromeProfileLauncherService
+            ChromeProfileLauncherService chromeProfileLauncherService,
+            ProxyInventoryService proxyInventoryService
     ) {
         this.socialPostingService = socialPostingService;
         this.postingJobService = postingJobService;
         this.appPathService = appPathService;
         this.youtubePlaybackService = youtubePlaybackService;
         this.chromeProfileLauncherService = chromeProfileLauncherService;
+        this.proxyInventoryService = proxyInventoryService;
     }
 
     @GetMapping("/health")
@@ -376,6 +380,27 @@ public class DashboardController {
             return ResponseEntity.status(403).body(Map.of("error", "Forbidden"));
         }
         return ResponseEntity.ok(chromeProfileLauncherService.updateProxyCapabilitiesContent(content));
+    }
+
+    @GetMapping("/actions/chrome-profiles/proxies")
+    public ResponseEntity<Map<String, Object>> chromeProfileProxies(
+            @RequestHeader(value = "X-Profiles-Env-Token", required = false) String token
+    ) {
+        if (!profilesEnvTokenAllowed(token, "PROFILES_ENV_DOWNLOAD_TOKEN")) {
+            return ResponseEntity.status(403).body(Map.of("error", "Forbidden"));
+        }
+        return ResponseEntity.ok(proxyInventoryService.listProxies());
+    }
+
+    @PostMapping("/actions/chrome-profiles/proxies")
+    public ResponseEntity<Map<String, Object>> importChromeProfileProxies(
+            @RequestHeader(value = "X-Profiles-Env-Token", required = false) String token,
+            @RequestBody ProxyImportRequest request
+    ) {
+        if (!profilesEnvTokenAllowed(token, "PROFILES_ENV_UPLOAD_TOKEN")) {
+            return ResponseEntity.status(403).body(Map.of("error", "Forbidden"));
+        }
+        return ResponseEntity.ok(proxyInventoryService.importProxies(request));
     }
 
     private boolean profilesEnvTokenAllowed(String token, String envName) {
