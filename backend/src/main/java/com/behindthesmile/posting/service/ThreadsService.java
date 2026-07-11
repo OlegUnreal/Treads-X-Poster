@@ -1,6 +1,7 @@
 package com.behindthesmile.posting.service;
 
 import com.behindthesmile.posting.config.AppProperties;
+import com.behindthesmile.posting.api.ThreadsProfileLookupResponse;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
@@ -94,6 +95,26 @@ public class ThreadsService {
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    public ThreadsProfileLookupResponse lookupProfile(String accessToken, String userId)
+            throws IOException, InterruptedException, URISyntaxException {
+        String resolvedAccessToken = requireValue(accessToken, "Threads access token");
+        String resolvedUserId = requireValue(userId, "Threads user ID");
+        JsonNode payload = readUserProfile(resolvedAccessToken, resolvedUserId);
+        String username = textValue(payload, "username");
+        String name = textValue(payload, "name");
+        String profilePictureUrl = textValue(payload, "threads_profile_picture_url");
+        String label = null;
+        if (username != null && !username.isBlank()) {
+            label = username.startsWith("@") ? username : "@" + username;
+        } else if (name != null && !name.isBlank()) {
+            label = name;
+        }
+        if (label == null || label.isBlank()) {
+            throw new IllegalStateException("Threads profile lookup did not return username or name.");
+        }
+        return new ThreadsProfileLookupResponse(username, name, label, profilePictureUrl);
     }
 
     private String createTextContainer(String accessToken, String userId, String text) throws IOException, InterruptedException {
