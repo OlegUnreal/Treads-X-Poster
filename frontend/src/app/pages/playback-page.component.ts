@@ -33,17 +33,8 @@ import { DashboardService } from '../services/dashboard.service';
             <label class="field mode-field">
               <span>Mode</span>
               <select class="form-select form-select-lg" [(ngModel)]="launchMode" (ngModelChange)="applyLaunchMode()">
-                <option value="youtube">YouTube</option>
-                <option value="pornhub">Pornhub</option>
-                <option value="any">Any</option>
-              </select>
-            </label>
-            <label class="field delay-field">
-              <span>Delay</span>
-              <select class="form-select form-select-lg" [(ngModel)]="delayPreset" (ngModelChange)="applyDelayPreset()">
-                <option value="auto">Auto</option>
-                <option value="slow">Slow</option>
-                <option value="manual">Manual</option>
+                <option value="youtube">YT</option>
+                <option value="pornhub">PH</option>
               </select>
             </label>
           </div>
@@ -114,7 +105,6 @@ import { DashboardService } from '../services/dashboard.service';
             <button class="btn btn-outline-danger btn-sm" type="button" [disabled]="busy || !checkedProfileNames().length" (click)="closeCheckedProfiles()">
               Close checked
             </button>
-            <a class="btn btn-outline-secondary btn-sm" href="/api/actions/youtube/screenshot" target="_blank" rel="noopener">Screenshot</a>
             <button class="btn btn-outline-secondary btn-sm" type="button" [disabled]="updateBusy" (click)="checkForUpdates()">
               {{ updateBusy ? 'Checking update...' : 'Check update' }}
             </button>
@@ -198,10 +188,32 @@ import { DashboardService } from '../services/dashboard.service';
                 <button class="btn btn-outline-secondary btn-sm" type="button" [disabled]="busyLoginStatusName === profile.name" (click)="setLoginStatus(profile.name, !isLoggedIn(profile))">
                   {{ isLoggedIn(profile) ? 'Mark not logged in' : 'Mark logged in' }}
                 </button>
-                <button class="btn btn-outline-success btn-sm" type="button" [disabled]="busyProxyCapabilityName === profile.name || !profile.proxyKey" (click)="setProxyCapability(profile, 'youtube', true)">YT ok</button>
-                <button class="btn btn-outline-danger btn-sm" type="button" [disabled]="busyProxyCapabilityName === profile.name || !profile.proxyKey" (click)="setProxyCapability(profile, 'youtube', false)">YT no</button>
-                <button class="btn btn-outline-success btn-sm" type="button" [disabled]="busyProxyCapabilityName === profile.name || !profile.proxyKey" (click)="setProxyCapability(profile, 'pornhub', true)">PH ok</button>
-                <button class="btn btn-outline-danger btn-sm" type="button" [disabled]="busyProxyCapabilityName === profile.name || !profile.proxyKey" (click)="setProxyCapability(profile, 'pornhub', false)">PH no</button>
+                <label class="capability-control">
+                  <span>YT</span>
+                  <select
+                    class="form-select form-select-sm"
+                    [disabled]="busyProxyCapabilityName === profile.name || !profile.proxyKey"
+                    [ngModel]="capabilitySelectValue(profile.supportsYoutube)"
+                    (ngModelChange)="setProxyCapability(profile, 'youtube', $event === 'true')"
+                  >
+                    <option value="" disabled>?</option>
+                    <option value="true">ok</option>
+                    <option value="false">no</option>
+                  </select>
+                </label>
+                <label class="capability-control">
+                  <span>PH</span>
+                  <select
+                    class="form-select form-select-sm"
+                    [disabled]="busyProxyCapabilityName === profile.name || !profile.proxyKey"
+                    [ngModel]="capabilitySelectValue(profile.supportsPornhub)"
+                    (ngModelChange)="setProxyCapability(profile, 'pornhub', $event === 'true')"
+                  >
+                    <option value="" disabled>?</option>
+                    <option value="true">ok</option>
+                    <option value="false">no</option>
+                  </select>
+                </label>
               </div>
             </div>
           </div>
@@ -238,8 +250,8 @@ import { DashboardService } from '../services/dashboard.service';
       box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
     }
     .field { display: grid; gap: 4px; }
-    .hero-control { display: grid; grid-template-columns: minmax(280px, 1fr) 330px 180px; gap: 12px; align-items: end; }
-    .quick-settings { display: grid; grid-template-columns: 86px 1fr 1fr; gap: 8px; }
+    .hero-control { display: grid; grid-template-columns: minmax(280px, 1fr) 190px 180px; gap: 12px; align-items: end; }
+    .quick-settings { display: grid; grid-template-columns: 86px 96px; gap: 8px; }
     .count-field input { text-align: center; }
     .primary-launch {
       min-height: 48px;
@@ -361,10 +373,21 @@ import { DashboardService } from '../services/dashboard.service';
       overflow-wrap: anywhere;
     }
     .detail-actions { display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
+    .capability-control {
+      min-height: 32px;
+      display: inline-grid;
+      grid-template-columns: 28px 76px;
+      align-items: center;
+      gap: 5px;
+      margin: 0;
+      color: #475569;
+      font: 800 11px/1 "Segoe UI", sans-serif;
+    }
+    .capability-control .form-select { min-height: 32px; padding-top: 4px; padding-bottom: 4px; font-weight: 800; }
     .log-tail { margin: 12px 0 0; max-height: 220px; overflow: auto; padding: 10px; border-radius: 10px; background: #0f172a; color: #dbeafe; font: 600 12px/1.45 Consolas, monospace; white-space: pre-wrap; }
     @media (max-width: 980px) {
       .hero-control, .settings-grid, .profile-row { grid-template-columns: 1fr; }
-      .quick-settings { grid-template-columns: 1fr 1fr 1fr; }
+      .quick-settings { grid-template-columns: 1fr 1fr; }
       .primary-launch, .secondary-actions .btn, .actions .btn, .profile-row-actions .btn { width: 100%; }
       .profile-row-actions, .detail-actions { justify-content: stretch; }
     }
@@ -407,8 +430,7 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
   protected requireYoutubeProxy = false;
   protected requirePornhubProxy = false;
   protected showAdvanced = false;
-  protected launchMode: 'youtube' | 'pornhub' | 'any' = 'youtube';
-  protected delayPreset: 'auto' | 'slow' | 'manual' = 'auto';
+  protected launchMode: 'youtube' | 'pornhub' = 'youtube';
   protected profileFilter: 'all' | 'running' | 'login' | 'proxy' = 'all';
   protected expandedProfileName = '';
   private bulkProgressTimer: ReturnType<typeof setTimeout> | null = null;
@@ -867,8 +889,18 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
     return '?';
   }
 
+  protected capabilitySelectValue(value?: boolean | string): string {
+    if (value === true || value === 'true') {
+      return 'true';
+    }
+    if (value === false || value === 'false') {
+      return 'false';
+    }
+    return '';
+  }
+
   protected filteredProfiles(): ChromeProfileSummary[] {
-    const profiles = this.profilesStatus?.profiles ?? [];
+    const profiles = this.modeEligibleProfiles();
     if (this.profileFilter === 'running') {
       return profiles.filter((profile) => this.isRunning(profile));
     }
@@ -897,35 +929,20 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
   protected applyLaunchMode(): void {
     this.requireYoutubeProxy = this.launchMode === 'youtube';
     this.requirePornhubProxy = this.launchMode === 'pornhub';
-    if (this.launchMode === 'any') {
-      this.requireYoutubeProxy = false;
-      this.requirePornhubProxy = false;
-    }
     this.clampProfileCount();
     this.saveLaunchSettings();
   }
 
-  protected applyDelayPreset(): void {
-    if (this.delayPreset === 'auto') {
-      this.profilesMinDelay = 20;
-      this.profilesMaxDelay = 90;
-    } else if (this.delayPreset === 'slow') {
-      this.profilesMinDelay = 45;
-      this.profilesMaxDelay = 180;
-    }
-    this.saveLaunchSettings();
-  }
-
   private syncLaunchModeFromFlags(): void {
-    if (this.requireYoutubeProxy && !this.requirePornhubProxy) {
-      this.launchMode = 'youtube';
-      return;
-    }
-    if (this.requirePornhubProxy && !this.requireYoutubeProxy) {
+    if (this.launchMode === 'pornhub' || (this.requirePornhubProxy && !this.requireYoutubeProxy)) {
       this.launchMode = 'pornhub';
+      this.requireYoutubeProxy = false;
+      this.requirePornhubProxy = true;
       return;
     }
-    this.launchMode = 'any';
+    this.launchMode = 'youtube';
+    this.requireYoutubeProxy = true;
+    this.requirePornhubProxy = false;
   }
 
   protected launchFilterLabel(): string {
@@ -1130,13 +1147,14 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
   }
 
   private launchEligibleProfiles(): ChromeProfileSummary[] {
+    return this.modeEligibleProfiles();
+  }
+
+  private modeEligibleProfiles(): ChromeProfileSummary[] {
     const profiles = this.profilesStatus?.profiles ?? [];
-    if (!this.requireYoutubeProxy && !this.requirePornhubProxy) {
-      return profiles;
-    }
     return profiles.filter((profile) =>
-      (!this.requireYoutubeProxy || !this.blocksYoutube(profile)) &&
-      (!this.requirePornhubProxy || !this.blocksPornhub(profile))
+      (this.launchMode === 'youtube' && !this.blocksYoutube(profile)) ||
+      (this.launchMode === 'pornhub' && !this.blocksPornhub(profile))
     );
   }
 
@@ -1198,15 +1216,13 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
         requireYoutubeProxy?: boolean;
         requirePornhubProxy?: boolean;
         launchMode?: 'youtube' | 'pornhub' | 'any';
-        delayPreset?: 'auto' | 'slow' | 'manual';
         profilesMinDelay?: number;
         profilesMaxDelay?: number;
       };
       this.refererHeader = settings.refererHeader ?? '';
       this.requireYoutubeProxy = Boolean(settings.requireYoutubeProxy);
       this.requirePornhubProxy = Boolean(settings.requirePornhubProxy);
-      this.launchMode = settings.launchMode ?? this.launchMode;
-      this.delayPreset = settings.delayPreset ?? this.delayPreset;
+      this.launchMode = settings.launchMode === 'pornhub' ? 'pornhub' : 'youtube';
       this.profilesMinDelay = settings.profilesMinDelay ?? this.profilesMinDelay;
       this.profilesMaxDelay = settings.profilesMaxDelay ?? this.profilesMaxDelay;
       if (settings.videoQuality && this.videoQualityOptions.some((option) => option.value === settings.videoQuality)) {
@@ -1226,7 +1242,6 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
         requireYoutubeProxy: this.requireYoutubeProxy,
         requirePornhubProxy: this.requirePornhubProxy,
         launchMode: this.launchMode,
-        delayPreset: this.delayPreset,
         profilesMinDelay: this.normalizedDelay(this.profilesMinDelay, 20),
         profilesMaxDelay: this.normalizedDelay(this.profilesMaxDelay, 90)
       }));
