@@ -13,83 +13,52 @@ import { DashboardService } from '../services/dashboard.service';
       <header class="page-head">
         <div>
           <p class="eyebrow">Playback</p>
-          <h1>Profiles</h1>
+          <h1>Behind The Smile Playback</h1>
         </div>
         <span class="mode-pill">{{ isYoutubeUrl() ? 'YouTube' : 'Website' }}</span>
       </header>
 
       <article class="panel">
-        <label class="field">
-          <span>Video or website URL</span>
-          <input class="form-control" [(ngModel)]="url" placeholder="https://example.com/video-page" />
-        </label>
-
-        <div class="slider-row" *ngIf="isYoutubeUrl()">
-          <label class="field">
-            <span>Play percent</span>
-            <input class="form-range" [(ngModel)]="percent" type="range" min="0" max="100" step="1" />
+        <div class="hero-control">
+          <label class="field url-field">
+            <span>Video or website URL</span>
+            <input class="form-control form-control-lg" [(ngModel)]="url" placeholder="https://youtube.com/watch?v=..." />
           </label>
-          <input class="form-control form-control-sm percent-input" [(ngModel)]="percent" type="number" min="0" max="100" />
-        </div>
 
-        <div class="settings-grid">
-          <label class="field">
-            <span>Referer header</span>
-            <input class="form-control form-control-sm" [(ngModel)]="refererHeader" placeholder="https://youtube.com/" />
-          </label>
-          <label class="field">
-            <span>Video quality</span>
-            <select class="form-select form-select-sm" [(ngModel)]="videoQuality">
-              <option *ngFor="let option of videoQualityOptions" [ngValue]="option.value">{{ option.label }}</option>
-            </select>
-          </label>
-        </div>
+          <div class="quick-settings">
+            <label class="field count-field">
+              <span>Profiles</span>
+              <input class="form-control form-control-lg" [(ngModel)]="profileCount" type="number" min="1" [max]="maxProfileCount()" />
+            </label>
+            <label class="field mode-field">
+              <span>Mode</span>
+              <select class="form-select form-select-lg" [(ngModel)]="launchMode" (ngModelChange)="applyLaunchMode()">
+                <option value="youtube">YouTube</option>
+                <option value="pornhub">Pornhub</option>
+                <option value="any">Any</option>
+              </select>
+            </label>
+            <label class="field delay-field">
+              <span>Delay</span>
+              <select class="form-select form-select-lg" [(ngModel)]="delayPreset" (ngModelChange)="applyDelayPreset()">
+                <option value="auto">Auto</option>
+                <option value="slow">Slow</option>
+                <option value="manual">Manual</option>
+              </select>
+            </label>
+          </div>
 
-        <div class="actions">
-          <button class="btn btn-primary btn-sm" type="button" [disabled]="busy" (click)="play()">
-            {{ busy ? 'Opening...' : 'Open and play' }}
-          </button>
-          <button class="btn btn-outline-primary btn-sm" type="button" [disabled]="checkBusy" (click)="checkUrl()">
-            {{ checkBusy ? 'Checking...' : 'Check URL' }}
-          </button>
-          <button class="btn btn-outline-success btn-sm" type="button" [disabled]="busy || !checkedProfileNames().length" (click)="openCheckedProfiles()">
-            Open checked
-          </button>
-          <button class="btn btn-outline-warning btn-sm" type="button" [disabled]="busy || !checkedProfileNames().length" (click)="restartCheckedProfiles()">
-            Restart checked
-          </button>
-          <button class="btn btn-outline-danger btn-sm" type="button" [disabled]="busy || !checkedProfileNames().length" (click)="closeCheckedProfiles()">
-            Close checked
-          </button>
-          <button class="btn btn-outline-secondary btn-sm" type="button" [disabled]="busy" (click)="stop()">Stop</button>
-          <button class="btn btn-outline-secondary btn-sm" type="button" [disabled]="busy" (click)="refreshStatus()">Refresh</button>
-          <a class="btn btn-outline-secondary btn-sm" href="/api/actions/youtube/screenshot" target="_blank" rel="noopener">Screenshot</a>
-          <button class="btn btn-outline-secondary btn-sm" type="button" [disabled]="updateBusy" (click)="checkForUpdates()">
-            {{ updateBusy ? 'Checking update...' : 'Check update' }}
+          <button class="primary-launch" type="button" [disabled]="busy || profilesBusy" (click)="play()">
+            {{ busy || profilesBusy ? 'Starting...' : 'Start ' + normalizedProfileCount() + ' profiles' }}
           </button>
         </div>
 
-        <div class="desktop-status" *ngIf="profilesStatus">
-          <div [class.ok]="profilesStatus.chromeFound" [class.bad]="profilesStatus.chromeFound === false">
-            <strong>Chrome</strong>
-            <span>{{ profilesStatus.chromeFound ? 'Found' : 'Missing' }}</span>
-          </div>
-          <div [class.ok]="profilesStatus.envFileExists" [class.bad]="!profilesStatus.envFileExists">
-            <strong>Config</strong>
-            <span>{{ profilesStatus.envFileExists ? 'Loaded' : 'Missing' }}</span>
-          </div>
-          <div>
-            <strong>Proxies</strong>
-            <span>{{ profilesStatus.configuredProfileCount ?? 0 }}/{{ profilesStatus.profiles?.length ?? 0 }}</span>
-          </div>
-          <div>
-            <strong>Running</strong>
-            <span>{{ profilesStatus.runningProfileCount ?? 0 }}</span>
-          </div>
-          <div>
-            <strong>Logged in</strong>
-            <span>{{ profilesStatus.loggedInProfileCount ?? 0 }}</span>
-          </div>
+        <div class="status-bar" *ngIf="profilesStatus">
+          <span [class.bad]="profilesStatus.chromeFound === false">{{ profilesStatus.chromeFound ? 'Chrome ready' : 'Chrome missing' }}</span>
+          <span [class.bad]="!profilesStatus.envFileExists">{{ profilesStatus.envFileExists ? 'Config loaded' : 'Config missing' }}</span>
+          <span>{{ profilesStatus.configuredProfileCount ?? 0 }} proxies</span>
+          <span>{{ profilesStatus.loggedInProfileCount ?? 0 }} logged in</span>
+          <span>{{ profilesStatus.runningProfileCount ?? 0 }} running</span>
         </div>
 
         <p class="feedback update" *ngIf="updateMessage" [class.error]="updateError">
@@ -97,29 +66,21 @@ import { DashboardService } from '../services/dashboard.service';
           <a *ngIf="updateStatus?.releaseUrl" [href]="updateStatus?.releaseUrl" target="_blank" rel="noopener">Open release</a>
         </p>
 
-        <div class="profile-launcher">
-          <div class="profile-controls">
-            <label class="field profile-count">
-              <span>Profiles to open</span>
-              <div class="profile-count-row">
-                <input
-                  class="form-range"
-                  [(ngModel)]="profileCount"
-                  type="range"
-                  min="1"
-                  [max]="maxProfileCount()"
-                  step="1"
-                />
-                <input
-                  class="form-control form-control-sm count-input"
-                  [(ngModel)]="profileCount"
-                  type="number"
-                  min="1"
-                  [max]="maxProfileCount()"
-                />
-              </div>
+        <div class="secondary-actions">
+          <button class="btn btn-outline-secondary btn-sm" type="button" [disabled]="profilesBusy" (click)="refreshProfilesStatus()">Refresh</button>
+          <button class="btn btn-outline-secondary btn-sm" type="button" [disabled]="busy" (click)="stop()">Stop playback</button>
+          <button class="btn btn-outline-success btn-sm" type="button" [disabled]="profilesBusy" (click)="openLoginQueue()">Login setup</button>
+          <button class="btn btn-outline-secondary btn-sm" type="button" (click)="showAdvanced = !showAdvanced">
+            {{ showAdvanced ? 'Hide advanced' : 'Advanced' }}
+          </button>
+        </div>
+
+        <div class="advanced-panel" *ngIf="showAdvanced">
+          <div class="settings-grid">
+            <label class="field" *ngIf="isYoutubeUrl()">
+              <span>Play percent</span>
+              <input class="form-control form-control-sm" [(ngModel)]="percent" type="number" min="0" max="100" />
             </label>
-            <div class="delay-grid">
             <label class="field">
               <span>Delay from</span>
               <input class="form-control form-control-sm" [(ngModel)]="profilesMinDelay" type="number" min="0" max="3600" />
@@ -128,32 +89,40 @@ import { DashboardService } from '../services/dashboard.service';
               <span>Delay to</span>
               <input class="form-control form-control-sm" [(ngModel)]="profilesMaxDelay" type="number" min="0" max="3600" />
             </label>
-            </div>
-            <div class="capability-filters">
-              <label>
-                <input type="checkbox" [(ngModel)]="requireYoutubeProxy" />
-                <span>YT</span>
-              </label>
-              <label>
-                <input type="checkbox" [(ngModel)]="requirePornhubProxy" />
-                <span>PH</span>
-              </label>
-              <small>{{ launchFilterLabel() }}</small>
-            </div>
+            <label class="field">
+              <span>Referer header</span>
+              <input class="form-control form-control-sm" [(ngModel)]="refererHeader" placeholder="https://youtube.com/" />
+            </label>
+            <label class="field">
+              <span>Video quality</span>
+              <select class="form-select form-select-sm" [(ngModel)]="videoQuality">
+                <option *ngFor="let option of videoQualityOptions" [ngValue]="option.value">{{ option.label }}</option>
+              </select>
+            </label>
           </div>
-          <div class="profiles-actions">
-            <button class="btn btn-outline-primary btn-sm" type="button" [disabled]="profilesBusy" (click)="startProfiles()">
-              {{ profilesBusy ? 'Starting...' : 'Start profiles' }}
+
+          <div class="actions">
+            <button class="btn btn-outline-primary btn-sm" type="button" [disabled]="checkBusy" (click)="checkUrl()">
+              {{ checkBusy ? 'Checking...' : 'Check URL' }}
             </button>
-            <button class="btn btn-outline-success btn-sm" type="button" [disabled]="profilesBusy" (click)="openLoginQueue()">
-              Login mode
+            <button class="btn btn-outline-success btn-sm" type="button" [disabled]="busy || !checkedProfileNames().length" (click)="openCheckedProfiles()">
+              Open checked
             </button>
-            <button class="btn btn-outline-secondary btn-sm" type="button" [disabled]="profilesBusy" (click)="refreshProfilesStatus()">Status</button>
+            <button class="btn btn-outline-warning btn-sm" type="button" [disabled]="busy || !checkedProfileNames().length" (click)="restartCheckedProfiles()">
+              Restart checked
+            </button>
+            <button class="btn btn-outline-danger btn-sm" type="button" [disabled]="busy || !checkedProfileNames().length" (click)="closeCheckedProfiles()">
+              Close checked
+            </button>
+            <a class="btn btn-outline-secondary btn-sm" href="/api/actions/youtube/screenshot" target="_blank" rel="noopener">Screenshot</a>
+            <button class="btn btn-outline-secondary btn-sm" type="button" [disabled]="updateBusy" (click)="checkForUpdates()">
+              {{ updateBusy ? 'Checking update...' : 'Check update' }}
+            </button>
           </div>
         </div>
 
-        <p class="feedback" *ngIf="message" [class.error]="error">{{ message }}</p>
-        <p class="feedback" *ngIf="checkMessage" [class.error]="checkError">{{ checkMessage }}</p>
+        <p class="feedback" *ngIf="message" [class.error]="error">{{ compactFeedback(message) }}</p>
+        <p class="feedback" *ngIf="checkMessage" [class.error]="checkError">{{ compactFeedback(checkMessage) }}</p>
         <div class="check-progress" *ngIf="urlCheckStatus && urlCheckStatus.url === normalizedUrl()">
           <div class="check-progress-head">
             <span>{{ checkCompletedCount() }}/{{ checkTotalCount() }} checked</span>
@@ -163,41 +132,22 @@ import { DashboardService } from '../services/dashboard.service';
             <span [style.width.%]="checkProgressPercent()"></span>
           </div>
         </div>
-        <p class="feedback" *ngIf="profilesMessage" [class.error]="profilesError">{{ profilesMessage }}</p>
+        <p class="feedback" *ngIf="profilesMessage" [class.error]="profilesError">{{ compactFeedback(profilesMessage) }}</p>
 
-        <dl class="status" *ngIf="status">
-          <div>
-            <dt>Status</dt>
-            <dd>{{ playbackLabel(status) }}</dd>
+        <div class="profile-section" *ngIf="profilesStatus?.profiles?.length">
+          <div class="profile-section-head">
+            <h2>Profiles</h2>
+            <div class="profile-tabs">
+              <button type="button" [class.active]="profileFilter === 'all'" (click)="profileFilter = 'all'">All</button>
+              <button type="button" [class.active]="profileFilter === 'running'" (click)="profileFilter = 'running'">Running</button>
+              <button type="button" [class.active]="profileFilter === 'login'" (click)="profileFilter = 'login'">Needs login</button>
+              <button type="button" [class.active]="profileFilter === 'proxy'" (click)="profileFilter = 'proxy'">Proxy issues</button>
+            </div>
           </div>
-          <div>
-            <dt>Target</dt>
-            <dd>{{ status.percent ?? percent }}%</dd>
-          </div>
-          <div>
-            <dt>Video</dt>
-            <dd>{{ videoLabel(status) }}</dd>
-          </div>
-          <div *ngIf="status.currentTime !== undefined && status.currentTime !== null">
-            <dt>Time</dt>
-            <dd>{{ status.currentTime | number:'1.0-0' }} sec</dd>
-          </div>
-          <div *ngIf="status.durationSeconds">
-            <dt>Duration</dt>
-            <dd>{{ status.durationSeconds | number:'1.0-0' }} sec</dd>
-          </div>
-          <div *ngIf="status.browser">
-            <dt>Browser</dt>
-            <dd>{{ status.browser }}</dd>
-          </div>
-        </dl>
-
-        <pre class="log-tail" *ngIf="status?.logTail">{{ status?.logTail }}</pre>
-
-        <div class="profile-list" *ngIf="profilesStatus?.profiles?.length">
+          <p class="empty-filter" *ngIf="!filteredProfiles().length">No profiles in this view.</p>
           <div
             class="profile-row"
-            *ngFor="let profile of profilesStatus?.profiles"
+            *ngFor="let profile of filteredProfiles()"
             [class.check-ok]="checkResultFor(profile.name)?.ok"
             [class.check-pending]="checkResultFor(profile.name)?.reason === 'Pending'"
             [class.check-bad]="checkResultFor(profile.name) && !checkResultFor(profile.name)?.ok && checkResultFor(profile.name)?.reason !== 'Pending'"
@@ -208,106 +158,64 @@ import { DashboardService } from '../services/dashboard.service';
               <strong>{{ profile.name }}</strong>
               <small *ngIf="profile.label && profile.label !== profile.name">{{ profile.label }}</small>
             </div>
-            <span class="login-pill" [class.logged-in]="isLoggedIn(profile)" [class.not-logged-in]="!isLoggedIn(profile)">
-              {{ isLoggedIn(profile) ? 'Logged in' : 'Not logged in' }}
-            </span>
-            <span>
-              {{ accountLabel(profile) }}
-              <small class="profile-meta">
-                {{ proxyLabel(profile) }} | {{ isRunning(profile) ? 'Running' : 'Stopped' }}{{ profile.lastUrl ? ' | ' + compactUrl(profile.lastUrl) : '' }}
-              </small>
-              <small class="profile-geo" *ngIf="profileGeo(profile)">
-                {{ profileGeo(profile) }}
-              </small>
-              <small class="proxy-capability" [class.empty]="!supportsYoutube(profile) && !supportsPornhub(profile)">
-                Proxy: {{ proxyCapabilityLabel(profile) }}{{ profile.proxyKey ? ' | ' + profile.proxyKey : '' }}
-              </small>
-              <small class="profile-check" *ngIf="checkResultFor(profile.name)">
-                Check: {{ checkResultFor(profile.name)?.ok ? 'OK' : checkResultFor(profile.name)?.reason }}
-              </small>
-              <small class="profile-check" *ngIf="bulkResultFor(profile.name)">
-                Action: {{ bulkResultFor(profile.name)?.message || bulkResultFor(profile.name)?.status }}
-              </small>
-            </span>
+            <div class="profile-main">
+              <span>{{ accountLabel(profile) }}</span>
+              <small>{{ profile.proxyKey || proxyLabel(profile) }}</small>
+            </div>
+            <div class="profile-pills">
+              <span class="state-pill" [class.good]="isLoggedIn(profile)" [class.bad]="!isLoggedIn(profile)">
+                {{ isLoggedIn(profile) ? 'Logged in' : 'Needs login' }}
+              </span>
+              <span class="state-pill" [class.good]="isRunning(profile)">
+                {{ isRunning(profile) ? 'Running' : 'Stopped' }}
+              </span>
+              <span class="state-pill" [class.good]="supportsYoutube(profile)" [class.bad]="blocksYoutube(profile)">YT {{ capabilityShort(profile.supportsYoutube) }}</span>
+              <span class="state-pill" [class.good]="supportsPornhub(profile)" [class.bad]="blocksPornhub(profile)">PH {{ capabilityShort(profile.supportsPornhub) }}</span>
+            </div>
             <div class="profile-row-actions">
-              <button class="btn btn-outline-primary btn-sm" type="button" [disabled]="busyProfileName === profile.name" (click)="openProfile(profile.name)">
-                {{ busyProfileName === profile.name ? 'Opening...' : 'Open' }}
-              </button>
-              <button class="btn btn-outline-secondary btn-sm" type="button" [disabled]="busyProfileName === profile.name || !isRunning(profile)" (click)="focusProfile(profile.name)">
-                Focus
-              </button>
-              <button class="btn btn-outline-warning btn-sm" type="button" [disabled]="busyProfileName === profile.name" (click)="restartProfile(profile.name)">
-                Restart
+              <button class="btn btn-outline-primary btn-sm" type="button" [disabled]="busyProfileName === profile.name" (click)="isLoggedIn(profile) ? openProfile(profile.name) : openLoginProfile(profile.name)">
+                {{ isLoggedIn(profile) ? 'Open' : 'Login' }}
               </button>
               <button class="btn btn-outline-danger btn-sm" type="button" [disabled]="busyProfileName === profile.name || !isRunning(profile)" (click)="closeProfile(profile.name)">
-                Close
+                Stop
               </button>
-              <button class="btn btn-outline-success btn-sm" type="button" [disabled]="busyProfileName === profile.name" (click)="openLoginProfile(profile.name)">
-                Login
+              <button class="btn btn-outline-secondary btn-sm" type="button" (click)="toggleProfileDetails(profile.name)">
+                {{ expandedProfileName === profile.name ? 'Less' : 'More' }}
               </button>
-              <button
-                class="btn btn-sm"
-                [class.btn-outline-success]="!isLoggedIn(profile)"
-                [class.btn-outline-secondary]="isLoggedIn(profile)"
-                type="button"
-                [disabled]="busyLoginStatusName === profile.name"
-                (click)="setLoginStatus(profile.name, !isLoggedIn(profile))"
-              >
-                {{ busyLoginStatusName === profile.name ? 'Saving...' : isLoggedIn(profile) ? 'Mark not logged in' : 'Mark logged in' }}
-              </button>
-              <button
-                class="btn btn-sm"
-                [class.btn-success]="supportsYoutube(profile)"
-                [class.btn-outline-success]="!supportsYoutube(profile)"
-                type="button"
-                [disabled]="busyProxyCapabilityName === profile.name || !profile.proxyKey"
-                (click)="setProxyCapability(profile, 'youtube', true)"
-              >
-                YT ok
-              </button>
-              <button
-                class="btn btn-sm"
-                [class.btn-danger]="blocksYoutube(profile)"
-                [class.btn-outline-danger]="!blocksYoutube(profile)"
-                type="button"
-                [disabled]="busyProxyCapabilityName === profile.name || !profile.proxyKey"
-                (click)="setProxyCapability(profile, 'youtube', false)"
-              >
-                YT no
-              </button>
-              <button
-                class="btn btn-sm"
-                [class.btn-success]="supportsPornhub(profile)"
-                [class.btn-outline-success]="!supportsPornhub(profile)"
-                type="button"
-                [disabled]="busyProxyCapabilityName === profile.name || !profile.proxyKey"
-                (click)="setProxyCapability(profile, 'pornhub', true)"
-              >
-                PH ok
-              </button>
-              <button
-                class="btn btn-sm"
-                [class.btn-danger]="blocksPornhub(profile)"
-                [class.btn-outline-danger]="!blocksPornhub(profile)"
-                type="button"
-                [disabled]="busyProxyCapabilityName === profile.name || !profile.proxyKey"
-                (click)="setProxyCapability(profile, 'pornhub', false)"
-              >
-                PH no
-              </button>
+            </div>
+            <div class="profile-details" *ngIf="expandedProfileName === profile.name">
+              <span>{{ profileGeo(profile) || 'No geo details' }}</span>
+              <span>{{ isRunning(profile) ? 'Debug ' + profile.debugPort : 'Not running' }}{{ profile.lastUrl ? ' | ' + compactUrl(profile.lastUrl) : '' }}</span>
+              <span *ngIf="checkResultFor(profile.name)">Check: {{ checkResultFor(profile.name)?.ok ? 'OK' : checkResultFor(profile.name)?.reason }}</span>
+              <span *ngIf="bulkResultFor(profile.name)">Action: {{ bulkResultFor(profile.name)?.message || bulkResultFor(profile.name)?.status }}</span>
+              <div class="detail-actions">
+                <button class="btn btn-outline-primary btn-sm" type="button" [disabled]="busyProfileName === profile.name" (click)="openProfile(profile.name)">
+                {{ busyProfileName === profile.name ? 'Opening...' : 'Open' }}
+                </button>
+                <button class="btn btn-outline-secondary btn-sm" type="button" [disabled]="busyProfileName === profile.name || !isRunning(profile)" (click)="focusProfile(profile.name)">Focus</button>
+                <button class="btn btn-outline-warning btn-sm" type="button" [disabled]="busyProfileName === profile.name" (click)="restartProfile(profile.name)">Restart</button>
+                <button class="btn btn-outline-success btn-sm" type="button" [disabled]="busyProfileName === profile.name" (click)="openLoginProfile(profile.name)">Login</button>
+                <button class="btn btn-outline-secondary btn-sm" type="button" [disabled]="busyLoginStatusName === profile.name" (click)="setLoginStatus(profile.name, !isLoggedIn(profile))">
+                  {{ isLoggedIn(profile) ? 'Mark not logged in' : 'Mark logged in' }}
+                </button>
+                <button class="btn btn-outline-success btn-sm" type="button" [disabled]="busyProxyCapabilityName === profile.name || !profile.proxyKey" (click)="setProxyCapability(profile, 'youtube', true)">YT ok</button>
+                <button class="btn btn-outline-danger btn-sm" type="button" [disabled]="busyProxyCapabilityName === profile.name || !profile.proxyKey" (click)="setProxyCapability(profile, 'youtube', false)">YT no</button>
+                <button class="btn btn-outline-success btn-sm" type="button" [disabled]="busyProxyCapabilityName === profile.name || !profile.proxyKey" (click)="setProxyCapability(profile, 'pornhub', true)">PH ok</button>
+                <button class="btn btn-outline-danger btn-sm" type="button" [disabled]="busyProxyCapabilityName === profile.name || !profile.proxyKey" (click)="setProxyCapability(profile, 'pornhub', false)">PH no</button>
+              </div>
             </div>
           </div>
         </div>
 
-        <pre class="log-tail" *ngIf="profilesStatus?.logTail">{{ profilesStatus?.logTail }}</pre>
+        <pre class="log-tail" *ngIf="showAdvanced && profilesStatus?.logTail">{{ profilesStatus?.logTail }}</pre>
       </article>
     </section>
   `,
   styles: [`
     :host { display: block; }
-    .page { display: grid; gap: 12px; }
+    .page { display: grid; gap: 12px; max-width: 960px; }
     .page-head { display: flex; justify-content: space-between; align-items: end; gap: 12px; }
-    .page-head h1 { margin: 0; font-size: 28px; line-height: 1.05; }
+    .page-head h1 { margin: 0; font-size: 26px; line-height: 1.1; }
     .eyebrow, .field span, .status dt {
       margin: 0 0 4px;
       text-transform: uppercase;
@@ -323,7 +231,6 @@ import { DashboardService } from '../services/dashboard.service';
       font: 800 12px/1 "Segoe UI", sans-serif;
     }
     .panel {
-      max-width: 860px;
       padding: 14px;
       background: #fff;
       border: 1px solid #dde3ea;
@@ -331,20 +238,58 @@ import { DashboardService } from '../services/dashboard.service';
       box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
     }
     .field { display: grid; gap: 4px; }
-    .slider-row { display: grid; grid-template-columns: minmax(0, 1fr) 92px; gap: 10px; align-items: end; margin-top: 12px; }
-    .settings-grid { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: 10px; align-items: end; margin-top: 12px; }
-    .percent-input { text-align: center; }
-    .actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-    .profile-launcher { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #dde3ea; }
-    .profile-controls { display: grid; gap: 8px; min-width: min(100%, 420px); }
-    .profile-count-row { display: grid; grid-template-columns: minmax(0, 1fr) 76px; gap: 10px; align-items: end; }
-    .count-input { text-align: center; }
-    .delay-grid { display: grid; grid-template-columns: repeat(2, 96px); gap: 8px; }
-    .capability-filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: #475569; font: 800 12px/1.2 "Segoe UI", sans-serif; }
-    .capability-filters label { display: inline-flex; align-items: center; gap: 5px; margin: 0; }
-    .capability-filters input { width: 14px; height: 14px; }
-    .capability-filters small { color: #64748b; font-weight: 700; }
-    .profiles-actions { display: flex; align-items: end; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+    .hero-control { display: grid; grid-template-columns: minmax(280px, 1fr) 330px 180px; gap: 12px; align-items: end; }
+    .quick-settings { display: grid; grid-template-columns: 86px 1fr 1fr; gap: 8px; }
+    .count-field input { text-align: center; }
+    .primary-launch {
+      min-height: 48px;
+      border: 0;
+      border-radius: 8px;
+      background: #0d6efd;
+      color: #fff;
+      font: 800 15px/1.2 "Segoe UI", sans-serif;
+      box-shadow: 0 8px 18px rgba(13, 110, 253, 0.18);
+    }
+    .primary-launch:disabled { opacity: 0.62; box-shadow: none; }
+    .status-bar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+      padding: 8px;
+      border-radius: 10px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+    }
+    .status-bar span {
+      min-height: 28px;
+      display: inline-flex;
+      align-items: center;
+      padding: 5px 9px;
+      border-radius: 999px;
+      background: #e9f7ef;
+      color: #146c43;
+      font: 800 12px/1.2 "Segoe UI", sans-serif;
+      white-space: nowrap;
+    }
+    .status-bar span.bad { background: #fff1f2; color: #be123c; }
+    .secondary-actions, .actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+    .secondary-actions .btn, .actions .btn, .profile-row-actions .btn, .detail-actions .btn {
+      min-height: 32px;
+      min-width: 86px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      white-space: nowrap;
+    }
+    .advanced-panel {
+      margin-top: 12px;
+      padding: 12px;
+      border: 1px solid #dbe3ee;
+      border-radius: 10px;
+      background: #f8fafc;
+    }
+    .settings-grid { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap: 10px; align-items: end; }
     .feedback {
       margin: 10px 0 0;
       padding: 8px 10px;
@@ -360,17 +305,22 @@ import { DashboardService } from '../services/dashboard.service';
     .check-progress-head { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 7px; color: #334155; font: 800 12px/1.2 "Segoe UI", sans-serif; }
     .check-progress-track { height: 8px; border-radius: 999px; background: #e2e8f0; overflow: hidden; }
     .check-progress-track span { display: block; height: 100%; min-width: 0; border-radius: inherit; background: #2563eb; transition: width 180ms ease; }
-    .desktop-status { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 12px 0 0; }
-    .desktop-status div { display: grid; gap: 2px; padding: 9px 10px; border: 1px solid #dde3ea; border-radius: 8px; background: #f8fafc; }
-    .desktop-status div.ok { border-color: #bbf7d0; background: #f0fdf4; }
-    .desktop-status div.bad { border-color: #fecdd3; background: #fff1f2; }
-    .desktop-status strong { font: 800 11px/1.2 "Segoe UI", sans-serif; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; }
-    .desktop-status span { font: 800 13px/1.2 "Segoe UI", sans-serif; color: #17212b; overflow-wrap: anywhere; }
-    .status { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 12px 0 0; }
-    .status div { padding: 10px; border: 1px solid #dde3ea; border-radius: 10px; background: #f8fafc; }
-    .status dd { margin: 0; color: #17212b; font: 800 14px/1.3 "Segoe UI", sans-serif; overflow-wrap: anywhere; }
-    .profile-list { display: grid; gap: 6px; margin: 12px 0 0; }
-    .profile-row { display: grid; grid-template-columns: 140px 104px minmax(0, 1fr) 360px; gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid #dde3ea; border-radius: 10px; background: #f8fafc; color: #17212b; font: 700 12px/1.3 "Segoe UI", sans-serif; }
+    .profile-section { margin-top: 14px; display: grid; gap: 8px; }
+    .profile-section-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .profile-section h2 { margin: 0; font-size: 18px; line-height: 1.2; }
+    .profile-tabs { display: flex; gap: 4px; flex-wrap: wrap; padding: 3px; border: 1px solid #dbe3ee; border-radius: 10px; background: #f8fafc; }
+    .profile-tabs button {
+      min-height: 28px;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: #475569;
+      font: 800 12px/1.1 "Segoe UI", sans-serif;
+      padding: 5px 10px;
+    }
+    .profile-tabs button.active { background: #fff; color: #0f172a; box-shadow: 0 1px 4px rgba(15, 23, 42, 0.1); }
+    .empty-filter { margin: 0; padding: 10px; color: #64748b; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 10px; font: 700 13px/1.3 "Segoe UI", sans-serif; }
+    .profile-row { display: grid; grid-template-columns: 88px minmax(180px, 1fr) minmax(250px, 1.15fr) 250px; gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid #dde3ea; border-radius: 10px; background: #fff; color: #17212b; font: 700 12px/1.3 "Segoe UI", sans-serif; }
     .profile-row.check-ok { border-color: #86efac; background: #f0fdf4; }
     .profile-row.check-pending { border-color: #bfdbfe; background: #eff6ff; }
     .profile-row.check-bad { border-color: #fecdd3; background: #fff1f2; }
@@ -382,18 +332,46 @@ import { DashboardService } from '../services/dashboard.service';
     .profile-id { display: grid; gap: 2px; min-width: 0; }
     .profile-id strong, .profile-id small { overflow-wrap: anywhere; }
     .profile-id small { color: #64748b; font-weight: 700; }
-    .login-pill { justify-self: start; padding: 5px 8px; border-radius: 999px; border: 1px solid #cbd5e1; background: #f8fafc; color: #475569; font: 800 11px/1 "Segoe UI", sans-serif; white-space: nowrap; }
-    .login-pill.logged-in { border-color: #86efac; background: #f0fdf4; color: #15803d; }
-    .login-pill.not-logged-in { border-color: #fecdd3; background: #fff1f2; color: #be123c; }
-    .profile-row > span:not(.login-pill) { color: #64748b; overflow-wrap: anywhere; }
-    .profile-meta { display: block; margin-top: 2px; color: #475569; font-weight: 700; }
-    .profile-geo { display: block; margin-top: 2px; color: #475569; font-weight: 700; overflow-wrap: anywhere; }
-    .proxy-capability { display: block; margin-top: 2px; color: #0f766e; font-weight: 900; overflow-wrap: anywhere; }
-    .proxy-capability.empty { color: #be123c; }
-    .profile-check { display: block; margin-top: 2px; color: #334155; font-weight: 800; }
+    .profile-main { display: grid; gap: 2px; min-width: 0; }
+    .profile-main span, .profile-main small { overflow-wrap: anywhere; }
+    .profile-main small { color: #64748b; font-weight: 700; }
+    .profile-pills { display: flex; flex-wrap: wrap; gap: 5px; }
+    .state-pill {
+      min-height: 24px;
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 7px;
+      border-radius: 999px;
+      border: 1px solid #cbd5e1;
+      background: #f8fafc;
+      color: #475569;
+      font: 800 11px/1 "Segoe UI", sans-serif;
+      white-space: nowrap;
+    }
+    .state-pill.good { border-color: #86efac; background: #f0fdf4; color: #15803d; }
+    .state-pill.bad { border-color: #fecdd3; background: #fff1f2; color: #be123c; }
     .profile-row-actions { display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
+    .profile-details {
+      grid-column: 1 / -1;
+      display: grid;
+      gap: 6px;
+      padding-top: 8px;
+      border-top: 1px dashed #dbe3ee;
+      color: #475569;
+      overflow-wrap: anywhere;
+    }
+    .detail-actions { display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
     .log-tail { margin: 12px 0 0; max-height: 220px; overflow: auto; padding: 10px; border-radius: 10px; background: #0f172a; color: #dbeafe; font: 600 12px/1.45 Consolas, monospace; white-space: pre-wrap; }
-    @media (max-width: 760px) { .page-head, .slider-row, .settings-grid, .status, .profile-row, .desktop-status { grid-template-columns: 1fr; display: grid; } .actions button, .profiles-actions button { width: 100%; } }
+    @media (max-width: 980px) {
+      .hero-control, .settings-grid, .profile-row { grid-template-columns: 1fr; }
+      .quick-settings { grid-template-columns: 1fr 1fr 1fr; }
+      .primary-launch, .secondary-actions .btn, .actions .btn, .profile-row-actions .btn { width: 100%; }
+      .profile-row-actions, .detail-actions { justify-content: stretch; }
+    }
+    @media (max-width: 640px) {
+      .page-head, .quick-settings { grid-template-columns: 1fr; display: grid; }
+      .profile-tabs, .secondary-actions, .actions { display: grid; grid-template-columns: 1fr; }
+    }
   `]
 })
 export class PlaybackPageComponent implements OnInit, OnDestroy {
@@ -428,6 +406,11 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
   protected videoQuality = 'auto';
   protected requireYoutubeProxy = false;
   protected requirePornhubProxy = false;
+  protected showAdvanced = false;
+  protected launchMode: 'youtube' | 'pornhub' | 'any' = 'youtube';
+  protected delayPreset: 'auto' | 'slow' | 'manual' = 'auto';
+  protected profileFilter: 'all' | 'running' | 'login' | 'proxy' = 'all';
+  protected expandedProfileName = '';
   private bulkProgressTimer: ReturnType<typeof setTimeout> | null = null;
   private checkProgressTimer: ReturnType<typeof setTimeout> | null = null;
   protected readonly videoQualityOptions = [
@@ -444,6 +427,7 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.loadLaunchSettings();
+    this.syncLaunchModeFromFlags();
     this.refreshProfilesStatus(false);
   }
 
@@ -873,6 +857,77 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
     return 'blocked';
   }
 
+  protected capabilityShort(value?: boolean | string): string {
+    if (value === true || value === 'true') {
+      return 'ok';
+    }
+    if (value === false || value === 'false') {
+      return 'no';
+    }
+    return '?';
+  }
+
+  protected filteredProfiles(): ChromeProfileSummary[] {
+    const profiles = this.profilesStatus?.profiles ?? [];
+    if (this.profileFilter === 'running') {
+      return profiles.filter((profile) => this.isRunning(profile));
+    }
+    if (this.profileFilter === 'login') {
+      return profiles.filter((profile) => !this.isLoggedIn(profile));
+    }
+    if (this.profileFilter === 'proxy') {
+      return profiles.filter((profile) => this.blocksYoutube(profile) || this.blocksPornhub(profile));
+    }
+    return profiles;
+  }
+
+  protected toggleProfileDetails(profileName: string): void {
+    this.expandedProfileName = this.expandedProfileName === profileName ? '' : profileName;
+  }
+
+  protected compactFeedback(value: string): string {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return '';
+    }
+    const firstLine = trimmed.split(/\r?\n/).find(Boolean) || trimmed;
+    return firstLine.length > 180 ? `${firstLine.slice(0, 177)}...` : firstLine;
+  }
+
+  protected applyLaunchMode(): void {
+    this.requireYoutubeProxy = this.launchMode === 'youtube';
+    this.requirePornhubProxy = this.launchMode === 'pornhub';
+    if (this.launchMode === 'any') {
+      this.requireYoutubeProxy = false;
+      this.requirePornhubProxy = false;
+    }
+    this.clampProfileCount();
+    this.saveLaunchSettings();
+  }
+
+  protected applyDelayPreset(): void {
+    if (this.delayPreset === 'auto') {
+      this.profilesMinDelay = 20;
+      this.profilesMaxDelay = 90;
+    } else if (this.delayPreset === 'slow') {
+      this.profilesMinDelay = 45;
+      this.profilesMaxDelay = 180;
+    }
+    this.saveLaunchSettings();
+  }
+
+  private syncLaunchModeFromFlags(): void {
+    if (this.requireYoutubeProxy && !this.requirePornhubProxy) {
+      this.launchMode = 'youtube';
+      return;
+    }
+    if (this.requirePornhubProxy && !this.requireYoutubeProxy) {
+      this.launchMode = 'pornhub';
+      return;
+    }
+    this.launchMode = 'any';
+  }
+
   protected launchFilterLabel(): string {
     if (this.requireYoutubeProxy && this.requirePornhubProxy) {
       return 'Exclude proxies blocked for YT or PH';
@@ -1137,10 +1192,23 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
       if (!raw) {
         return;
       }
-      const settings = JSON.parse(raw) as { refererHeader?: string; videoQuality?: string; requireYoutubeProxy?: boolean; requirePornhubProxy?: boolean };
+      const settings = JSON.parse(raw) as {
+        refererHeader?: string;
+        videoQuality?: string;
+        requireYoutubeProxy?: boolean;
+        requirePornhubProxy?: boolean;
+        launchMode?: 'youtube' | 'pornhub' | 'any';
+        delayPreset?: 'auto' | 'slow' | 'manual';
+        profilesMinDelay?: number;
+        profilesMaxDelay?: number;
+      };
       this.refererHeader = settings.refererHeader ?? '';
       this.requireYoutubeProxy = Boolean(settings.requireYoutubeProxy);
       this.requirePornhubProxy = Boolean(settings.requirePornhubProxy);
+      this.launchMode = settings.launchMode ?? this.launchMode;
+      this.delayPreset = settings.delayPreset ?? this.delayPreset;
+      this.profilesMinDelay = settings.profilesMinDelay ?? this.profilesMinDelay;
+      this.profilesMaxDelay = settings.profilesMaxDelay ?? this.profilesMaxDelay;
       if (settings.videoQuality && this.videoQualityOptions.some((option) => option.value === settings.videoQuality)) {
         this.videoQuality = settings.videoQuality;
       }
@@ -1156,7 +1224,11 @@ export class PlaybackPageComponent implements OnInit, OnDestroy {
         refererHeader: this.normalizedReferer(),
         videoQuality: this.videoQuality,
         requireYoutubeProxy: this.requireYoutubeProxy,
-        requirePornhubProxy: this.requirePornhubProxy
+        requirePornhubProxy: this.requirePornhubProxy,
+        launchMode: this.launchMode,
+        delayPreset: this.delayPreset,
+        profilesMinDelay: this.normalizedDelay(this.profilesMinDelay, 20),
+        profilesMaxDelay: this.normalizedDelay(this.profilesMaxDelay, 90)
       }));
     } catch {
       // Local persistence is optional.
