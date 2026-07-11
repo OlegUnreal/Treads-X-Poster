@@ -1,25 +1,25 @@
-import { Component } from '@angular/core';
-import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { NgIf } from '@angular/common';
+import { Component, OnInit, inject } from '@angular/core';
+import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, NgIf],
   template: `
     <main class="app-shell container-fluid">
       <header class="topbar navbar navbar-expand-lg">
         <div class="brand navbar-brand">
           <strong>Behind The Smile</strong>
-          <span>Admin</span>
+          <span>{{ desktopPlaybackMode ? 'Playback' : 'Admin' }}</span>
         </div>
-        <nav class="nav nav-pills ms-lg-auto">
-          <a class="nav-link" routerLink="/overview" routerLinkActive="active">Overview</a>
-          <a class="nav-link" routerLink="/publish" routerLinkActive="active">Publish</a>
-          <a class="nav-link" routerLink="/create" routerLinkActive="active">Create</a>
+        <nav class="nav nav-pills ms-lg-auto" *ngIf="!desktopPlaybackMode">
+          <a class="nav-link" routerLink="/accounts" routerLinkActive="active">Accounts</a>
+          <a class="nav-link" routerLink="/create" routerLinkActive="active">Content</a>
           <a class="nav-link" routerLink="/queue" routerLinkActive="active">Queue</a>
-          <a class="nav-link" routerLink="/playback" routerLinkActive="active">Playback</a>
           <a class="nav-link" routerLink="/automation" routerLinkActive="active">Automation</a>
-          <a class="nav-link" routerLink="/settings" routerLinkActive="active">Settings</a>
+          <a class="nav-link" routerLink="/publish" routerLinkActive="active">Manual Send</a>
+          <a class="nav-link" routerLink="/playback" routerLinkActive="active">Playback</a>
         </nav>
       </header>
 
@@ -79,4 +79,22 @@ import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
     }
   `]
 })
-export class AppComponent {}
+export class AppComponent implements OnInit {
+  private readonly router = inject(Router);
+
+  protected readonly desktopPlaybackMode = this.isDesktopPlaybackMode();
+
+  ngOnInit(): void {
+    if (this.desktopPlaybackMode && window.location.pathname !== '/playback') {
+      this.router.navigateByUrl('/playback');
+    }
+  }
+
+  private isDesktopPlaybackMode(): boolean {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('desktop') === '1') {
+      return true;
+    }
+    return ['127.0.0.1', 'localhost'].includes(window.location.hostname) && window.location.port === '4311';
+  }
+}

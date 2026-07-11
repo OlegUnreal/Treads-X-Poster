@@ -1,14 +1,14 @@
-import { AsyncPipe, DatePipe, NgFor, NgIf } from '@angular/common';
+import { CommonModule } from '@angular/common';
 import { Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { QueuePost, QueuePostUpsertRequest } from '../models/dashboard.models';
+import { ActionResult, QueuePost, QueuePostUpsertRequest } from '../models/dashboard.models';
 import { DashboardService } from '../services/dashboard.service';
 import { AdminUiStateService } from '../services/admin-ui-state.service';
 
 @Component({
   selector: 'app-queue-page',
   standalone: true,
-  imports: [AsyncPipe, DatePipe, NgFor, NgIf, FormsModule],
+  imports: [CommonModule, FormsModule],
   template: `
     <section class="page" *ngIf="ui.vm$ | async as vm">
       <header class="page-head d-flex flex-wrap justify-content-between align-items-end gap-2">
@@ -29,8 +29,8 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
               {{ profile.name }} · {{ profile.subtitle }}
             </option>
           </select>
-          <button type="button" class="btn btn-outline-primary btn-sm" (click)="fillMissingPhotos()">Fill Photos</button>
-          <button type="button" class="btn btn-outline-secondary btn-sm" (click)="cleanDuplicatePhotos()">Clean Photos</button>
+          <button type="button" class="btn btn-outline-primary btn-sm" (click)="cleanDuplicatePhotos(vm.summary.publisherAccounts.activeAccountId)">Clean Photos</button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" (click)="fillMissingPhotos(vm.summary.publisherAccounts.activeAccountId)">Fill Photos</button>
         </div>
       </header>
 
@@ -55,14 +55,22 @@ import { AdminUiStateService } from '../services/admin-ui-state.service';
             </div>
 
             <div class="actions">
-              <button type="button" class="btn btn-outline-secondary btn-sm" [disabled]="index === 0" (click)="movePost(post, 'up')">Up</button>
-              <button type="button" class="btn btn-outline-secondary btn-sm" [disabled]="last" (click)="movePost(post, 'down')">Down</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm" [disabled]="index === 0" (click)="movePost(post, 'up', vm.summary.publisherAccounts.activeAccountId)">Up</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm" [disabled]="last" (click)="movePost(post, 'down', vm.summary.publisherAccounts.activeAccountId)">Down</button>
+              <button
+                type="button"
+                class="btn btn-outline-success btn-sm"
+                (click)="publishQueuePost(post, vm.summary.publisherAccounts.activeAccountId)"
+                [disabled]="!canPublishFromQueue(post)"
+              >
+                Publish Now
+              </button>
               <button type="button" class="btn btn-primary btn-sm" (click)="toggleEditor(post.id)">
                 {{ expandedPostId === post.id ? 'Close' : 'Edit' }}
               </button>
-              <button type="button" class="btn btn-outline-primary btn-sm" *ngIf="expandedPostId === post.id" (click)="saveQueuePost(post)">Save</button>
-              <button type="button" class="btn btn-outline-secondary btn-sm" *ngIf="post.imageUrl" (click)="removePhoto(post)">Remove Photo</button>
-              <button type="button" class="btn btn-outline-danger btn-sm" (click)="deletePost(post)">Delete</button>
+              <button type="button" class="btn btn-outline-primary btn-sm" *ngIf="expandedPostId === post.id" (click)="saveQueuePost(post, vm.summary.publisherAccounts.activeAccountId)">Save</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm" *ngIf="post.imageUrl" (click)="removePhoto(post, vm.summary.publisherAccounts.activeAccountId)">Remove Photo</button>
+              <button type="button" class="btn btn-outline-danger btn-sm" (click)="deletePost(post, vm.summary.publisherAccounts.activeAccountId)">Delete</button>
             </div>
 
             <div class="editor" *ngIf="expandedPostId === post.id">
@@ -170,6 +178,7 @@ export class QueuePageComponent {
   private readonly dashboardService = inject(DashboardService);
   protected expandedPostId: string | null = null;
   protected queuePlatform: 'x' | 'threads' = 'x';
+  protected queueProfileId = '';
   private readonly queueDrafts = new Map<string, {
     topic: string;
     text: string;
@@ -178,15 +187,18 @@ export class QueuePageComponent {
     imageSourcePage: string;
     status: string;
     language: string;
-    tone: string;
     platformsText: string;
   }>();
 
   protected selectedQueueProfileId(activeAccountId: string): string {
+    if (this.queueProfileId) {
+      return this.queueProfileId;
+    }
     return `${activeAccountId}:${this.queuePlatform}`;
   }
 
   protected switchQueueProfile(profileId: string): void {
+    this.queueProfileId = profileId;
     const [accountId, platform] = profileId.split(':');
     this.queuePlatform = platform === 'threads' ? 'threads' : 'x';
     this.ui.setQueuePlatform(this.queuePlatform);
@@ -201,8 +213,9 @@ export class QueuePageComponent {
     });
   }
 
-  protected saveQueuePost(post: QueuePost): void {
+  protected saveQueuePost(post: QueuePost, activeAccountId: string): void {
     const draft = this.draftFor(post);
+    const accountId = this.selectedQueueAccountId(activeAccountId);
     const payload: QueuePostUpsertRequest = this.ui.sanitizeQueueUpsertRequest({
       topic: draft.topic,
       text: draft.text,
@@ -213,11 +226,10 @@ export class QueuePageComponent {
       imageLicense: post.imageLicense,
       status: draft.status,
       language: draft.language,
-      tone: draft.tone,
       platforms: [this.queuePlatform]
     });
 
-    this.dashboardService.updateQueuePost(post.id, payload, this.queuePlatform).subscribe(() => {
+    this.dashboardService.updateQueuePost(post.id, payload, this.queuePlatform, accountId).subscribe(() => {
       this.ui.pushActionResult({
         success: true,
         command: 'update-queue-post',
@@ -232,19 +244,21 @@ export class QueuePageComponent {
     this.expandedPostId = this.expandedPostId === postId ? null : postId;
   }
 
-  protected movePost(post: QueuePost, direction: 'up' | 'down'): void {
-    this.dashboardService.moveQueuePost(post.id, direction, this.queuePlatform).subscribe((result) => {
+  protected movePost(post: QueuePost, direction: 'up' | 'down', activeAccountId: string): void {
+    const accountId = this.selectedQueueAccountId(activeAccountId);
+    this.dashboardService.moveQueuePost(post.id, direction, this.queuePlatform, accountId).subscribe((result: ActionResult) => {
       this.ui.pushActionResult(result);
       this.queueDrafts.clear();
     });
   }
 
-  protected deletePost(post: QueuePost): void {
+  protected deletePost(post: QueuePost, activeAccountId: string): void {
     const preview = (post.topic || post.text || post.id).slice(0, 80);
     if (!window.confirm(`Delete this queued post?\n\n${preview}`)) {
       return;
     }
-    this.dashboardService.deleteQueuePost(post.id, this.queuePlatform).subscribe((result) => {
+    const accountId = this.selectedQueueAccountId(activeAccountId);
+    this.dashboardService.deleteQueuePost(post.id, this.queuePlatform, accountId).subscribe((result: ActionResult) => {
       this.ui.pushActionResult(result);
       this.queueDrafts.delete(post.id);
       if (this.expandedPostId === post.id) {
@@ -253,21 +267,24 @@ export class QueuePageComponent {
     });
   }
 
-  protected cleanDuplicatePhotos(): void {
-    this.dashboardService.cleanDuplicateQueueImages(this.queuePlatform).subscribe((result) => {
+  protected cleanDuplicatePhotos(activeAccountId: string): void {
+    const accountId = this.selectedQueueAccountId(activeAccountId);
+    this.dashboardService.cleanDuplicateQueueImages(this.queuePlatform, accountId).subscribe((result: ActionResult) => {
       this.ui.pushActionResult(result);
       this.queueDrafts.clear();
     });
   }
 
-  protected fillMissingPhotos(): void {
-    this.dashboardService.fillMissingQueuePhotos(this.queuePlatform).subscribe((result) => {
+  protected fillMissingPhotos(activeAccountId: string): void {
+    const accountId = this.selectedQueueAccountId(activeAccountId);
+    this.dashboardService.fillMissingQueuePhotos(this.queuePlatform, accountId).subscribe((result: ActionResult) => {
       this.ui.pushActionResult(result);
       this.queueDrafts.clear();
     });
   }
 
-  protected removePhoto(post: QueuePost): void {
+  protected removePhoto(post: QueuePost, activeAccountId: string): void {
+    const accountId = this.selectedQueueAccountId(activeAccountId);
     const payload: QueuePostUpsertRequest = this.ui.sanitizeQueueUpsertRequest({
       topic: post.topic,
       text: post.text,
@@ -278,11 +295,10 @@ export class QueuePageComponent {
       imageLicense: '',
       status: post.status,
       language: post.language ?? 'uk',
-      tone: post.tone ?? '',
       platforms: [this.queuePlatform]
     });
 
-    this.dashboardService.updateQueuePost(post.id, payload, this.queuePlatform).subscribe(() => {
+    this.dashboardService.updateQueuePost(post.id, payload, this.queuePlatform, accountId).subscribe(() => {
       this.ui.pushActionResult({
         success: true,
         command: 'update-queue-post',
@@ -290,6 +306,26 @@ export class QueuePageComponent {
       });
       this.queueDrafts.delete(post.id);
     });
+  }
+
+  protected publishQueuePost(post: QueuePost, activeAccountId: string): void {
+    const accountId = this.selectedQueueAccountId(activeAccountId);
+    this.dashboardService.publishQueuePost(post.id, this.queuePlatform, accountId).subscribe((result: ActionResult) => {
+      this.ui.pushActionResult(result);
+    });
+  }
+
+  protected canPublishFromQueue(post: QueuePost): boolean {
+    const published = post.published?.[this.queuePlatform];
+    if (published) {
+      return false;
+    }
+    return true;
+  }
+
+  private selectedQueueAccountId(activeAccountId: string): string {
+    const [selectedAccountId] = this.selectedQueueProfileId(activeAccountId).split(':');
+    return selectedAccountId || activeAccountId;
   }
 
   protected draftFor(post: QueuePost) {
@@ -305,7 +341,6 @@ export class QueuePageComponent {
       imageSourcePage: post.imageSourcePage ?? '',
       status: post.status ?? 'ready',
       language: post.language ?? 'uk',
-      tone: post.tone ?? '',
       platformsText: (post.platforms ?? []).join(', ')
     };
     this.queueDrafts.set(post.id, created);

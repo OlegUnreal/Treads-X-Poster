@@ -7,6 +7,11 @@ public record ChromeProfilesLaunchRequest(
         Integer maxDelaySeconds,
         Integer profileCount,
         String url,
-        List<String> profileNames
+        List<String> profileNames,
+        Boolean loginMode,
+        String referer,
+        String videoQuality,
+        Boolean requireYoutube,
+        Boolean requirePornhub
 ) {
 }

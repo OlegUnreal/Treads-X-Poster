@@ -10,6 +10,8 @@ FRONTEND_PORT="${FRONTEND_PORT:-4301}"
 DISPLAY_VALUE="${DISPLAY_VALUE:-:1}"
 XAUTHORITY_VALUE="${XAUTHORITY_VALUE:-/root/.Xauthority}"
 PUBLIC_HOST="${PUBLIC_HOST:-_}"
+DOPPLER_ENV_FILE="${DOPPLER_ENV_FILE:-${APP_DIR}/backend/config/.env}"
+DOPPLER_INSTALL="${DOPPLER_INSTALL:-true}"
 
 echo "Deploying branch '${BRANCH}' from ${APP_DIR}"
 
@@ -31,6 +33,32 @@ fi
 git reset --hard "origin/${BRANCH}"
 git clean -fd -e generated/ -e backend/config/.env
 
+if [ -n "${DOPPLER_TOKEN:-}" ]; then
+  echo "DOPPLER_TOKEN is set. Updating ${DOPPLER_ENV_FILE} from Doppler."
+
+  if ! command -v doppler >/dev/null 2>&1; then
+    if [ "${DOPPLER_INSTALL}" != "true" ]; then
+      echo "Doppler CLI is not installed and DOPPLER_INSTALL is not true."
+      exit 1
+    fi
+
+    echo "Installing Doppler CLI."
+    if command -v apt-get >/dev/null 2>&1; then
+      apt-get update
+      DEBIAN_FRONTEND=noninteractive apt-get install -y curl gnupg
+    fi
+    (curl -Ls --tlsv1.2 --proto "=https" --retry 3 https://cli.doppler.com/install.sh || wget -t 3 -qO- https://cli.doppler.com/install.sh) | sh
+  fi
+
+  mkdir -p "$(dirname "${DOPPLER_ENV_FILE}")"
+  doppler secrets download --no-file --format env > "${DOPPLER_ENV_FILE}.tmp"
+  chmod 600 "${DOPPLER_ENV_FILE}.tmp"
+  mv "${DOPPLER_ENV_FILE}.tmp" "${DOPPLER_ENV_FILE}"
+  echo "Doppler config written to ${DOPPLER_ENV_FILE}."
+else
+  echo "DOPPLER_TOKEN is not set. Keeping existing ${DOPPLER_ENV_FILE} if present."
+fi
+
 mkdir -p "${APP_DIR}/config"
 if [ ! -f "${APP_DIR}/config/content-plan.json" ] && [ -f "${APP_DIR}/backend/config/content-plan.json" ]; then
   cp "${APP_DIR}/backend/config/content-plan.json" "${APP_DIR}/config/content-plan.json"
@@ -39,24 +67,29 @@ fi
 if [ -d "${APP_DIR}/remote-chrome-profiles" ]; then
   CHROME_PROFILES_DIR="${CHROME_PROFILES_DIR:-/root/chrome-proxy-profiles}"
   mkdir -p "${CHROME_PROFILES_DIR}"
-  for file in check-deps.sh ensure-proxies.py proxy-forwarder.py start-all.sh start-profile.sh stop-all.sh profiles.env.example README.md; do
+  for file in check-deps.sh ensure-proxies.py import-webshare-proxies.py proxy-forwarder.py start-all.sh start-profile.sh stop-all.sh profiles.env.example README.md; do
     if [ -f "${APP_DIR}/remote-chrome-profiles/${file}" ]; then
       cp "${APP_DIR}/remote-chrome-profiles/${file}" "${CHROME_PROFILES_DIR}/${file}"
     fi
   done
+  if [ ! -f "${CHROME_PROFILES_DIR}/proxy-capabilities.tsv" ] && [ -f "${APP_DIR}/remote-chrome-profiles/proxy-capabilities.tsv" ]; then
+    cp "${APP_DIR}/remote-chrome-profiles/proxy-capabilities.tsv" "${CHROME_PROFILES_DIR}/proxy-capabilities.tsv"
+  fi
   chmod +x "${CHROME_PROFILES_DIR}/check-deps.sh" "${CHROME_PROFILES_DIR}/start-all.sh" "${CHROME_PROFILES_DIR}/start-profile.sh" "${CHROME_PROFILES_DIR}/stop-all.sh" || true
-  if [ -f "${CHROME_PROFILES_DIR}/profiles.env" ] && [ -f "${CHROME_PROFILES_DIR}/ensure-proxies.py" ]; then
-    python3 "${CHROME_PROFILES_DIR}/ensure-proxies.py" --env "${CHROME_PROFILES_DIR}/profiles.env" \
-      31.59.20.176:6754 \
-      31.56.127.193:7684 \
-      45.38.107.97:6014 \
-      38.154.203.95:5863 \
-      198.105.121.200:6462 \
-      64.137.96.74:6641 \
-      198.23.243.226:6361 \
-      38.154.185.97:6370 \
-      142.111.67.146:5611 \
-      191.96.254.138:6185 || true
+  if [ -n "${WEBSHARE_API_TOKEN:-}" ] && [ -f "${CHROME_PROFILES_DIR}/import-webshare-proxies.py" ]; then
+    python3 "${CHROME_PROFILES_DIR}/import-webshare-proxies.py" \
+      --from-webshare-api \
+      --env "${CHROME_PROFILES_DIR}/profiles.env"
+  elif [ -n "${DOPPLER_TOKEN:-}" ] \
+      && [ -f "${CHROME_PROFILES_DIR}/import-webshare-proxies.py" ] \
+      && doppler secrets get WEBSHARE_API_TOKEN --plain >/dev/null 2>&1; then
+    doppler run -- python3 "${CHROME_PROFILES_DIR}/import-webshare-proxies.py" \
+      --from-webshare-api \
+      --env "${CHROME_PROFILES_DIR}/profiles.env"
+  elif [ -f "${CHROME_PROFILES_DIR}/webshare-proxies.txt" ] && [ -f "${CHROME_PROFILES_DIR}/import-webshare-proxies.py" ]; then
+    python3 "${CHROME_PROFILES_DIR}/import-webshare-proxies.py" \
+      "${CHROME_PROFILES_DIR}/webshare-proxies.txt" \
+      --env "${CHROME_PROFILES_DIR}/profiles.env"
   fi
 fi
 

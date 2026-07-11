@@ -180,7 +180,18 @@ export class AdminUiStateService {
       'publish-thread': 'Publish Threads',
       'publish-x': 'Publish X',
       'publish-x-via-selenium': 'Send X',
-      'switch-account': 'Publishing account'
+      'photo-batch': 'Photo posts',
+      'delete-account': 'Account settings',
+      'save-account': 'Account settings',
+      'save-account-prompt': 'Account prompt',
+      'switch-account': 'Publishing account',
+      'threads-lookup': 'Threads profile',
+      'publish-queued-post': 'Publish now',
+      'create-queue-job': 'Create queue job',
+      'update-queue-job': 'Update queue job',
+      'delete-queue-job': 'Delete queue job',
+      'start-posting-job': 'Start posting job',
+      'stop-posting-job': 'Stop posting job'
     };
 
     return labels[command] ?? command;

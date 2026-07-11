@@ -10,6 +10,7 @@ on:
   push:
     branches:
       - main
+      - master
 
 concurrency:
   group: production-deploy
@@ -26,6 +27,7 @@ jobs:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
           DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
           DEPLOY_BRANCH: ${{ github.event.inputs.branch || github.ref_name }}
         run: |
@@ -77,10 +79,10 @@ jobs:
             printf '%s\n' "${DEPLOY_SSH_KEY}" > ~/.ssh/deploy_key
             chmod 600 ~/.ssh/deploy_key
             ssh -i ~/.ssh/deploy_key -p "${PORT}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-              "APP_DIR='${APP_DIR}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' PUBLIC_HOST='${DEPLOY_HOST}' bash -s" < "${REMOTE_SCRIPT}"
+              "APP_DIR='${APP_DIR}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' PUBLIC_HOST='${DEPLOY_HOST}' DOPPLER_TOKEN='${DOPPLER_TOKEN}' bash -s" < "${REMOTE_SCRIPT}"
           else
             sudo apt-get update
             sudo apt-get install -y sshpass
             sshpass -p "${DEPLOY_PASSWORD}" ssh -p "${PORT}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
-              "APP_DIR='${APP_DIR}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' PUBLIC_HOST='${DEPLOY_HOST}' bash -s" < "${REMOTE_SCRIPT}"
+              "APP_DIR='${APP_DIR}' DEPLOY_BRANCH='${DEPLOY_BRANCH}' PUBLIC_HOST='${DEPLOY_HOST}' DOPPLER_TOKEN='${DOPPLER_TOKEN}' bash -s" < "${REMOTE_SCRIPT}"
           fi

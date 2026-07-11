@@ -1,8 +1,10 @@
 package com.behindthesmile.posting.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
 import java.util.Map;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class QueuedPost {
     private String id;
     private String status;
@@ -10,7 +12,6 @@ public class QueuedPost {
     private String accountId;
     private String accountLabel;
     private String topic;
-    private String tone;
     private String language;
     private List<String> platforms;
     private String text;
@@ -34,8 +35,6 @@ public class QueuedPost {
     public void setAccountLabel(String accountLabel) { this.accountLabel = accountLabel; }
     public String getTopic() { return topic; }
     public void setTopic(String topic) { this.topic = topic; }
-    public String getTone() { return tone; }
-    public void setTone(String tone) { this.tone = tone; }
     public String getLanguage() { return language; }
     public void setLanguage(String language) { this.language = language; }
     public List<String> getPlatforms() { return platforms; }

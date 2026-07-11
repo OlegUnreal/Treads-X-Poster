@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 import { DashboardPageComponent } from './pages/dashboard-page.component';
+import { AccountsPageComponent } from './pages/accounts-page.component';
 import { PublishPageComponent } from './pages/publish-page.component';
 import { CreatePageComponent } from './pages/create-page.component';
 import { QueuePageComponent } from './pages/queue-page.component';
@@ -11,7 +12,11 @@ export const routes: Routes = [
   {
     path: '',
     pathMatch: 'full',
-    redirectTo: 'overview'
+    redirectTo: 'accounts'
+  },
+  {
+    path: 'accounts',
+    component: AccountsPageComponent
   },
   {
     path: 'overview',
