@@ -6,8 +6,12 @@ import com.behindthesmile.posting.api.ChromeProfileActionRequest;
 import com.behindthesmile.posting.api.ChromeProfileLoginStatusRequest;
 import com.behindthesmile.posting.api.ChromeProfileProxyCapabilityRequest;
 import com.behindthesmile.posting.api.ChromeProfilesUrlCheckRequest;
+import com.behindthesmile.posting.persistence.ChromeProfileProxySettingEntity;
+import com.behindthesmile.posting.persistence.ChromeProfileProxySettingRepository;
 import com.behindthesmile.posting.persistence.ProxyCapabilityEntity;
 import com.behindthesmile.posting.persistence.ProxyCapabilityRepository;
+import com.behindthesmile.posting.persistence.RuntimeTextConfigEntity;
+import com.behindthesmile.posting.persistence.RuntimeTextConfigRepository;
 import org.springframework.stereotype.Service;
 
 import java.io.BufferedReader;
@@ -42,6 +46,7 @@ public class ChromeProfileLauncherService {
     private static final Pattern ENV_LINE = Pattern.compile("^([A-Za-z_][A-Za-z0-9_]*)=(.*)$");
     private static final Pattern EMAIL = Pattern.compile("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", Pattern.CASE_INSENSITIVE);
     private static final Pattern FULL_NAME = Pattern.compile("\"(?:full_name|given_name|display_name)\"\\s*:\\s*\"([^\"]+)\"", Pattern.CASE_INSENSITIVE);
+    private static final String PROFILES_ENV_CONFIG_KEY = "chrome-profiles-env";
     private static final String PROXY_CAPABILITIES_FILE = "proxy-capabilities.tsv";
     private static final Duration DEVTOOLS_STATUS_TIMEOUT = Duration.ofMillis(700);
     private final HttpClient httpClient = HttpClient.newBuilder()
@@ -49,6 +54,8 @@ public class ChromeProfileLauncherService {
             .build();
     private final Object urlCheckLock = new Object();
     private final ProxyCapabilityRepository proxyCapabilityRepository;
+    private final RuntimeTextConfigRepository runtimeTextConfigRepository;
+    private final ChromeProfileProxySettingRepository chromeProfileProxySettingRepository;
 
     private Instant lastStartedAt;
     private Map<String, Object> latestUrlCheckStatus = Map.of(
@@ -61,8 +68,14 @@ public class ChromeProfileLauncherService {
     );
     private ExecutorService activeUrlCheckExecutor;
 
-    public ChromeProfileLauncherService(ProxyCapabilityRepository proxyCapabilityRepository) {
+    public ChromeProfileLauncherService(
+            ProxyCapabilityRepository proxyCapabilityRepository,
+            RuntimeTextConfigRepository runtimeTextConfigRepository,
+            ChromeProfileProxySettingRepository chromeProfileProxySettingRepository
+    ) {
         this.proxyCapabilityRepository = proxyCapabilityRepository;
+        this.runtimeTextConfigRepository = runtimeTextConfigRepository;
+        this.chromeProfileProxySettingRepository = chromeProfileProxySettingRepository;
     }
 
     public Map<String, Object> startAll(ChromeProfilesLaunchRequest request) throws Exception {
@@ -592,11 +605,7 @@ public class ChromeProfileLauncherService {
     }
 
     public String profilesEnvContent() throws Exception {
-        Path envFile = envFile();
-        if (!Files.isRegularFile(envFile)) {
-            throw new IllegalStateException("profiles.env is missing: " + envFile);
-        }
-        return Files.readString(envFile, StandardCharsets.UTF_8);
+        return profilesEnvContentFromDatabaseOrFile();
     }
 
     public String proxyCapabilitiesContent() throws Exception {
@@ -623,12 +632,11 @@ public class ChromeProfileLauncherService {
             throw new IllegalArgumentException("profiles.env must contain proxy settings.");
         }
 
-        Path envFile = envFile();
-        writeEnvFile(envFile, content);
+        writeEnvFile(envFile(), content);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("message", "profiles.env updated");
-        result.put("envFile", envFile.toString());
+        result.put("envFile", envFile().toString());
         result.put("profiles", readProfiles());
         return result;
     }
@@ -663,10 +671,9 @@ public class ChromeProfileLauncherService {
             throw new IllegalArgumentException("Unknown profile: " + cleanProfileName);
         }
 
-        Path envFile = envFile();
-        String content = Files.isRegularFile(envFile) ? Files.readString(envFile, StandardCharsets.UTF_8) : "";
+        String content = profilesEnvContentFromDatabaseOrFileIfPresent();
         String updated = upsertEnvValue(content, "LOGIN_STATUS_" + cleanProfileName, loggedIn ? "logged_in" : "not_logged_in");
-        writeEnvFile(envFile, updated);
+        writeEnvFile(envFile(), updated);
 
         Map<String, Object> result = status();
         result.put("message", cleanProfileName + " marked " + (loggedIn ? "logged in" : "not logged in"));
@@ -1435,12 +1442,15 @@ $procs.Count
     }
 
     private Map<String, String> readEnvFile() throws Exception {
+        return parseEnvContent(profilesEnvContentFromDatabaseOrFileIfPresent());
+    }
+
+    private Map<String, String> parseEnvContent(String content) throws Exception {
         Map<String, String> values = new LinkedHashMap<>();
-        Path envFile = envFile();
-        if (!Files.isRegularFile(envFile)) {
+        if (content == null || content.isBlank()) {
             return values;
         }
-        try (BufferedReader reader = new BufferedReader(new StringReader(Files.readString(envFile, StandardCharsets.UTF_8)))) {
+        try (BufferedReader reader = new BufferedReader(new StringReader(content))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 String trimmed = line.trim();
@@ -1455,6 +1465,34 @@ $procs.Count
             }
         }
         return values;
+    }
+
+    private String profilesEnvContentFromDatabaseOrFile() throws Exception {
+        String content = profilesEnvContentFromDatabaseOrFileIfPresent();
+        if (content.isBlank()) {
+            throw new IllegalStateException("profiles.env is missing: " + envFile());
+        }
+        return content;
+    }
+
+    private String profilesEnvContentFromDatabaseOrFileIfPresent() throws Exception {
+        return runtimeTextConfigRepository.findById(PROFILES_ENV_CONFIG_KEY)
+                .map(RuntimeTextConfigEntity::getContent)
+                .orElseGet(this::migrateProfilesEnvFileToDatabase);
+    }
+
+    private String migrateProfilesEnvFileToDatabase() {
+        Path envFile = envFile();
+        if (!Files.isRegularFile(envFile)) {
+            return "";
+        }
+        try {
+            String content = Files.readString(envFile, StandardCharsets.UTF_8);
+            persistProfilesEnvContent(content);
+            return content;
+        } catch (Exception ex) {
+            throw new IllegalStateException("Could not migrate profiles.env to database: " + ex.getMessage(), ex);
+        }
     }
 
     private String unquote(String value) {
@@ -1490,13 +1528,67 @@ $procs.Count
     }
 
     private void writeEnvFile(Path envFile, String content) throws Exception {
+        persistProfilesEnvContent(content);
         writeTextFile(envFile, content);
+    }
+
+    private void persistProfilesEnvContent(String content) throws Exception {
+        String normalized = normalizeTextContent(content);
+        runtimeTextConfigRepository.save(new RuntimeTextConfigEntity(
+                PROFILES_ENV_CONFIG_KEY,
+                "text/plain",
+                normalized,
+                Instant.now().toString()
+        ));
+        writeChromeProfileProxySettings(parseEnvContent(normalized));
+    }
+
+    private void writeChromeProfileProxySettings(Map<String, String> env) {
+        List<String> profileNames = profileNamesFromEnv(env);
+        List<ChromeProfileProxySettingEntity> entities = new ArrayList<>();
+        int displayOrder = 0;
+        for (String profileName : profileNames) {
+            ChromeProfileProxySettingEntity entity = new ChromeProfileProxySettingEntity();
+            entity.setProfileName(profileName);
+            entity.setProfileLabel(env.getOrDefault("PROFILE_LABEL_" + profileName, profileName));
+            entity.setProxy(env.getOrDefault("PROXY_" + profileName, ""));
+            entity.setUpstreamProxy(env.getOrDefault("UPSTREAM_PROXY_" + profileName, ""));
+            entity.setProxyCountry(env.getOrDefault("PROXY_COUNTRY_" + profileName, ""));
+            entity.setProxyCity(env.getOrDefault("PROXY_CITY_" + profileName, ""));
+            entity.setTimezone(firstNonBlank(env.getOrDefault("TIMEZONE_" + profileName, ""), env.getOrDefault("TIMEZONE", "")));
+            entity.setLanguage(firstNonBlank(env.getOrDefault("LANGUAGE_" + profileName, ""), env.getOrDefault("LANGUAGE", "")));
+            entity.setWindowSize(firstNonBlank(env.getOrDefault("WINDOW_SIZE_" + profileName, ""), env.getOrDefault("WINDOW_SIZE", "")));
+            entity.setLoginStatus(env.getOrDefault("LOGIN_STATUS_" + profileName, ""));
+            entity.setDisplayOrder(displayOrder++);
+            entities.add(entity);
+        }
+        chromeProfileProxySettingRepository.deleteAll();
+        chromeProfileProxySettingRepository.saveAll(entities);
+    }
+
+    private List<String> profileNamesFromEnv(Map<String, String> env) {
+        String rawProfileNames = env.getOrDefault("PROFILE_NAMES", "").trim();
+        if (rawProfileNames.isBlank()) {
+            return List.of();
+        }
+        List<String> profileNames = new ArrayList<>();
+        for (String profileName : rawProfileNames.split("\\s+")) {
+            String cleanProfileName = profileName == null ? "" : profileName.trim();
+            if (!cleanProfileName.isBlank() && !profileNames.contains(cleanProfileName)) {
+                profileNames.add(cleanProfileName);
+            }
+        }
+        return profileNames;
+    }
+
+    private String normalizeTextContent(String content) {
+        return (content == null ? "" : content).replace("\r\n", "\n").replace("\r", "\n");
     }
 
     private void writeTextFile(Path envFile, String content) throws Exception {
         Files.createDirectories(envFile.getParent());
         Path tempFile = envFile.resolveSibling(envFile.getFileName() + ".tmp");
-        Files.writeString(tempFile, content.replace("\r\n", "\n").replace("\r", "\n"), StandardCharsets.UTF_8);
+        Files.writeString(tempFile, normalizeTextContent(content), StandardCharsets.UTF_8);
         try {
             Files.move(tempFile, envFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } catch (AtomicMoveNotSupportedException ex) {

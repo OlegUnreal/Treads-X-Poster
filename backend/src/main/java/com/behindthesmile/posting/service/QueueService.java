@@ -6,6 +6,8 @@ import com.behindthesmile.posting.model.GeneratedPostDraft;
 import com.behindthesmile.posting.model.QueuedPost;
 import com.behindthesmile.posting.persistence.QueuedPostEntity;
 import com.behindthesmile.posting.persistence.QueuedPostRepository;
+import com.behindthesmile.posting.persistence.RuntimeTextConfigEntity;
+import com.behindthesmile.posting.persistence.RuntimeTextConfigRepository;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -32,22 +34,27 @@ import java.util.UUID;
 @Service
 public class QueueService {
     private static final Charset WINDOWS_1252 = Charset.forName("windows-1252");
+    private static final String CONTENT_PLAN_CONFIG_KEY = "content-plan";
     private final QueuedPostRepository queuedPostRepository;
+    private final RuntimeTextConfigRepository runtimeTextConfigRepository;
     private final ObjectMapper objectMapper;
     private final AppProperties appProperties;
 
-    public QueueService(QueuedPostRepository queuedPostRepository, ObjectMapper objectMapper, AppProperties appProperties) {
+    public QueueService(
+            QueuedPostRepository queuedPostRepository,
+            RuntimeTextConfigRepository runtimeTextConfigRepository,
+            ObjectMapper objectMapper,
+            AppProperties appProperties
+    ) {
         this.queuedPostRepository = queuedPostRepository;
+        this.runtimeTextConfigRepository = runtimeTextConfigRepository;
         this.objectMapper = objectMapper;
         this.appProperties = appProperties;
     }
 
     public List<ContentPlan.Item> readContentPlan(Path filePath) throws IOException {
-        if (!Files.exists(filePath)) {
-            throw new IllegalStateException("Content plan not found: " + filePath.toAbsolutePath());
-        }
-
-        JsonNode root = objectMapper.readTree(Files.readString(filePath, StandardCharsets.UTF_8));
+        String content = readContentPlanContent(filePath);
+        JsonNode root = objectMapper.readTree(content);
         JsonNode itemsNode = root.get("items");
         if (itemsNode == null || !itemsNode.isArray() || itemsNode.isEmpty()) {
             throw new IllegalStateException("Content plan must include a non-empty items array.");
@@ -58,6 +65,30 @@ public class QueueService {
             items.add(objectMapper.treeToValue(itemNode, ContentPlan.Item.class));
         }
         return items;
+    }
+
+    private String readContentPlanContent(Path filePath) throws IOException {
+        return runtimeTextConfigRepository.findById(CONTENT_PLAN_CONFIG_KEY)
+                .map(RuntimeTextConfigEntity::getContent)
+                .orElseGet(() -> migrateContentPlanFromFile(filePath));
+    }
+
+    private String migrateContentPlanFromFile(Path filePath) {
+        if (filePath == null || !Files.exists(filePath)) {
+            throw new IllegalStateException("Content plan not found: " + (filePath == null ? "" : filePath.toAbsolutePath()));
+        }
+        try {
+            String content = Files.readString(filePath, StandardCharsets.UTF_8);
+            runtimeTextConfigRepository.save(new RuntimeTextConfigEntity(
+                    CONTENT_PLAN_CONFIG_KEY,
+                    "application/json",
+                    content,
+                    Instant.now().toString()
+            ));
+            return content;
+        } catch (IOException ex) {
+            throw new IllegalStateException("Could not read content plan: " + ex.getMessage(), ex);
+        }
     }
 
     public Path saveQueuedPosts(
